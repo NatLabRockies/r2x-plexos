@@ -42,6 +42,8 @@ class PLEXOSExporter(BaseExporter):
         xml_fname: str | None = None,
         exclude_defaults: bool = True,
         db: PlexosDB | None = None,  # Allow passing existing DB for testing
+        solve_year: int | None = None,  # ReEDS field for filename association
+        weather_year: int | None = None,  # ReEDS field for filename association
         **kwargs: Any,
     ) -> None:
         """Start exporter."""
@@ -60,6 +62,8 @@ class PLEXOSExporter(BaseExporter):
             raise TypeError(msg)
         self.config: PLEXOSConfig
         self.output_path = output_path
+        self.solve_year = solve_year
+        self.weather_year = weather_year
         self.plexos_scenario = plexos_scenario or self.config.model_name
 
         # Use provided DB if available (for testing), otherwise create from XML
@@ -296,6 +300,12 @@ class PLEXOSExporter(BaseExporter):
         for group_key, group_items in groupby(ts_metadata_sorted, key=_grouping_key):
             field_name, features_tuple = group_key
             metadata_dict = dict(features_tuple)
+            if self.config.model_name is not None:
+                metadata_dict["model_name"] = self.config.model_name
+            if self.weather_year is not None:
+                metadata_dict["weather_year"] = self.weather_year
+            if self.solve_year is not None:
+                metadata_dict["solve_year"] = self.solve_year
             group_list = list(group_items)
 
             first_component = group_list[0][0]

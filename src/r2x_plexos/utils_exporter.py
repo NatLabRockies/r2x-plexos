@@ -38,15 +38,19 @@ def get_output_directory(
 def generate_csv_filename(field_name: str, component_class: str, metadata: dict[str, Any]) -> str:
     """Generate a CSV filename for time series export."""
     safe_field = field_name.replace(" ", "_").replace("/", "_")
+    parts = [str(metadata[key]) for key in ("model_name", "weather_year", "solve_year") if key in metadata]
+    metadata_suffix = "_".join(parts) if parts else "default"
 
-    metadata_parts = []
-    for key in sorted(metadata.keys()):
-        value = metadata[key]
-        if value is not None:
-            safe_value = str(value).replace(" ", "_").replace("/", "_")
-            metadata_parts.append(f"{key}{safe_value}")
+    special_class_map = {
+        "hydro_budget": "ReEDSHydroGenerator",
+        "max_active_power": "ReEDSVariableGenerator",
+        "max_active_power_load": "ReEDSDemand",
+        "requirement": "ReEDSReserve",
+        "natural_inflow": "ReEDSStorage",
+    }
 
-    metadata_suffix = "_".join(metadata_parts) if metadata_parts else "default"
+    if safe_field in special_class_map:
+        component_class = special_class_map[safe_field]
 
     return f"{component_class}_{safe_field}_{metadata_suffix}.csv"
 
