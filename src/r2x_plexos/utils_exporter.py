@@ -42,15 +42,14 @@ def generate_csv_filename(field_name: str, component_class: str, metadata: dict[
     metadata_suffix = "_".join(parts) if parts else "default"
 
     special_class_map = {
-        "hydro_budget": "ReEDSHydroGenerator",
-        "max_active_power": "ReEDSVariableGenerator",
-        "max_active_power_load": "ReEDSDemand",
-        "requirement": "ReEDSReserve",
-        "natural_inflow": "ReEDSStorage",
+        "hydro_budget": "PLEXOSHydroGenerator",
+        "max_active_power": "PLEXOSVariableGenerator",
+        "max_active_power_load": "PLEXOSDemand",
+        "requirement": "PLEXOSReserve",
+        "natural_inflow": "PLEXOSStorage",
     }
 
-    if safe_field in special_class_map:
-        component_class = special_class_map[safe_field]
+    component_class = special_class_map.get(safe_field, component_class)
 
     return f"{component_class}_{safe_field}_{metadata_suffix}.csv"
 
