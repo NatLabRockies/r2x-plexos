@@ -1,6 +1,7 @@
 """PLEXOS parser implementation for r2x-core framework."""
 
 import itertools
+import typing
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
@@ -698,7 +699,19 @@ class PLEXOSParser(BaseParser):
 
             prop_records = list(rows)
             property_value = PLEXOSPropertyValue.from_records(prop_records)
-            setattr(component, field_name, property_value)
+
+            expected_type = typing.get_type_hints(type(component)).get(field_name)
+            if expected_type is not None and (
+                expected_type in (int, float)
+                or (
+                    getattr(expected_type, "__origin__", None) in [int, float]
+                    or getattr(expected_type, "__args__", [None])[0] in [int, float]
+                )
+            ):
+                value = property_value.get_value()
+                setattr(component, field_name, value)
+            else:
+                setattr(component, field_name, property_value)
 
             # Skip time series registration for DataFile, Variable, and Timeslice components
             # Variables should always use their constant property values
