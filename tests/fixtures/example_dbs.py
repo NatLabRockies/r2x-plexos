@@ -146,13 +146,24 @@ def db_all_gen_types(db_with_topology, datetime_single_component_data):
 
 @pytest.fixture
 def db_with_scenarios(db_thermal_gen):
+    """Create database with multiple scenarios for testing scenario priority.
+
+    Creates a thermal generator with different property values in different scenarios:
+    - Base scenario: Max Capacity = 100.0, Fuel Price = 5.0 (from db_thermal_gen)
+    - High scenario: Max Capacity = 150.0, Fuel Price = 7.5
+
+    Returns
+    -------
+    PlexosDB
+        Database with scenario data
+    """
     db = db_thermal_gen
 
     db.add_object(ClassEnum.Scenario, "Base")
-    scenario_2 = db.add_object(ClassEnum.Scenario, "High")
+    db.add_object(ClassEnum.Scenario, "High")
 
-    db.add_property(ClassEnum.Generator, "thermal-01", "Max Capacity", 150.0, band=1, scenario_id=scenario_2)
-    db.add_property(ClassEnum.Generator, "thermal-01", "Fuel Price", 7.5, band=1, scenario_id=scenario_2)
+    db.add_property(ClassEnum.Generator, "thermal-01", "Max Capacity", 150.0, band=1, scenario="High")
+    db.add_property(ClassEnum.Generator, "thermal-01", "Fuel Price", 7.5, band=1, scenario="High")
 
     yield db
 
