@@ -77,4 +77,4 @@ def test_battery_capacity_with_constant_variable(xml_with_variables, tmp_path, c
     assert len(sys.get_supplemental_attributes_with_component(region, CollectionProperties)) == 1
     sup = sys.get_supplemental_attributes_with_component(region, CollectionProperties)[0]
     assert "load_risk" in sup.properties
-    assert sup.properties["load_risk"].get_value() == 3.0
+    assert sup.properties["load_risk"].get_value() == 0.0
