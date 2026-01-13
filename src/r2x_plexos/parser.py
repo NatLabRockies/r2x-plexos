@@ -700,26 +700,30 @@ class PLEXOSParser(BaseParser):
             prop_records = list(rows)
             property_value = PLEXOSPropertyValue.from_records(prop_records)
 
-            expected_type = typing.get_type_hints(type(component)).get(field_name)
-            if expected_type is not None and (
-                expected_type in (int, float)
-                or (
-                    getattr(expected_type, "__origin__", None) in [int, float]
-                    or getattr(expected_type, "__args__", [None])[0] in [int, float]
-                )
-            ):
-                value = property_value.get_value()
-                setattr(component, field_name, value)
-            else:
+            # Always keep PLEXOSPropertyValue if it has datafile or variable references
+            # This is required for time series attachment logic to work correctly
+            if property_value.has_datafile() or property_value.has_variable() or property_value.has_bands():
                 setattr(component, field_name, property_value)
 
-            # Skip time series registration for DataFile, Variable, and Timeslice components
-            # Variables should always use their constant property values
-            # Timeslices are configuration metadata defining time periods, not data components
-            if not isinstance(component, (PLEXOSDatafile, PLEXOSVariable, PLEXOSTimeslice)) and (
-                property_value.has_datafile() or property_value.has_variable()
-            ):
-                self._register_time_series_reference(component, field_name, property_value)
+                # Skip time series registration for DataFile, Variable, and Timeslice components
+                # Variables should always use their constant property values
+                # Timeslices are configuration metadata defining time periods, not data components
+                if not isinstance(component, (PLEXOSDatafile, PLEXOSVariable, PLEXOSTimeslice)):
+                    self._register_time_series_reference(component, field_name, property_value)
+            else:
+                # Only extract numeric value for properties without external data references
+                expected_type = typing.get_type_hints(type(component)).get(field_name)
+                if expected_type is not None and (
+                    expected_type in (int, float)
+                    or (
+                        getattr(expected_type, "__origin__", None) in [int, float]
+                        or getattr(expected_type, "__args__", [None])[0] in [int, float]
+                    )
+                ):
+                    value = property_value.get_value()
+                    setattr(component, field_name, value)
+                else:
+                    setattr(component, field_name, property_value)
         return
 
     def _register_time_series_reference(
