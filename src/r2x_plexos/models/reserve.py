@@ -111,6 +111,7 @@ class PLEXOSReserve(PLEXOSObject):
     ] = 1e30
     min_provision: Annotated[
         float | int,
+        PLEXOSProperty(units="MW"),
         Field(
             alias="Min Provision",
             description="Minimum required reserve",
