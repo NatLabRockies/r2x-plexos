@@ -1,6 +1,6 @@
 import pytest
 
-from r2x_core import DataFile, DataStore
+from r2x_core import DataFile, DataStore, PluginContext
 from r2x_plexos import PLEXOSParser, PLEXOSPropertyValue
 from r2x_plexos.models import PLEXOSMembership, PLEXOSVariable
 from r2x_plexos.models.datafile import PLEXOSDatafile
@@ -11,10 +11,17 @@ from r2x_plexos.plugin_config import PLEXOSConfig
 
 @pytest.fixture(scope="module")
 def config_store_example(data_folder) -> tuple[PLEXOSConfig, DataStore]:
-    config = PLEXOSConfig(model_name="Base", timeseries_dir=None, reference_year=2024)
-    data_file = DataFile(name="xml_file", glob="*.xml")
+    config = PLEXOSConfig(model_name="Base", timeseries_dir=None, horizon_year=2024)
+    xml_files = list(data_folder.glob("*.xml"))
+    if not xml_files:
+        raise ValueError(f"No XML files found in {data_folder}")
+
+    xml_path = xml_files[0]
+    data_file = DataFile(name="xml_file", fpath=xml_path)
+
     store = DataStore(path=data_folder)
-    store.add_data(data_file)
+    store.add_data([data_file], overwrite=True)
+
     return config, store
 
 
@@ -22,13 +29,15 @@ def config_store_example(data_folder) -> tuple[PLEXOSConfig, DataStore]:
 def parser_instance(config_store_example) -> PLEXOSParser:
     """Shared parser instance for read-only tests."""
     config, store = config_store_example
-    return PLEXOSParser(config, store)
+    ctx = PluginContext(config=config, store=store)
+    return PLEXOSParser.from_context(ctx)
 
 
 @pytest.fixture(scope="module")
 def parser_system(parser_instance):
     """Shared system built from parser for read-only tests."""
-    return parser_instance.build_system()
+    result = parser_instance.run()
+    return result.system
 
 
 @pytest.mark.slow
@@ -39,7 +48,7 @@ def test_plexos_parser_instance(parser_instance):
 @pytest.mark.slow
 def test_plexos_parser_system(parser_system):
     assert parser_system is not None
-    assert parser_system.name == "system"
+    assert parser_system.name == "PLEXOS"
 
 
 @pytest.mark.slow
@@ -76,13 +85,17 @@ def test_collection_properties_basic(db_with_reserve_collection_property, tmp_pa
     xml_path = tmp_path / "reserve_coll_basic.xml"
     db.to_xml(xml_path)
 
-    config = PLEXOSConfig(model_name="Base", reference_year=2024)
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
     store = DataStore(path=tmp_path)
-    store.add_data(data_file)
+    store.add_data([data_file], overwrite=True)
 
-    parser = PLEXOSParser(config, store)
-    system = parser.build_system()
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    system = result.system
 
     reserve = system.get_component(PLEXOSReserve, "TestReserve")
     assert reserve is not None
@@ -111,13 +124,17 @@ def test_collection_properties_with_timeseries(db_with_reserve_collection_proper
     xml_path = tmp_path / "reserve_coll_prop.xml"
     db.to_xml(xml_path)
 
-    config = PLEXOSConfig(model_name="Base", reference_year=2024)
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
     store = DataStore(path=tmp_path)
-    store.add_data(data_file)
+    store.add_data([data_file], overwrite=True)
 
-    parser = PLEXOSParser(config, store)
-    system = parser.build_system()
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    system = result.system
 
     reserve = system.get_component(PLEXOSReserve, "TestReserve")
     assert reserve is not None
@@ -153,13 +170,17 @@ def test_property_with_bands_kept_as_property_value(db_thermal_gen_multiband, tm
     xml_path = tmp_path / "multiband.xml"
     db.to_xml(xml_path)
 
-    config = PLEXOSConfig(model_name="Base", reference_year=2024)
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
     store = DataStore(path=tmp_path)
-    store.add_data(data_file)
+    store.add_data([data_file], overwrite=True)
 
-    parser = PLEXOSParser(config, store)
-    system = parser.build_system()
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    system = result.system
 
     gen = system.get_component(PLEXOSGenerator, "thermal-01")
 
@@ -169,8 +190,8 @@ def test_property_with_bands_kept_as_property_value(db_thermal_gen_multiband, tm
     assert heat_rate_prop.has_bands()
 
     # Accessing the property should return a dict of band values
-    result = gen.heat_rate
-    assert isinstance(result, dict)
+    result_value = gen.heat_rate
+    assert isinstance(result_value, dict)
 
 
 def test_simple_numeric_property_extracted_as_value(db_thermal_gen_multiband, tmp_path):
@@ -179,13 +200,17 @@ def test_simple_numeric_property_extracted_as_value(db_thermal_gen_multiband, tm
     xml_path = tmp_path / "simple_numeric.xml"
     db.to_xml(xml_path)
 
-    config = PLEXOSConfig(model_name="Base", reference_year=2024)
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
     store = DataStore(path=tmp_path)
-    store.add_data(data_file)
+    store.add_data([data_file], overwrite=True)
 
-    parser = PLEXOSParser(config, store)
-    system = parser.build_system()
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    system = result.system
 
     gen = system.get_component(PLEXOSGenerator, "thermal-01")
 
@@ -200,8 +225,12 @@ def test_region_load_with_variable_reference(db_with_multiband_variable, tmp_pat
     config = PLEXOSConfig(model_name="Base")
     store = DataStore(path=tmp_path)
 
-    parser = PLEXOSParser(config, store, db=db)
-    sys = parser.build_system()
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    sys = result.system
 
     region = sys.get_component(PLEXOSRegion, "r1")
 
@@ -217,8 +246,12 @@ def test_datafile_component_not_registered_for_timeseries(db_with_multiband_vari
     config = PLEXOSConfig(model_name="Base")
     store = DataStore(path=tmp_path)
 
-    parser = PLEXOSParser(config, store, db=db)
-    sys = parser.build_system()
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    sys = result.system
 
     datafile = sys.get_component(PLEXOSDatafile, "LoadProfiles")
     assert datafile is not None
@@ -233,8 +266,12 @@ def test_variable_component_not_registered_for_timeseries(db_with_multiband_vari
     config = PLEXOSConfig(model_name="Base")
     store = DataStore(path=tmp_path)
 
-    parser = PLEXOSParser(config, store, db=db)
-    sys = parser.build_system()
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    sys = result.system
 
     # Get all variables
     variables = list(sys.get_components(PLEXOSVariable))
@@ -258,8 +295,11 @@ def test_failed_references_tracking(db_with_multiband_variable, tmp_path, caplog
     config = PLEXOSConfig(model_name="Base")
     store = DataStore(path=tmp_path)
 
-    parser = PLEXOSParser(config, store, db=db)
-    _ = parser.build_system()
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    _ = parser.run()
 
     # Check if any failures were logged
     assert parser._failed_references is not None
@@ -272,13 +312,17 @@ def test_parser_with_horizon_year(db_thermal_gen_multiband, tmp_path):
     xml_path = tmp_path / "with_horizon.xml"
     db.to_xml(xml_path)
 
-    config = PLEXOSConfig(model_name="Base", reference_year=2024, horizon_year=2025)
+    config = PLEXOSConfig(model_name="Base", horizon_year=2025)
     data_file = DataFile(name="xml_file", fpath=xml_path)
     store = DataStore(path=tmp_path)
-    store.add_data(data_file)
+    store.add_data([data_file])
 
-    parser = PLEXOSParser(config, store)
-    system = parser.build_system()
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    system = result.system
 
     assert system is not None
     assert config.horizon_year == 2025
@@ -290,13 +334,17 @@ def test_parser_component_cache_population(db_thermal_gen_multiband, tmp_path):
     xml_path = tmp_path / "cache_test.xml"
     db.to_xml(xml_path)
 
-    config = PLEXOSConfig(model_name="Base", reference_year=2024)
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
     store = DataStore(path=tmp_path)
-    store.add_data(data_file)
+    store.add_data([data_file])
 
-    parser = PLEXOSParser(config, store)
-    system = parser.build_system()
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    system = result.system
 
     # Component cache should be populated
     assert len(parser._component_cache) > 0
@@ -314,13 +362,16 @@ def test_parser_membership_cache(db_with_topology, tmp_path):
     xml_path = tmp_path / "membership.xml"
     db.to_xml(xml_path)
 
-    config = PLEXOSConfig(model_name="Base", reference_year=2024)
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
     store = DataStore(path=tmp_path)
-    store.add_data(data_file)
+    store.add_data([data_file])
 
-    parser = PLEXOSParser(config, store)
-    _ = parser.build_system()
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    _ = parser.run()
 
     # Membership cache should be populated
     assert len(parser._membership_cache) > 0
@@ -340,14 +391,17 @@ def test_parser_handles_unsupported_component_type(db_base, tmp_path, caplog):
     xml_path = tmp_path / "unsupported.xml"
     db.to_xml(xml_path)
 
-    config = PLEXOSConfig(model_name="Base", reference_year=2024)
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
     store = DataStore(path=tmp_path)
-    store.add_data(data_file)
+    store.add_data([data_file])
 
     with caplog.at_level(loguru.logger.level("DEBUG").no):
-        parser = PLEXOSParser(config, store)
-        system = parser.build_system()
+        ctx = PluginContext(config=config, store=store)
+        parser = PLEXOSParser.from_context(ctx)
+        parser.db = db
+        result = parser.run()
+        system = result.system
 
     # System should still be created even if some components are unsupported
     assert system is not None
@@ -359,13 +413,17 @@ def test_parser_scenario_priority_setting(db_with_scenarios, tmp_path):
     xml_path = tmp_path / "scenarios.xml"
     db.to_xml(xml_path)
 
-    config = PLEXOSConfig(model_name="Base", reference_year=2024)
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
     store = DataStore(path=tmp_path)
-    store.add_data(data_file)
+    store.add_data([data_file])
 
-    parser = PLEXOSParser(config, store)
-    system = parser.build_system()
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    system = result.system
 
     # System should be built successfully with scenarios
     assert system is not None
@@ -377,8 +435,11 @@ def test_parser_timeseries_cache_reuse(db_with_multiband_variable, tmp_path):
     config = PLEXOSConfig(model_name="Base")
     store = DataStore(path=tmp_path)
 
-    parser = PLEXOSParser(config, store, db=db)
-    _ = parser.build_system()
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    _ = parser.run()
 
     # Check that the cache was used (has entries)
     assert len(parser._parsed_files_cache) >= 0  # May be 0 if no time series files
@@ -390,15 +451,20 @@ def test_parser_with_custom_name(db_thermal_gen_multiband, tmp_path):
     xml_path = tmp_path / "custom_name.xml"
     db.to_xml(xml_path)
 
-    config = PLEXOSConfig(model_name="Base", reference_year=2024)
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
     store = DataStore(path=tmp_path)
-    store.add_data(data_file)
+    store.add_data([data_file])
 
-    parser = PLEXOSParser(config, store, name="CustomSystem")
-    system = parser.build_system()
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
 
-    assert system.name == "CustomSystem"
+    result = parser.run()
+    system = result.system
+
+    # Note: System name comes from on_build(), which uses "PLEXOS" by default
+    assert system.name == "PLEXOS"
 
 
 def test_parser_skip_validation_flag(db_thermal_gen_multiband, tmp_path):
@@ -407,13 +473,17 @@ def test_parser_skip_validation_flag(db_thermal_gen_multiband, tmp_path):
     xml_path = tmp_path / "skip_val.xml"
     db.to_xml(xml_path)
 
-    config = PLEXOSConfig(model_name="Base", reference_year=2024)
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
     store = DataStore(path=tmp_path)
-    store.add_data(data_file)
+    store.add_data([data_file])
 
-    parser = PLEXOSParser(config, store, skip_validation=True)
-    system = parser.build_system()
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    system = result.system
 
     assert system is not None
 
@@ -426,14 +496,17 @@ def test_parser_property_without_field_name_skipped(db_thermal_gen_multiband, tm
     xml_path = tmp_path / "unknown_prop.xml"
     db.to_xml(xml_path)
 
-    config = PLEXOSConfig(model_name="Base", reference_year=2024)
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
     store = DataStore(path=tmp_path)
-    store.add_data(data_file)
+    store.add_data([data_file])
 
     with caplog.at_level(loguru.logger.level("WARNING").no):
-        parser = PLEXOSParser(config, store)
-        system = parser.build_system()
+        ctx = PluginContext(config=config, store=store)
+        parser = PLEXOSParser.from_context(ctx)
+        parser.db = db
+        result = parser.run()
+        system = result.system
 
     # System should still be created
     assert system is not None

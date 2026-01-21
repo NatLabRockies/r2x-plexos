@@ -1,6 +1,6 @@
 """Tests for multi-band property support."""
 
-from r2x_core import DataFile, DataStore
+from r2x_core import DataFile, DataStore, PluginContext
 from r2x_plexos import PLEXOSConfig, PLEXOSParser, PLEXOSPropertyValue, scenario_priority
 from r2x_plexos.models.generator import PLEXOSGenerator
 
@@ -94,13 +94,17 @@ def test_parser_multiband_heat_rate(db_thermal_gen_multiband, tmp_path):
     xml_path = tmp_path / "multiband.xml"
     db.to_xml(xml_path)
 
-    config = PLEXOSConfig(model_name="Base", reference_year=2024)
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
     store = DataStore(path=tmp_path)
-    store.add_data(data_file)
+    store.add_data([data_file], overwrite=True)
 
-    parser = PLEXOSParser(config, store)
-    system = parser.build_system()
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    system = result.system
 
     gen = system.get_component(PLEXOSGenerator, "thermal-01")
     assert gen is not None
