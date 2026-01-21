@@ -179,8 +179,8 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         Result[System, str]
             Ok(system) on success, Err() with error message on failure
         """
-        try:
-            if self.db is None:
+        if self.db is None:
+            try:
                 data_file = self.store["xml_file"]
                 if data_file.fpath is None:
                     self.store.add_data([data_file], overwrite=True)
@@ -191,31 +191,31 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
                 self.db = PlexosDB.from_xml(fpath)
                 if not self.db:
                     return Err("Failed to create database from XML file. Check XML file format.")
+            except Exception as e:
+                return Err(f"Failed to initialize database: {e}")
 
-            self.model_name = self.config.model_name
+        self.model_name = self.config.model_name
 
-            system = System(name="PLEXOS")
-            self._ctx.system = system
+        system = System(name="PLEXOS")
+        self._ctx.system = system
 
-            validation_result = self.validate_inputs()
-            if validation_result.is_err():
-                return Err(validation_result.err())
+        validation_result = self.validate_inputs()
+        if validation_result.is_err():
+            return Err(validation_result.err())
 
-            build_result = self.build_system_components()
-            if build_result.is_err():
-                return Err(build_result.err())
+        build_result = self.build_system_components()
+        if build_result.is_err():
+            return Err(build_result.err())
 
-            ts_result = self.build_time_series()
-            if ts_result.is_err():
-                return Err(ts_result.err())
+        ts_result = self.build_time_series()
+        if ts_result.is_err():
+            return Err(ts_result.err())
 
-            postprocess_result = self.postprocess_system()
-            if postprocess_result.is_err():
-                return Err(postprocess_result.err())
+        postprocess_result = self.postprocess_system()
+        if postprocess_result.is_err():
+            return Err(postprocess_result.err())
 
-            return Ok(system)
-        except Exception as e:
-            return Err(f"Failed to build system: {e}")
+        return Ok(system)
 
     def validate_inputs(self) -> Result[None, str]:
         """Validate input data before parsing."""
