@@ -18,7 +18,7 @@ from infrasys.time_series_models import SingleTimeSeries
 from loguru import logger
 from plexosdb import ClassEnum, PlexosDB
 
-from r2x_core import DataStore, Err, Ok, Plugin, Result
+from r2x_core import Err, Ok, Plugin, Result, System
 
 from .datafile_handler import ParsedFileData, extract_file_data, extract_one_time_series
 from .models import (
@@ -140,35 +140,12 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         """Return the PLEXOSConfig instance."""
         return super().config
 
-    def __init__(
-        self,
-        config: PLEXOSConfig,
-        data_store: DataStore,
-        *,
-        name: str | None = None,
-        auto_add_composed_components: bool = True,
-        skip_validation: bool = False,
-        db: PlexosDB | None = None,
-    ) -> None:
-        """Initialize PLEXOSParser with configuration and caching infrastructure.
-
-        Parameters
-        ----------
-        config : PLEXOSConfig
-            Parser configuration including model name and horizon settings
-        data_store : DataStore
-            Data file accessor from r2x-core
-        name : str, optional
-            Parser instance name
-        auto_add_composed_components : bool, default True
-            Whether to automatically add composed components to system
-        skip_validation : bool, default False
-            Skip validation checks during parsing
-        db : PlexosDB, optional
-            Pre-initialized PLEXOS database; if None, created from XML in data_store
+    def __init__(self) -> None:
+        """Initialize PLEXOSParser with internal state only.
 
         Notes
         -----
+        Actual initialization happens in on_build() after context is set.
         Initializes multiple caches (python dictionaries):
         - _component_cache: object_id -> PLEXOSObject mapping
         - _parsed_files_cache: file_path -> parsed data mapping
@@ -179,13 +156,8 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         """
         super().__init__()
 
-        # Main configuration
-        self._config = config
-        self._system_name = name or "system"
-        self._auto_add_composed_components = auto_add_composed_components
-        self._skip_validation = skip_validation
-
-        self.model_name = config.model_name
+        self.model_name: str = ""
+        self.db: PlexosDB | None = None
         self.time_series_references: list[TimeSeriesReference] = []
         self._component_cache: dict[int, PLEXOSObject] = {}
         self._valid_scenarios: list[str] = []
@@ -195,19 +167,55 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         self._attached_timeseries: dict[tuple[UUID, str], bool] = {}
         self._failed_references: list[tuple[TimeSeriesReference, str]] = []
         self._membership_cache: dict[int, PLEXOSMembership] = {}
-        # PropertyRecord from plexosdb.iterate_properties(), stored as dict for flexibility
         self._collection_properties_cache: dict[int, list[dict[str, Any]]] = {}
+        self._horizon_start: datetime | None = None
+        self._horizon_end: datetime | None = None
 
-        self.db = db
-        if not db:
-            data_file = data_store["xml_file"]
-            self.store.add_data([data_file])
-            fpath = data_file.fpath
-            if not fpath:
-                raise ValueError(f"Could not resolve XML file path from data_file: {data_file.name}")
+    def on_build(self) -> Result[System, str]:
+        """Build the System from PLEXOS XML data.
 
-            self.db = PlexosDB.from_xml(fpath)
-        assert self.db, "Database not created correctly. Check XML file."
+        Returns
+        -------
+        Result[System, str]
+            Ok(system) on success, Err() with error message on failure
+        """
+        try:
+            if self.db is None:
+                data_file = self.store["xml_file"]
+                if data_file.fpath is None:
+                    self.store.add_data([data_file], overwrite=True)
+                fpath = data_file.fpath
+                if not fpath:
+                    return Err(f"Could not resolve XML file path from data_file: {data_file.name}")
+
+                self.db = PlexosDB.from_xml(fpath)
+                if not self.db:
+                    return Err("Failed to create database from XML file. Check XML file format.")
+
+            self.model_name = self.config.model_name
+
+            system = System(name="PLEXOS")
+            self._ctx.system = system
+
+            validation_result = self.validate_inputs()
+            if validation_result.is_err():
+                return Err(validation_result.err())
+
+            build_result = self.build_system_components()
+            if build_result.is_err():
+                return Err(build_result.err())
+
+            ts_result = self.build_time_series()
+            if ts_result.is_err():
+                return Err(ts_result.err())
+
+            postprocess_result = self.postprocess_system()
+            if postprocess_result.is_err():
+                return Err(postprocess_result.err())
+
+            return Ok(system)
+        except Exception as e:
+            return Err(f"Failed to build system: {e}")
 
     def validate_inputs(self) -> Result[None, str]:
         """Validate input data before parsing."""
@@ -307,8 +315,8 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         horizon = get_horizon()
 
         # Get horizon datetime objects if available
-        horizon_datetime = None
-        if hasattr(self, "_horizon_start") and hasattr(self, "_horizon_end"):
+        horizon_datetime: tuple[datetime, datetime] | None = None
+        if self._horizon_start is not None and self._horizon_end is not None:
             horizon_datetime = (self._horizon_start, self._horizon_end)
 
         try:
