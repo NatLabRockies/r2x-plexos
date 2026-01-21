@@ -2,11 +2,11 @@ import pytest
 
 from r2x_core import DataFile, DataStore
 from r2x_plexos import PLEXOSParser, PLEXOSPropertyValue
-from r2x_plexos.config import PLEXOSConfig
 from r2x_plexos.models import PLEXOSMembership, PLEXOSVariable
 from r2x_plexos.models.datafile import PLEXOSDatafile
 from r2x_plexos.models.generator import PLEXOSGenerator
 from r2x_plexos.models.region import PLEXOSRegion
+from r2x_plexos.plugin_config import PLEXOSConfig
 
 
 @pytest.fixture(scope="module")

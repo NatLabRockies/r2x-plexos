@@ -1,10 +1,10 @@
 """Test variable resolution with constant values."""
 
 from r2x_core import DataFile, DataStore, System
-from r2x_plexos.config import PLEXOSConfig
 from r2x_plexos.models import PLEXOSRegion
 from r2x_plexos.models.variable import PLEXOSVariable
 from r2x_plexos.parser import PLEXOSParser
+from r2x_plexos.plugin_config import PLEXOSConfig
 
 
 def test_multi_band_datafile(tmp_path, db_with_multiband_variable):

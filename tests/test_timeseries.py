@@ -8,8 +8,8 @@ import pytest
 
 from r2x_core import DataFile, DataStore
 from r2x_plexos import PLEXOSParser
-from r2x_plexos.config import PLEXOSConfig
 from r2x_plexos.parser import TimeSeriesReference, TimeSeriesSourceType
+from r2x_plexos.plugin_config import PLEXOSConfig
 
 
 @pytest.fixture(scope="module")

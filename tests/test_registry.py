@@ -42,6 +42,7 @@ def test_get_class_enum_unregistered_component():
     Verifies that get_class_enum() returns None when the component
     is not in the registry.
     """
+
     # Create a dummy class that's not registered
     class UnregisteredComponent:
         pass
@@ -56,14 +57,10 @@ def test_get_collection_enum_explicit_registration():
     Verifies that explicitly registered collection relationships
     are returned correctly.
     """
-    collection_enum = PLEXOSComponentRegistry.get_collection_enum(
-        ClassEnum.Generator, ClassEnum.Node
-    )
+    collection_enum = PLEXOSComponentRegistry.get_collection_enum(ClassEnum.Generator, ClassEnum.Node)
     assert collection_enum == CollectionEnum.Generators
 
-    collection_enum = PLEXOSComponentRegistry.get_collection_enum(
-        ClassEnum.Battery, ClassEnum.Node
-    )
+    collection_enum = PLEXOSComponentRegistry.get_collection_enum(ClassEnum.Battery, ClassEnum.Node)
     assert collection_enum == CollectionEnum.Batteries
 
 
@@ -73,19 +70,13 @@ def test_get_collection_enum_system_parent_simple_plural():
     Verifies the automatic plural form pattern works for System parent
     relationships where plural is just the singular + 's'.
     """
-    collection_enum = PLEXOSComponentRegistry.get_collection_enum(
-        ClassEnum.System, ClassEnum.Generator
-    )
+    collection_enum = PLEXOSComponentRegistry.get_collection_enum(ClassEnum.System, ClassEnum.Generator)
     assert collection_enum == CollectionEnum.Generators
 
-    collection_enum = PLEXOSComponentRegistry.get_collection_enum(
-        ClassEnum.System, ClassEnum.Node
-    )
+    collection_enum = PLEXOSComponentRegistry.get_collection_enum(ClassEnum.System, ClassEnum.Node)
     assert collection_enum == CollectionEnum.Nodes
 
-    collection_enum = PLEXOSComponentRegistry.get_collection_enum(
-        ClassEnum.System, ClassEnum.Region
-    )
+    collection_enum = PLEXOSComponentRegistry.get_collection_enum(ClassEnum.System, ClassEnum.Region)
     assert collection_enum == CollectionEnum.Regions
 
 
@@ -95,14 +86,10 @@ def test_get_collection_enum_system_parent_special_plural():
     Verifies the special plural handling for cases where plural
     is not just singular + 's' (e.g., Battery -> Batteries).
     """
-    collection_enum = PLEXOSComponentRegistry.get_collection_enum(
-        ClassEnum.System, ClassEnum.Battery
-    )
+    collection_enum = PLEXOSComponentRegistry.get_collection_enum(ClassEnum.System, ClassEnum.Battery)
     assert collection_enum == CollectionEnum.Batteries
 
-    collection_enum = PLEXOSComponentRegistry.get_collection_enum(
-        ClassEnum.System, ClassEnum.Storage
-    )
+    collection_enum = PLEXOSComponentRegistry.get_collection_enum(ClassEnum.System, ClassEnum.Storage)
     assert collection_enum == CollectionEnum.Storages
 
 
@@ -114,9 +101,7 @@ def test_get_collection_enum_unregistered_relationship():
     the System parent pattern.
     """
     # Try a relationship that doesn't exist
-    collection_enum = PLEXOSComponentRegistry.get_collection_enum(
-        ClassEnum.Region, ClassEnum.Generator
-    )
+    collection_enum = PLEXOSComponentRegistry.get_collection_enum(ClassEnum.Region, ClassEnum.Generator)
     # This might be None or might exist depending on PLEXOS schema
     # Just verify it doesn't raise an error
     assert collection_enum is None or isinstance(collection_enum, CollectionEnum)
@@ -132,7 +117,8 @@ def test_get_collection_enum_system_parent_nonexistent_plural():
     # This is a bit tricky since most do have plurals
     # We can test the error handling path
     collection_enum = PLEXOSComponentRegistry.get_collection_enum(
-        ClassEnum.System, ClassEnum.System  # System -> Systems doesn't exist
+        ClassEnum.System,
+        ClassEnum.System,  # System -> Systems doesn't exist
     )
     # Should return None when plural not found
     assert collection_enum is None or isinstance(collection_enum, CollectionEnum)
@@ -157,6 +143,7 @@ def test_determine_collection_with_unregistered_parent():
     Verifies that determine_collection() returns None when the
     parent component is not registered.
     """
+
     class UnregisteredParent:
         pass
 
@@ -173,6 +160,7 @@ def test_determine_collection_with_unregistered_child():
     Verifies that determine_collection() returns None when the
     child component is not registered.
     """
+
     class UnregisteredChild:
         pass
 
@@ -210,15 +198,11 @@ def test_register_collection_dynamically():
     """
     # Register a new collection relationship
     PLEXOSComponentRegistry.register_collection(
-        ClassEnum.Region,
-        ClassEnum.Generator,
-        CollectionEnum.Generators
+        ClassEnum.Region, ClassEnum.Generator, CollectionEnum.Generators
     )
 
     # Verify it's registered
-    collection_enum = PLEXOSComponentRegistry.get_collection_enum(
-        ClassEnum.Region, ClassEnum.Generator
-    )
+    collection_enum = PLEXOSComponentRegistry.get_collection_enum(ClassEnum.Region, ClassEnum.Generator)
     assert collection_enum == CollectionEnum.Generators
 
 
@@ -238,11 +222,10 @@ def test_system_collections_auto_registered():
     ]
 
     for child_enum, expected_collection in test_cases:
-        collection_enum = PLEXOSComponentRegistry.get_collection_enum(
-            ClassEnum.System, child_enum
-        )
-        assert collection_enum == expected_collection, \
+        collection_enum = PLEXOSComponentRegistry.get_collection_enum(ClassEnum.System, child_enum)
+        assert collection_enum == expected_collection, (
             f"Failed for {child_enum.name}: expected {expected_collection.name}, got {collection_enum}"
+        )
 
 
 def test_special_plural_forms_in_registry():
@@ -252,15 +235,11 @@ def test_special_plural_forms_in_registry():
     handles irregular plurals correctly.
     """
     # Battery -> Batteries (not Batterys)
-    collection_enum = PLEXOSComponentRegistry.get_collection_enum(
-        ClassEnum.System, ClassEnum.Battery
-    )
+    collection_enum = PLEXOSComponentRegistry.get_collection_enum(ClassEnum.System, ClassEnum.Battery)
     assert collection_enum == CollectionEnum.Batteries
 
     # Storage -> Storages (already ends in 'e')
-    collection_enum = PLEXOSComponentRegistry.get_collection_enum(
-        ClassEnum.System, ClassEnum.Storage
-    )
+    collection_enum = PLEXOSComponentRegistry.get_collection_enum(ClassEnum.System, ClassEnum.Storage)
     assert collection_enum == CollectionEnum.Storages
 
 
@@ -301,8 +280,6 @@ def test_collection_enum_not_found_in_special_plurals():
 
     # Just verify the method handles all current ClassEnum values
     for class_enum in ClassEnum:
-        collection_enum = PLEXOSComponentRegistry.get_collection_enum(
-            ClassEnum.System, class_enum
-        )
+        collection_enum = PLEXOSComponentRegistry.get_collection_enum(ClassEnum.System, class_enum)
         # Should either return a CollectionEnum or None, never crash
         assert collection_enum is None or isinstance(collection_enum, CollectionEnum)

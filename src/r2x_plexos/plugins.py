@@ -1,31 +1,24 @@
-"""Plugin manifest for the r2x-plexos package."""
+"""Plugin exports for r2x-plexos package.
 
-from __future__ import annotations
+This module provides direct class exports for the r2x-plexos plugin system.
+The new r2x-core 0.2.x pattern uses direct class exports instead of PluginManifest.
+"""
 
-from r2x_core import PluginManifest, PluginSpec
+from r2x_plexos import PLEXOSConfig, PLEXOSParser
+from r2x_plexos.exporter import PLEXOSExporter
 
-from .config import PLEXOSConfig
-from .exporter import PLEXOSExporter
-from .parser import PLEXOSParser
+# Main plugins - direct class references for entry points
+parser = PLEXOSParser
+exporter = PLEXOSExporter
+config = PLEXOSConfig
 
-manifest = PluginManifest(package="r2x-plexos")
-
-manifest.add(
-    PluginSpec.parser(
-        name="r2x_plexos.parser",
-        entry=PLEXOSParser,
-        config=PLEXOSConfig,
-        description="Parse PLEXOS XML models into an infrasys.System.",
-    )
-)
-
-manifest.add(
-    PluginSpec.exporter(
-        name="r2x_plexos.exporter",
-        entry=PLEXOSExporter,
-        config=PLEXOSConfig,
-        description="Export an infrasys.System to PLEXOS XML format.",
-    )
-)
-
-__all__ = ["manifest"]
+__all__ = [
+    # Classes
+    "PLEXOSConfig",
+    "PLEXOSExporter",
+    "PLEXOSParser",
+    # Plugin references
+    "config",
+    "exporter",
+    "parser",
+]

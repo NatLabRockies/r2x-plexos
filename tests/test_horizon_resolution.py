@@ -8,10 +8,10 @@ import pytest
 from plexosdb import ClassEnum, CollectionEnum, PlexosDB
 
 from r2x_core import DataFile, DataStore, System
-from r2x_plexos.config import PLEXOSConfig
 from r2x_plexos.models import PLEXOSRegion
 from r2x_plexos.models.datafile import PLEXOSDatafile
 from r2x_plexos.parser import PLEXOSParser
+from r2x_plexos.plugin_config import PLEXOSConfig
 
 
 def daterange(start_date, end_date):

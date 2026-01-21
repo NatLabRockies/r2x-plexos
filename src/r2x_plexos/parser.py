@@ -10,7 +10,7 @@ from importlib.metadata import version
 from importlib.resources import files
 from operator import itemgetter
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 from uuid import UUID
 
 from infrasys import Component
@@ -18,10 +18,8 @@ from infrasys.time_series_models import SingleTimeSeries
 from loguru import logger
 from plexosdb import ClassEnum, PlexosDB
 
-from r2x_core import BaseParser, DataStore, Err, Ok, ParserError, Result
-from r2x_core.datafile_utils import get_fpath
+from r2x_core import DataStore, Err, Ok, Plugin, Result
 
-from .config import PLEXOSConfig
 from .datafile_handler import ParsedFileData, extract_file_data, extract_one_time_series
 from .models import (
     PLEXOSDatafile,
@@ -36,6 +34,7 @@ from .models.collection_property import CollectionProperties
 from .models.timeslice import PLEXOSTimeslice
 from .models.utils import get_field_name_by_alias
 from .models.variable import PLEXOSVariable
+from .plugin_config import PLEXOSConfig
 from .utils_mappings import PLEXOS_TYPE_MAP
 from .utils_parser import (
     apply_action,
@@ -117,7 +116,7 @@ class TimeSeriesReference:
     membership_id: int | None = None
 
 
-class PLEXOSParser(BaseParser):
+class PLEXOSParser(Plugin[PLEXOSConfig]):
     """Parse PLEXOS XML models into r2x-core system representation.
 
     Implements a three-phase parsing strategy:
@@ -139,7 +138,7 @@ class PLEXOSParser(BaseParser):
     @property
     def config(self) -> PLEXOSConfig:
         """Return the PLEXOSConfig instance."""
-        return cast(PLEXOSConfig, super().config)
+        return super().config
 
     def __init__(
         self,
@@ -178,13 +177,14 @@ class PLEXOSParser(BaseParser):
         - _collection_properties_cache: object_id -> property records mapping
         - _attached_timeseries: (uuid, field_name) -> bool attachment tracker
         """
-        super().__init__(
-            config,
-            data_store=data_store,
-            system_name=name or "system",
-            auto_add_composed_components=auto_add_composed_components,
-            skip_validation=skip_validation,
-        )
+        super().__init__()
+
+        # Main configuration
+        self._config = config
+        self._system_name = name or "system"
+        self._auto_add_composed_components = auto_add_composed_components
+        self._skip_validation = skip_validation
+
         self.model_name = config.model_name
         self.time_series_references: list[TimeSeriesReference] = []
         self._component_cache: dict[int, PLEXOSObject] = {}
@@ -200,20 +200,19 @@ class PLEXOSParser(BaseParser):
 
         self.db = db
         if not db:
-            # NOTE: We should change either plexosdb db to take xmltree or an
-            # easier way to get the fpath of resolved globs.
             data_file = data_store["xml_file"]
-            file_path_result = get_fpath(data_file, data_store.folder, info=data_file.info)
-            if file_path_result.is_err():
-                raise ValueError(f"Could not resolve XML file path: {file_path_result.err()}")
-            fpath = file_path_result.unwrap()
+            self.store.add_data([data_file])
+            fpath = data_file.fpath
+            if not fpath:
+                raise ValueError(f"Could not resolve XML file path from data_file: {data_file.name}")
+
             self.db = PlexosDB.from_xml(fpath)
         assert self.db, "Database not created correctly. Check XML file."
 
-    def validate_inputs(self) -> Result[None, ParserError]:
+    def validate_inputs(self) -> Result[None, str]:
         """Validate input data before parsing."""
         if self.db is None:
-            return Err(ParserError("Database not initialized"))
+            return Err("Database not initialized")
 
         try:
             logger.info("Selecting model={}", self.model_name)
@@ -250,14 +249,14 @@ class PLEXOSParser(BaseParser):
                         int((self._horizon_end - self._horizon_start).total_seconds() / 3600),
                     )
         except Exception as exc:  # pragma: no cover - unexpected validation error
-            return Err(ParserError(str(exc)))
+            return Err(str(exc))
 
         return Ok(None)
 
-    def build_system_components(self) -> Result[None, ParserError]:
+    def build_system_components(self) -> Result[None, str]:
         """Create PLEXOS components and establish relationships."""
         if self.db is None:
-            return Err(ParserError("Database not initialized"))
+            return Err("Database not initialized")
 
         try:
             logger.info("Building PLEXOS system components...")
@@ -296,11 +295,11 @@ class PLEXOSParser(BaseParser):
             self._add_memberships()
             self._add_collection_properties()
         except Exception as exc:  # pragma: no cover - unexpected component error
-            return Err(ParserError(str(exc)))
+            return Err(str(exc))
 
         return Ok(None)
 
-    def build_time_series(self) -> Result[None, ParserError]:
+    def build_time_series(self) -> Result[None, str]:
         """Attach time series data using three-stage processing."""
         logger.info("Building time series data...")
 
@@ -373,11 +372,11 @@ class PLEXOSParser(BaseParser):
                 failed_names = [ref.component_name for ref, _ in self._failed_references[:5]]
                 logger.warning(f"Failed references (first 5): {failed_names}")
         except Exception as exc:  # pragma: no cover - unexpected time series failure
-            return Err(ParserError(str(exc)))
+            return Err(str(exc))
 
         return Ok(None)
 
-    def postprocess_system(self) -> Result[None, ParserError]:
+    def postprocess_system(self) -> Result[None, str]:
         """Set system metadata and log summary statistics."""
         logger.info("Post-processing PLEXOS system...")
 
@@ -390,7 +389,7 @@ class PLEXOSParser(BaseParser):
             logger.info("Total components: {}", total_components)
             logger.info("Post-processing complete")
         except Exception as exc:  # pragma: no cover - logging/setup failure
-            return Err(ParserError(str(exc)))
+            return Err(str(exc))
 
         return Ok(None)
 

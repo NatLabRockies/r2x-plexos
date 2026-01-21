@@ -11,9 +11,9 @@ from plexosdb.enums import get_default_collection
 
 from r2x_core import BaseExporter, DataStore, Err, ExporterError, Ok, Result
 
-from .config import PLEXOSConfig
 from .models import PLEXOSDatafile, PLEXOSHorizon, PLEXOSMembership, PLEXOSModel, PLEXOSObject
 from .models.property import PLEXOSPropertyValue
+from .plugin_config import PLEXOSConfig
 from .utils_exporter import (
     export_time_series_csv,
     generate_csv_filename,
