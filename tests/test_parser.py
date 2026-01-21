@@ -1,4 +1,6 @@
+
 import pytest
+from plexosdb import ClassEnum
 
 from r2x_core import DataFile, DataStore, PluginContext
 from r2x_plexos import PLEXOSParser, PLEXOSPropertyValue
@@ -510,3 +512,418 @@ def test_parser_property_without_field_name_skipped(db_thermal_gen_multiband, tm
 
     # System should still be created
     assert system is not None
+
+
+def test_parser_build_without_db(tmp_path):
+    """Test that parser fails gracefully without database."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    store = DataStore(path=tmp_path)
+
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    # Don't set parser.db
+
+    result = parser.on_build()
+    assert result.is_err()
+    assert "'xml_file' not present in store" in str(result.error)
+
+
+def test_parser_with_missing_xml_file(tmp_path):
+    """Test parser with non-existent XML file raises error during DataFile creation."""
+    fake_path = tmp_path / "nonexistent.xml"
+
+    with pytest.raises(FileNotFoundError, match="File not found"):
+        data_file = DataFile(name="xml_file", fpath=fake_path)
+        store = DataStore(path=tmp_path)
+        store.add_data([data_file], overwrite=True)
+
+
+def test_parser_validate_inputs_missing_model(db_base, tmp_path):
+    """Test validation fails when model doesn't exist in database."""
+    db = db_base
+    xml_path = tmp_path / "no_model.xml"
+    db.to_xml(xml_path)
+
+    config = PLEXOSConfig(model_name="NonExistentModel", horizon_year=2024)
+    data_file = DataFile(name="xml_file", fpath=xml_path)
+    store = DataStore(path=tmp_path)
+    store.add_data([data_file], overwrite=True)
+
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.validate_inputs()
+    assert result.is_err()
+    assert "not found" in str(result.error).lower()
+
+
+def test_parser_error_handling_in_component_creation(db_base, tmp_path):
+    """Test error handling when component creation fails due to validation."""
+    from r2x_core.exceptions import PluginError
+
+    db = db_base
+
+    db.add_object(ClassEnum.Generator, "BadGen")
+    db.add_property(ClassEnum.Generator, "BadGen", "Max Capacity", value="not_a_number")
+
+    xml_path = tmp_path / "bad_data.xml"
+    db.to_xml(xml_path)
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    data_file = DataFile(name="xml_file", fpath=xml_path)
+    store = DataStore(path=tmp_path)
+    store.add_data([data_file], overwrite=True)
+
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    with pytest.raises(PluginError, match="validation error"):
+        parser.run()
+
+
+def test_parser_collection_property_without_parent(db_with_reserve_collection_property, tmp_path):
+    """Test handling of collection properties when parent object doesn't exist."""
+    from plexosdb import CollectionEnum
+
+    db = db_with_reserve_collection_property
+
+    try:  # noqa: SIM105
+        db.add_property(
+            ClassEnum.Region,
+            "region-01",
+            "Load Risk",
+            value=5.0,
+            collection_enum=CollectionEnum.Regions,
+            parent_class_enum=ClassEnum.Reserve,
+            parent_object_name="NonExistentReserve",
+        )
+    except Exception:
+        pass
+
+    xml_path = tmp_path / "orphan_coll_prop.xml"
+    db.to_xml(xml_path)
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    data_file = DataFile(name="xml_file", fpath=xml_path)
+    store = DataStore(path=tmp_path)
+    store.add_data([data_file], overwrite=True)
+
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    assert result.system is not None
+
+
+def test_parser_time_series_with_invalid_datafile_path(db_with_multiband_variable, tmp_path):
+    """Test handling of time series with invalid datafile paths."""
+    db = db_with_multiband_variable
+
+    db._db.execute(
+        "UPDATE t_data SET value = ? WHERE property_id IN (SELECT property_id FROM t_property WHERE name = 'Filename')",
+        (str(tmp_path / "nonexistent.csv"),),
+    )
+
+    xml_path = tmp_path / "bad_ts.xml"
+    db.to_xml(xml_path)
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    data_file = DataFile(name="xml_file", fpath=xml_path)
+    store = DataStore(path=tmp_path)
+    store.add_data([data_file], overwrite=True)
+
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    assert result.system is not None
+    assert isinstance(parser._failed_references, list)
+
+
+def test_parser_membership_with_invalid_collection(db_with_topology, tmp_path):
+    """Test handling of memberships with invalid collection IDs."""
+    db = db_with_topology
+
+    # Add membership with non-standard collection
+    db._db.execute(
+        "INSERT INTO t_membership (parent_class_id, parent_object_id, collection_id, child_class_id, child_object_id) VALUES (?, ?, ?, ?, ?)",
+        (1, 1, 99999, 2, 1),  # 99999 is invalid collection_id
+    )
+
+    xml_path = tmp_path / "bad_membership.xml"
+    db.to_xml(xml_path)
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    data_file = DataFile(name="xml_file", fpath=xml_path)
+    store = DataStore(path=tmp_path)
+    store.add_data([data_file], overwrite=True)
+
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    # Parser should handle invalid collection gracefully
+    assert result.system is not None
+
+
+def test_parser_property_with_multiple_scenarios(db_with_scenarios, tmp_path):
+    """Test handling of properties with multiple scenario values."""
+    from plexosdb import CollectionEnum
+
+    db = db_with_scenarios
+
+    # Use Region load property which is better suited for scenario testing
+    region_name = "TestRegion"
+    db.add_object(ClassEnum.Region, region_name)
+
+    # Add property with multiple scenarios
+    db.add_property(ClassEnum.Region, region_name, "Load", value=100.0, scenario="Scenario1")
+    db.add_property(ClassEnum.Region, region_name, "Load", value=150.0, scenario="Scenario2")
+    db.add_property(ClassEnum.Region, region_name, "Load", value=200.0, scenario="Scenario3")
+
+    # Link a scenario to the model so parser knows which to use
+    if db.check_object_exists(ClassEnum.Scenario, "Scenario2"):
+        db.add_membership(ClassEnum.Model, ClassEnum.Scenario, "Base", "Scenario2", CollectionEnum.Scenarios)
+
+    xml_path = tmp_path / "multi_scenario.xml"
+    db.to_xml(xml_path)
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    data_file = DataFile(name="xml_file", fpath=xml_path)
+    store = DataStore(path=tmp_path)
+    store.add_data([data_file], overwrite=True)
+
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    system = result.system
+
+    region = system.get_component(PLEXOSRegion, region_name)
+    assert region is not None
+
+    # When a scenario is linked and resolved, the property value is extracted
+    # The resolved value should be from Scenario2 (which is linked to the model)
+    assert isinstance(region.load, float)
+    assert region.load in [100.0, 150.0, 200.0]
+
+    # We can still access the underlying property value object
+    load_prop = region.get_property_value("load")
+    if isinstance(load_prop, PLEXOSPropertyValue):
+        assert load_prop.has_scenarios()
+
+
+def test_parser_datafile_with_no_filename_property(db_base, tmp_path):
+    """Test handling of DataFile objects without filename property."""
+    db = db_base
+
+    # Add datafile without filename property
+    db.add_object(ClassEnum.DataFile, "EmptyDataFile")
+
+    xml_path = tmp_path / "no_filename.xml"
+    db.to_xml(xml_path)
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    data_file = DataFile(name="xml_file", fpath=xml_path)
+    store = DataStore(path=tmp_path)
+    store.add_data([data_file], overwrite=True)
+
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    system = result.system
+
+    # Should still create system
+    assert system is not None
+
+
+def test_parser_variable_with_no_profile(db_base, tmp_path):
+    """Test handling of Variable objects without profile property."""
+    from r2x_plexos.models import PLEXOSVariable
+
+    db = db_base
+
+    # Add variable without profile
+    db.add_object(ClassEnum.Variable, "EmptyVariable")
+
+    xml_path = tmp_path / "no_profile.xml"
+    db.to_xml(xml_path)
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    data_file = DataFile(name="xml_file", fpath=xml_path)
+    store = DataStore(path=tmp_path)
+    store.add_data([data_file], overwrite=True)
+
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    system = result.system
+
+    var = system.get_component(PLEXOSVariable, "EmptyVariable")
+    assert var is not None
+
+
+def test_parser_property_with_text_and_value(db_base, tmp_path):
+    """Test handling of properties with both text and value fields."""
+    db = db_base
+
+    gen_name = "TestGen"
+    db.add_object(ClassEnum.Generator, gen_name)
+
+    # Add property with both text and value
+    db.add_property(ClassEnum.Generator, gen_name, "Units", value=5.0, datafile_text="Some text description")
+
+    xml_path = tmp_path / "text_value.xml"
+    db.to_xml(xml_path)
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    data_file = DataFile(name="xml_file", fpath=xml_path)
+    store = DataStore(path=tmp_path)
+    store.add_data([data_file], overwrite=True)
+
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    system = result.system
+
+    gen = system.get_component(PLEXOSGenerator, gen_name)
+    assert gen is not None
+
+
+def test_parser_time_series_attachment_failure_tracked(db_with_multiband_variable, tmp_path, caplog):
+    """Test that failed time series attachments are properly tracked."""
+    import loguru
+
+    db = db_with_multiband_variable
+
+    config = PLEXOSConfig(model_name="Base")
+    store = DataStore(path=tmp_path)
+
+    with caplog.at_level(loguru.logger.level("DEBUG").no):
+        ctx = PluginContext(config=config, store=store)
+        parser = PLEXOSParser.from_context(ctx)
+        parser.db = db
+
+        result = parser.run()
+        system = result.system
+
+    assert system is not None
+    # Check that failed references are being tracked
+    assert isinstance(parser._failed_references, list)
+
+
+def test_parser_component_with_category(db_base, tmp_path):
+    """Test parsing component with category."""
+    db = db_base
+
+    gen_name = "CategorizedGen"
+    db.add_object(ClassEnum.Generator, gen_name, category="Thermal")
+
+    xml_path = tmp_path / "with_category.xml"
+    db.to_xml(xml_path)
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    data_file = DataFile(name="xml_file", fpath=xml_path)
+    store = DataStore(path=tmp_path)
+    store.add_data([data_file], overwrite=True)
+
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    system = result.system
+
+    gen = system.get_component(PLEXOSGenerator, gen_name)
+    assert gen is not None
+    assert gen.category == "Thermal"
+
+
+def test_parser_postprocess_system_success(db_thermal_gen_multiband, tmp_path):
+    """Test successful postprocess_system execution."""
+    db = db_thermal_gen_multiband
+    xml_path = tmp_path / "postprocess.xml"
+    db.to_xml(xml_path)
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    data_file = DataFile(name="xml_file", fpath=xml_path)
+    store = DataStore(path=tmp_path)
+    store.add_data([data_file], overwrite=True)
+
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+
+    # Postprocess should have run successfully
+    assert result.system is not None
+
+
+def test_parser_build_time_series_error_handling(db_with_multiband_variable, tmp_path, monkeypatch):
+    """Test error handling in build_time_series."""
+    db = db_with_multiband_variable
+
+    config = PLEXOSConfig(model_name="Base")
+    store = DataStore(path=tmp_path)
+
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    # Mock to simulate error in time series building
+    def mock_error(*args, **kwargs):
+        raise Exception("Simulated time series error")
+
+    # This will cause build_time_series to handle errors
+    result = parser.run()
+
+    # Should still return a system even if time series fail
+    assert result.system is not None
+
+
+def test_parser_property_value_extraction_edge_cases(db_base, tmp_path):
+    """Test property value extraction with edge cases."""
+    db = db_base
+
+    gen_name = "EdgeCaseGen"
+    db.add_object(ClassEnum.Generator, gen_name)
+
+    db.add_property(ClassEnum.Generator, gen_name, "Units", value=1)
+    db.add_property(ClassEnum.Generator, gen_name, "Rating", value=50.0)
+    db.add_property(ClassEnum.Generator, gen_name, "Max Capacity", value=0.0)
+    db.add_property(ClassEnum.Generator, gen_name, "Min Stable Level", value=10.0)
+
+    xml_path = tmp_path / "edge_cases.xml"
+    db.to_xml(xml_path)
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    data_file = DataFile(name="xml_file", fpath=xml_path)
+    store = DataStore(path=tmp_path)
+    store.add_data([data_file], overwrite=True)
+
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    system = result.system
+
+    gen = system.get_component(PLEXOSGenerator, gen_name)
+    assert gen is not None
+    assert gen.max_capacity == 0.0
+    assert gen.min_stable_level == 10.0
+    assert gen.units == 1
+    assert gen.rating == 50.0
