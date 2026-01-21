@@ -9,7 +9,7 @@ from loguru import logger
 from plexosdb import ClassEnum, PlexosDB
 from plexosdb.enums import get_default_collection
 
-from r2x_core import BaseExporter, DataStore, Err, ExporterError, Ok, Result
+from r2x_core import DataStore, Err, Ok, Plugin, Result
 
 from .models import PLEXOSDatafile, PLEXOSHorizon, PLEXOSMembership, PLEXOSModel, PLEXOSObject
 from .models.property import PLEXOSPropertyValue
@@ -30,7 +30,7 @@ NESTED_ATTRIBUTES = {"ext", "bus", "services"}
 DEFAULT_XML_TEMPLATE = "master_9.2R6_btu.xml"
 
 
-class PLEXOSExporter(BaseExporter):
+class PLEXOSExporter(Plugin[PLEXOSConfig]):
     """PLEXOS XML exporter."""
 
     def __init__(
@@ -80,7 +80,7 @@ class PLEXOSExporter(BaseExporter):
         if not self.db.check_object_exists(ClassEnum.Scenario, plexos_scenario):
             self.db.add_scenario(plexos_scenario)
 
-    def setup_configuration(self) -> Result[None, ExporterError]:
+    def setup_configuration(self) -> Result[None, str]:
         """Set up simulation configuration (models, horizons, and simulation configs).
 
         This method supports two workflows:
@@ -123,10 +123,8 @@ class PLEXOSExporter(BaseExporter):
         )
         if horizon_year is None:
             return Err(
-                ExporterError(
-                    "New database requires 'horizon_year' (or 'reference_year') in config "
-                    "to create simulation configuration"
-                )
+                "New database requires 'horizon_year' (or 'reference_year') in config "
+                "to create simulation configuration"
             )
 
         sim_config = {
@@ -144,7 +142,7 @@ class PLEXOSExporter(BaseExporter):
 
         if simulation_result.is_err():
             assert isinstance(simulation_result, Err)
-            return Err(ExporterError(f"Failed to build simulation: {simulation_result.error}"))
+            return Err(f"Failed to build simulation: {simulation_result.error}")
 
         build_result = simulation_result.unwrap()
         logger.info(
@@ -156,7 +154,7 @@ class PLEXOSExporter(BaseExporter):
         ingest_result = ingest_simulation_to_plexosdb(self.db, build_result, validate=False)
         if ingest_result.is_err():
             assert isinstance(ingest_result, Err)
-            return Err(ExporterError(f"Failed to ingest simulation: {ingest_result.error}"))
+            return Err(f"Failed to ingest simulation: {ingest_result.error}")
 
         ingest_info = ingest_result.unwrap()
         sim_config_count = len(ingest_info.get("simulation_objects", []))
@@ -169,7 +167,7 @@ class PLEXOSExporter(BaseExporter):
 
         return Ok(None)
 
-    def prepare_export(self) -> Result[None, ExporterError]:
+    def prepare_export(self) -> Result[None, str]:
         """Add component objects to the database.
 
         This method bulk inserts component objects (generators, nodes, etc.) into the database.
@@ -218,7 +216,7 @@ class PLEXOSExporter(BaseExporter):
 
         return Ok(None)
 
-    def postprocess_export(self) -> Result[None, ExporterError]:
+    def postprocess_export(self) -> Result[None, str]:
         """Add properties and memberships to the database.
 
         This method:
@@ -250,13 +248,13 @@ class PLEXOSExporter(BaseExporter):
 
         if not self._validate_xml(str(xml_path)):
             logger.error(f"Exported XML at {xml_path} is not valid!")
-            return Err(ExporterError(f"Exported XML at {xml_path} is not valid!"))
+            return Err(f"Exported XML at {xml_path} is not valid!")
         else:
             logger.success("Exported XML was correctly validated.")
 
         return Ok(None)
 
-    def export_time_series(self) -> Result[None, ExporterError]:
+    def export_time_series(self) -> Result[None, str]:
         """Export time series to CSV files and update property references.
 
         Returns
@@ -325,13 +323,13 @@ class PLEXOSExporter(BaseExporter):
             if result.is_err():
                 assert isinstance(result, Err)
                 logger.error(f"Failed to export time series: {result.error}")
-                return Err(ExporterError(f"Time series export failed: {result.error}"))
+                return Err(f"Time series export failed: {result.error}")
 
         logger.info(f"Exported {len(csv_filepaths)} time series files to {output_dir}")
 
         return Ok(None)
 
-    def validate_export(self) -> Result[None, ExporterError]:
+    def validate_export(self) -> Result[None, str]:
         """Validate the export (placeholder for future validation logic)."""
         return Ok(None)
 
