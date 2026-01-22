@@ -7,11 +7,11 @@ from pathlib import Path
 import pytest
 from plexosdb import ClassEnum, CollectionEnum, PlexosDB
 
-from r2x_core import DataFile, DataStore, System
-from r2x_plexos.config import PLEXOSConfig
+from r2x_core import DataFile, DataStore, PluginContext, System
 from r2x_plexos.models import PLEXOSRegion
 from r2x_plexos.models.datafile import PLEXOSDatafile
 from r2x_plexos.parser import PLEXOSParser
+from r2x_plexos.plugin_config import PLEXOSConfig
 
 
 def daterange(start_date, end_date):
@@ -81,7 +81,7 @@ def xml_with_multi_weather_chrono(tmp_path, year_daily_hour):
     db.add_membership(ClassEnum.Model, ClassEnum.Scenario, "Base", "scenario_2", CollectionEnum.Scenarios)
 
     regions = ["r1", "r2"]
-    db.add_objects(ClassEnum.Region, regions)
+    db.add_objects(ClassEnum.Region, *regions)
     for region in regions:
         region_prop_id = db.add_property(ClassEnum.Region, region, "Load", 0.0, band=1)
         db._db.execute(
@@ -110,17 +110,23 @@ def xml_with_multi_weather_chrono(tmp_path, year_daily_hour):
 
     xml_path = tmp_path / "year_daily_hour.xml"
     db.to_xml(xml_path)
-    return xml_path
+    return xml_path, db
 
 
 def test_multi_band_datafile(tmp_path, xml_with_multi_weather_chrono, caplog):
-    config = PLEXOSConfig(model_name="TestModel", reference_year=2026)
-    data_file = DataFile(name="xml_file", fpath=xml_with_multi_weather_chrono)
-    store = DataStore(path=tmp_path)
-    store.add_data(data_file)
+    xml_path, db = xml_with_multi_weather_chrono
 
-    parser = PLEXOSParser(config, store)
-    sys: System = parser.build_system()
+    config = PLEXOSConfig(model_name="TestModel", horizon_year=2026)
+    data_file = DataFile(name="xml_file", fpath=xml_path)
+    store = DataStore(path=tmp_path)
+    store.add_data([data_file], overwrite=True)
+
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    sys: System = result.system
 
     # Variable inspection
     variable_component = sys.get_component(PLEXOSDatafile, "LoadProfiles")
@@ -144,5 +150,5 @@ def test_multi_band_datafile(tmp_path, xml_with_multi_weather_chrono, caplog):
 
         ts_list = sys.list_time_series(region_component)
         ts = ts_list[0]
-        assert len(ts.data) == 120  # 5 days from the chronoology
+        assert len(ts.data) == 120  # 5 days from the chronology
         assert all(val != 0 for val in ts.data[:120])  # Check first 5 days hours are non-zero

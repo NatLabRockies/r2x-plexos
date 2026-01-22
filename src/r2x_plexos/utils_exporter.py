@@ -9,8 +9,8 @@ from infrasys import System
 from infrasys.time_series_models import SingleTimeSeries
 
 from r2x_core import Ok, Result
-from r2x_plexos.config import PLEXOSConfig
 from r2x_plexos.models.component import PLEXOSObject
+from r2x_plexos.plugin_config import PLEXOSConfig
 
 
 def get_component_category(component: PLEXOSObject) -> str | None:

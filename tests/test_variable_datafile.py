@@ -1,6 +1,6 @@
 """Test variable resolution with constant values."""
 
-from r2x_core import DataFile, DataStore
+from r2x_core import DataFile, DataStore, PluginContext
 from r2x_plexos import PLEXOSConfig, PLEXOSParser
 from r2x_plexos.models.datafile import PLEXOSDatafile
 from r2x_plexos.models.generator import PLEXOSGenerator
@@ -13,13 +13,17 @@ def test_variable_timeseries(db_with_variable_monthly, tmp_path):
     xml_path = tmp_path / "variable_ts.xml"
     db.to_xml(xml_path)
 
-    config = PLEXOSConfig(model_name="Base", reference_year=2024)
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
     store = DataStore(path=tmp_path)
-    store.add_data(data_file)
+    store.add_data([data_file], overwrite=True)
 
-    parser = PLEXOSParser(config, store)
-    sys = parser.build_system()
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    sys = result.system
 
     generator_component = sys.get_component(PLEXOSGenerator, "TestGen")
     datafile_component = sys.get_component(PLEXOSDatafile, "Ratings")

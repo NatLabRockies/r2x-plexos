@@ -1,10 +1,10 @@
 """Test variable resolution with constant values."""
 
-from r2x_core import DataStore, System
-from r2x_plexos.config import PLEXOSConfig
+from r2x_core import DataStore, PluginContext, System
 from r2x_plexos.models import PLEXOSRegion
 from r2x_plexos.models.datafile import PLEXOSDatafile
 from r2x_plexos.parser import PLEXOSParser
+from r2x_plexos.plugin_config import PLEXOSConfig
 
 
 def test_multi_band_datafile(tmp_path, db_with_multiband_variable, caplog):
@@ -12,8 +12,12 @@ def test_multi_band_datafile(tmp_path, db_with_multiband_variable, caplog):
     config = PLEXOSConfig(model_name="Base")
     store = DataStore(path=tmp_path)
 
-    parser = PLEXOSParser(config, store, db=db)
-    sys: System = parser.build_system()
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    sys: System = result.system
 
     # Variable inspection
     variable_component = sys.get_component(PLEXOSDatafile, "LoadProfiles")

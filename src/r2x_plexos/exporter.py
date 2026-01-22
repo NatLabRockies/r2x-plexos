@@ -9,11 +9,11 @@ from loguru import logger
 from plexosdb import ClassEnum, PlexosDB
 from plexosdb.enums import get_default_collection
 
-from r2x_core import BaseExporter, DataStore, Err, ExporterError, Ok, Result
+from r2x_core import Err, Ok, Plugin, Result
 
-from .config import PLEXOSConfig
 from .models import PLEXOSDatafile, PLEXOSHorizon, PLEXOSMembership, PLEXOSModel, PLEXOSObject
 from .models.property import PLEXOSPropertyValue
+from .plugin_config import PLEXOSConfig
 from .utils_exporter import (
     export_time_series_csv,
     generate_csv_filename,
@@ -30,57 +30,74 @@ NESTED_ATTRIBUTES = {"ext", "bus", "services"}
 DEFAULT_XML_TEMPLATE = "master_9.2R6_btu.xml"
 
 
-class PLEXOSExporter(BaseExporter):
+class PLEXOSExporter(Plugin[PLEXOSConfig]):
     """PLEXOS XML exporter."""
 
-    def __init__(
-        self,
-        *args: Any,
-        data_store: DataStore | None = None,
-        plexos_scenario: str = "default",
-        output_path: str | None = None,
-        xml_fname: str | None = None,
-        exclude_defaults: bool = True,
-        db: PlexosDB | None = None,  # Allow passing existing DB for testing
-        solve_year: int | None = None,  # ReEDS field for filename association
-        weather_year: int | None = None,  # ReEDS field for filename association
-        **kwargs: Any,
-    ) -> None:
-        """Start exporter."""
-        self.exclude_defaults = exclude_defaults
-        if not exclude_defaults:
-            logger.info("Including default values while populating PLEXOS database")
+    def __init__(self) -> None:
+        """Initialize the exporter with minimal state.
 
-        super().__init__(*args, **kwargs)
-        logger.debug("Starting {} using configuration {}", type(self).__name__, self.config)
+        Notes
+        -----
+        Actual initialization happens after context is set via from_context().
+        """
+        super().__init__()
 
-        if not isinstance(self.config, PLEXOSConfig):
-            msg = (
-                f"Config is of type {type(self.config)}. "
-                f"It should be type of `{type(PLEXOSConfig).__name__}`."
-            )
-            raise TypeError(msg)
-        self.config: PLEXOSConfig
-        self.output_path = output_path
-        self.solve_year = solve_year
-        self.weather_year = weather_year
-        self.plexos_scenario = plexos_scenario or self.config.model_name
+        self.exclude_defaults: bool = True
+        self.output_path: str | None = None
+        self.solve_year: int | None = None
+        self.weather_year: int | None = None
+        self.plexos_scenario: str = "default"
+        self.db: PlexosDB | None = None
 
-        # Use provided DB if available (for testing), otherwise create from XML
-        if db is not None:
-            self.db = db
-            logger.debug("Using provided PlexosDB instance")
-        else:
-            if not xml_fname and not (xml_fname := self.config.template):
-                xml_fname = self.config.get_config_path().joinpath(DEFAULT_XML_TEMPLATE)
-                logger.debug("Using default XML template")
+    def on_build(self) -> Result[None, str]:
+        """Initialize the exporter after context is set.
 
-            self.db = PlexosDB.from_xml(xml_path=xml_fname)
+        Returns
+        -------
+        Result[None, str]
+            Ok(None) on success, Err with error message on failure
+        """
+        try:
+            logger.debug("Starting {} using configuration {}", type(self).__name__, self.config)
 
-        if not self.db.check_object_exists(ClassEnum.Scenario, plexos_scenario):
-            self.db.add_scenario(plexos_scenario)
+            if not isinstance(self.config, PLEXOSConfig):
+                msg = (
+                    f"Config is of type {type(self.config)}. "
+                    f"It should be type of `{type(PLEXOSConfig).__name__}`."
+                )
+                return Err(msg)
 
-    def setup_configuration(self) -> Result[None, ExporterError]:
+            if self.plexos_scenario == "default":
+                self.plexos_scenario = self.config.model_name
+
+            if self.db is None:
+                xml_fname = self.config.template
+                if not xml_fname:
+                    xml_fname = self.config.get_config_path().joinpath(DEFAULT_XML_TEMPLATE)
+                    logger.debug("Using default XML template")
+
+                self.db = PlexosDB.from_xml(xml_path=xml_fname)
+
+            if not self.db.check_object_exists(ClassEnum.Scenario, self.plexos_scenario):
+                self.db.add_scenario(self.plexos_scenario)
+
+            setup_result = self.setup_configuration()
+            if setup_result.is_err():
+                return setup_result
+
+            prepare_result = self.prepare_export()
+            if prepare_result.is_err():
+                return prepare_result
+
+            postprocess_result = self.postprocess_export()
+            if postprocess_result.is_err():
+                return postprocess_result
+
+            return Ok(None)
+        except Exception as e:
+            return Err(f"Export failed: {e}")
+
+    def setup_configuration(self) -> Result[None, str]:
         """Set up simulation configuration (models, horizons, and simulation configs).
 
         This method supports two workflows:
@@ -100,6 +117,9 @@ class PLEXOSExporter(BaseExporter):
         Result[None, str]
             Ok(None) if successful, Err with error message if failed
         """
+        if self.db is None:
+            return Err("Database not initialized")
+
         logger.info("Setting up simulation configuration")
 
         existing_models = self.db.list_objects_by_class(ClassEnum.Model)
@@ -123,10 +143,8 @@ class PLEXOSExporter(BaseExporter):
         )
         if horizon_year is None:
             return Err(
-                ExporterError(
-                    "New database requires 'horizon_year' (or 'reference_year') in config "
-                    "to create simulation configuration"
-                )
+                "New database requires 'horizon_year' (or 'reference_year') in config "
+                "to create simulation configuration"
             )
 
         sim_config = {
@@ -144,7 +162,7 @@ class PLEXOSExporter(BaseExporter):
 
         if simulation_result.is_err():
             assert isinstance(simulation_result, Err)
-            return Err(ExporterError(f"Failed to build simulation: {simulation_result.error}"))
+            return Err(f"Failed to build simulation: {simulation_result.error}")
 
         build_result = simulation_result.unwrap()
         logger.info(
@@ -156,7 +174,7 @@ class PLEXOSExporter(BaseExporter):
         ingest_result = ingest_simulation_to_plexosdb(self.db, build_result, validate=False)
         if ingest_result.is_err():
             assert isinstance(ingest_result, Err)
-            return Err(ExporterError(f"Failed to ingest simulation: {ingest_result.error}"))
+            return Err(f"Failed to ingest simulation: {ingest_result.error}")
 
         ingest_info = ingest_result.unwrap()
         sim_config_count = len(ingest_info.get("simulation_objects", []))
@@ -169,7 +187,7 @@ class PLEXOSExporter(BaseExporter):
 
         return Ok(None)
 
-    def prepare_export(self) -> Result[None, ExporterError]:
+    def prepare_export(self) -> Result[None, str]:
         """Add component objects to the database.
 
         This method bulk inserts component objects (generators, nodes, etc.) into the database.
@@ -177,6 +195,9 @@ class PLEXOSExporter(BaseExporter):
         It does NOT add properties or memberships - those are added in postprocess_export().
         """
         from itertools import groupby
+
+        if self.db is None:
+            return Err("Database not initialized")
 
         logger.info("Adding components to database")
 
@@ -218,7 +239,7 @@ class PLEXOSExporter(BaseExporter):
 
         return Ok(None)
 
-    def postprocess_export(self) -> Result[None, ExporterError]:
+    def postprocess_export(self) -> Result[None, str]:
         """Add properties and memberships to the database.
 
         This method:
@@ -228,6 +249,9 @@ class PLEXOSExporter(BaseExporter):
 
         Components without properties (PLEXOSDatafile, PLEXOSMembership) are filtered out.
         """
+        if self.db is None:
+            return Err("Database not initialized")
+
         logger.info("Adding properties and memberships")
 
         self._add_component_datafile_objects()
@@ -250,13 +274,210 @@ class PLEXOSExporter(BaseExporter):
 
         if not self._validate_xml(str(xml_path)):
             logger.error(f"Exported XML at {xml_path} is not valid!")
-            return Err(ExporterError(f"Exported XML at {xml_path} is not valid!"))
+            return Err(f"Exported XML at {xml_path} is not valid!")
         else:
             logger.success("Exported XML was correctly validated.")
 
         return Ok(None)
 
-    def export_time_series(self) -> Result[None, ExporterError]:
+    def _add_component_properties(self) -> None:
+        """Add properties for all components, including DataFile objects first."""
+        if self.db is None:
+            logger.error("Database not initialized")
+            return
+
+        logger.info("Adding component properties...")
+
+        # Add properties for PlexosDataFile objects first
+        for component in self.system.get_components(PLEXOSDatafile):
+            datafile_text = component.name
+
+            self.db.add_property(
+                ClassEnum.DataFile,
+                object_name=component.name,
+                name="Filename",
+                value=0,
+                datafile_text=datafile_text,
+            )
+            logger.debug(f"Added Filename property for DataFile: {component.name}")
+
+        # Add properties for each component type except Datafile and Membership
+        skip_types = {PLEXOSModel, PLEXOSHorizon, PLEXOSDatafile, PLEXOSMembership}
+
+        for component_type in self.system.get_component_types():
+            if component_type in skip_types:
+                continue
+
+            class_enum = PLEXOS_TYPE_MAP_INVERTED.get(cast(type[PLEXOSObject], component_type))
+            if not class_enum:
+                continue
+
+            collection = get_default_collection(class_enum)
+            plexos_records = []
+
+            for comp in self.system.get_components(component_type):
+                aliased_dict = comp.model_dump(by_alias=True, exclude_defaults=self.exclude_defaults)
+                metadata_fields = {"name", "category", "uuid", "label", "description", "object_id"}
+                properties: dict[str, Any] = {}
+                for k, v in aliased_dict.items():
+                    if k in metadata_fields or v is None:
+                        continue
+                    if isinstance(v, (int, float, str, bool)):
+                        properties[k] = {"value": v, "band": 1}
+                    elif isinstance(v, dict) and "text" in v:
+                        properties[k] = v
+                if properties:
+                    plexos_record = {"name": comp.name, "properties": properties}
+                    plexos_records.append(plexos_record)
+
+            if not plexos_records:
+                continue
+
+            logger.debug(f"Adding properties for {len(plexos_records)} {component_type.__name__} components")
+            self.db.add_properties_from_records(
+                plexos_records,
+                object_class=class_enum,
+                parent_class=ClassEnum.System,
+                collection=collection,
+                scenario=self.plexos_scenario,
+            )
+
+    def _add_component_memberships(self) -> None:
+        """Add membership relationships to the database."""
+        if self.db is None:
+            logger.error("Database not initialized")
+            return
+
+        memberships = list(self.system.get_supplemental_attributes(PLEXOSMembership))
+
+        if not memberships:
+            logger.warning("No memberships found in system")
+            return
+
+        records = []
+        seen_memberships = set()  # Track unique (parent_object_id, collection_id, child_object_id)
+        duplicate_count = 0
+
+        for membership in memberships:
+            if not membership.parent_object or not membership.child_object:
+                logger.debug("Skipping membership with missing parent or child object")
+                continue
+
+            parent_class = PLEXOS_TYPE_MAP_INVERTED.get(type(membership.parent_object))
+            child_class = PLEXOS_TYPE_MAP_INVERTED.get(type(membership.child_object))
+
+            if not parent_class or not child_class or not membership.collection:
+                logger.info("Skipping membership with unmapped classes or missing collection")
+                continue
+
+            if parent_class in (ClassEnum.Model, ClassEnum.Horizon) or child_class in (
+                ClassEnum.Model,
+                ClassEnum.Horizon,
+            ):
+                continue
+
+            try:
+                parent_object_id = self.db.get_object_id(parent_class, membership.parent_object.name)
+                child_object_id = self.db.get_object_id(child_class, membership.child_object.name)
+                collection_id = self.db.get_collection_id(
+                    membership.collection,
+                    parent_class_enum=parent_class,
+                    child_class_enum=child_class,
+                )
+
+                # Check for duplicates based on the unique constraint
+                membership_key = (parent_object_id, collection_id, child_object_id)
+
+                if membership_key in seen_memberships:
+                    duplicate_count += 1
+                    continue
+
+                seen_memberships.add(membership_key)
+
+                record = {
+                    "parent_class_id": self.db.get_class_id(parent_class),
+                    "parent_object_id": parent_object_id,
+                    "collection_id": collection_id,
+                    "child_class_id": self.db.get_class_id(child_class),
+                    "child_object_id": child_object_id,
+                }
+                records.append(record)
+
+            except Exception:
+                logger.debug("Failed to process membership: {}", membership)
+                continue
+
+        if not records:
+            logger.warning("No valid membership records to add")
+            return
+
+        self.db.add_memberships_from_records(records)
+        logger.success(f"Successfully added {len(records)} memberships")
+
+    def _add_component_datafile_objects(self) -> None:
+        """Add PLEXOSDatafile objects from the system to the database."""
+        if self.db is None:
+            logger.error("Database not initialized")
+            return
+
+        self._create_datafile_objects()
+        datafiles = list(self.system.get_components(PLEXOSDatafile))
+        if not datafiles:
+            logger.info("No PLEXOSDatafile objects to add to DB.")
+            return
+
+        logger.debug(f"Adding {len(datafiles)} PLEXOSDatafile objects to DB.")
+
+        names = [df.name for df in datafiles]
+        self.db.add_objects(ClassEnum.DataFile, *names, category="CSV")
+
+        for data_file in datafiles:
+            object_id = self.db.get_object_id(ClassEnum.DataFile, data_file.name)
+            data_file.object_id = object_id
+            if data_file.filename is not None and hasattr(data_file.filename, "datafile_id"):
+                data_file.filename.datafile_id = object_id
+            else:
+                logger.debug(f"DataFile {data_file.name} has no filename property to update.")
+
+    def _insert_component_tags(self, component_type: type["PLEXOSObject"]) -> None:
+        """Insert tags for all components of the given type."""
+        if self.db is None:
+            logger.error("Database not initialized")
+            return
+
+        for component in self.system.get_components(
+            component_type,
+            filter_func=lambda x: self.system.has_time_series(x),
+        ):
+            attr_list = self.system.list_time_series_keys(component)
+            for attr in attr_list:
+                attr_value = getattr(component, attr.name)
+                if (
+                    getattr(attr_value, "datafile_id", None) is not None
+                    or getattr(attr_value, "variable_id", None) is not None
+                ):
+                    object_data_ids = self.db.get_object_data_ids(
+                        PLEXOS_TYPE_MAP_INVERTED[component_type],
+                        component.name,
+                        property_names=component_type.model_fields[attr.name].alias,
+                    )
+
+                    for object_data_id in object_data_ids:
+                        if getattr(attr_value, "datafile_id", None) is not None:
+                            self._insert_tag(attr_value.datafile_id, object_data_id)
+                        if getattr(attr_value, "variable_id", None) is not None:
+                            self._insert_tag(attr_value.variable_id, object_data_id)
+
+    def _insert_tag(self, object_id: int, data_id: int) -> None:
+        """Insert a tag linking an object to a data file."""
+        if self.db is None:
+            logger.error("Database not initialized")
+            return
+
+        query = "INSERT INTO t_tag (object_id, data_id) VALUES (?, ?)"
+        self.db._db.execute(query, (object_id, data_id))
+
+    def export_time_series(self) -> Result[None, str]:
         """Export time series to CSV files and update property references.
 
         Returns
@@ -325,141 +546,15 @@ class PLEXOSExporter(BaseExporter):
             if result.is_err():
                 assert isinstance(result, Err)
                 logger.error(f"Failed to export time series: {result.error}")
-                return Err(ExporterError(f"Time series export failed: {result.error}"))
+                return Err(f"Time series export failed: {result.error}")
 
         logger.info(f"Exported {len(csv_filepaths)} time series files to {output_dir}")
 
         return Ok(None)
 
-    def validate_export(self) -> Result[None, ExporterError]:
+    def validate_export(self) -> Result[None, str]:
         """Validate the export (placeholder for future validation logic)."""
         return Ok(None)
-
-    def _add_component_properties(self) -> None:
-        """Add properties for all components, including DataFile objects first."""
-        logger.info("Adding component properties...")
-
-        # Add properties for PlexosDataFile objects firstb
-        for component in self.system.get_components(PLEXOSDatafile):
-            datafile_text = component.name
-
-            self.db.add_property(
-                ClassEnum.DataFile,
-                object_name=component.name,
-                name="Filename",
-                value=0,
-                datafile_text=datafile_text,
-            )
-            logger.debug(f"Added Filename property for DataFile: {component.name}")
-
-        # Add properties for each component type except Datafile and Membership
-        skip_types = {PLEXOSModel, PLEXOSHorizon, PLEXOSDatafile, PLEXOSMembership}
-
-        for component_type in self.system.get_component_types():
-            if component_type in skip_types:
-                continue
-
-            class_enum = PLEXOS_TYPE_MAP_INVERTED.get(cast(type[PLEXOSObject], component_type))
-            if not class_enum:
-                continue
-
-            collection = get_default_collection(class_enum)
-            plexos_records = []
-
-            for comp in self.system.get_components(component_type):
-                aliased_dict = comp.model_dump(by_alias=True, exclude_defaults=self.exclude_defaults)
-                metadata_fields = {"name", "category", "uuid", "label", "description", "object_id"}
-                properties: dict[str, Any] = {}
-                for k, v in aliased_dict.items():
-                    if k in metadata_fields or v is None:
-                        continue
-                    if isinstance(v, (int, float, str, bool)):
-                        properties[k] = {"value": v, "band": 1}
-                    elif isinstance(v, dict) and "text" in v:
-                        properties[k] = v
-                if properties:
-                    plexos_record = {"name": comp.name, "properties": properties}
-                    plexos_records.append(plexos_record)
-
-            if not plexos_records:
-                continue
-
-            logger.debug(f"Adding properties for {len(plexos_records)} {component_type.__name__} components")
-            self.db.add_properties_from_records(
-                plexos_records,
-                object_class=class_enum,
-                parent_class=ClassEnum.System,
-                collection=collection,
-                scenario=self.plexos_scenario,
-            )
-
-    def _add_component_memberships(self) -> None:
-        """Add membership relationships to the database."""
-        memberships = list(self.system.get_supplemental_attributes(PLEXOSMembership))
-
-        if not memberships:
-            logger.warning("No memberships found in system")
-            return
-
-        records = []
-        seen_memberships = set()  # Track unique (parent_object_id, collection_id, child_object_id)
-        duplicate_count = 0
-
-        for membership in memberships:
-            if not membership.parent_object or not membership.child_object:
-                logger.debug("Skipping membership with missing parent or child object")
-                continue
-
-            parent_class = PLEXOS_TYPE_MAP_INVERTED.get(type(membership.parent_object))
-            child_class = PLEXOS_TYPE_MAP_INVERTED.get(type(membership.child_object))
-
-            if not parent_class or not child_class or not membership.collection:
-                logger.info("Skipping membership with unmapped classes or missing collection")
-                continue
-
-            if parent_class in (ClassEnum.Model, ClassEnum.Horizon) or child_class in (
-                ClassEnum.Model,
-                ClassEnum.Horizon,
-            ):
-                continue
-
-            try:
-                parent_object_id = self.db.get_object_id(parent_class, membership.parent_object.name)
-                child_object_id = self.db.get_object_id(child_class, membership.child_object.name)
-                collection_id = self.db.get_collection_id(
-                    membership.collection,
-                    parent_class_enum=parent_class,
-                    child_class_enum=child_class,
-                )
-
-                # Check for duplicates based on the unique constraint
-                membership_key = (parent_object_id, collection_id, child_object_id)
-
-                if membership_key in seen_memberships:
-                    duplicate_count += 1
-                    continue
-
-                seen_memberships.add(membership_key)
-
-                record = {
-                    "parent_class_id": self.db.get_class_id(parent_class),
-                    "parent_object_id": parent_object_id,
-                    "collection_id": collection_id,
-                    "child_class_id": self.db.get_class_id(child_class),
-                    "child_object_id": child_object_id,
-                }
-                records.append(record)
-
-            except Exception:
-                logger.debug("Failed to process membership: {}", membership)
-                continue
-
-        if not records:
-            logger.warning("No valid membership records to add")
-            return
-
-        self.db.add_memberships_from_records(records)
-        logger.success(f"Successfully added {len(records)} memberships")
 
     def _create_datafile_objects(self) -> None:
         """Create DataFile objects for the CSVs that are being created."""
@@ -480,57 +575,6 @@ class PLEXOSExporter(BaseExporter):
                 )
                 if not self.system.has_component(datafile_obj):
                     self.system.add_component(datafile_obj)
-
-    def _add_component_datafile_objects(self) -> None:
-        """Add PLEXOSDatafile objects from the system to the database."""
-        self._create_datafile_objects()
-        datafiles = list(self.system.get_components(PLEXOSDatafile))
-        if not datafiles:
-            logger.info("No PLEXOSDatafile objects to add to DB.")
-            return
-
-        logger.debug(f"Adding {len(datafiles)} PLEXOSDatafile objects to DB.")
-
-        names = [df.name for df in datafiles]
-        self.db.add_objects(ClassEnum.DataFile, *names, category="CSV")
-
-        for data_file in datafiles:
-            object_id = self.db.get_object_id(ClassEnum.DataFile, data_file.name)
-            data_file.object_id = object_id
-            if data_file.filename is not None and hasattr(data_file.filename, "datafile_id"):
-                data_file.filename.datafile_id = object_id
-            else:
-                logger.debug(f"DataFile {data_file.name} has no filename property to update.")
-
-    def _insert_component_tags(self, component_type: type["PLEXOSObject"]) -> None:
-        """Insert tags for all components of the given type."""
-        for component in self.system.get_components(
-            component_type,
-            filter_func=lambda x: self.system.has_time_series(x),
-        ):
-            attr_list = self.system.list_time_series_keys(component)
-            for attr in attr_list:
-                attr_value = getattr(component, attr.name)
-                if (
-                    getattr(attr_value, "datafile_id", None) is not None
-                    or getattr(attr_value, "variable_id", None) is not None
-                ):
-                    object_data_ids = self.db.get_object_data_ids(
-                        PLEXOS_TYPE_MAP_INVERTED[component_type],
-                        component.name,
-                        property_names=component_type.model_fields[attr.name].alias,
-                    )
-
-                    for object_data_id in object_data_ids:
-                        if getattr(attr_value, "datafile_id", None) is not None:
-                            self._insert_tag(attr_value.datafile_id, object_data_id)
-                        if getattr(attr_value, "variable_id", None) is not None:
-                            self._insert_tag(attr_value.variable_id, object_data_id)
-
-    def _insert_tag(self, object_id: int, data_id: int) -> None:
-        """Insert a tag linking an object to a data file."""
-        query = "INSERT INTO t_tag (object_id, data_id) VALUES (?, ?)"
-        self.db._db.execute(query, (object_id, data_id))
 
     def _validate_xml(self, xml_path: str) -> bool:
         """Validate XML file structure."""
