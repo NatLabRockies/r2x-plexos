@@ -238,6 +238,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                     logger.debug(f"Component type: {component_type.__name__}, names: {names[:5]}")
                     raise
 
+            self.db._db.execute(f"UPDATE t_class SET is_enabled=1 WHERE t_class.name='{class_enum}'")
+            logger.debug(f"Enabled class: {class_enum.name}")
+
         return Ok(None)
 
     def postprocess_export(self) -> Result[None, str]:
