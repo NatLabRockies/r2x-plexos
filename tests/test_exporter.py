@@ -172,7 +172,7 @@ def test_exporter_with_wrong_config(mocker, caplog):
     ctx = PluginContext(config=bad_config, system=mock_system)
     exporter = PLEXOSExporter.from_context(ctx)
 
-    result = exporter.on_build()
+    result = exporter.on_export()
     assert result.is_err()
     assert "Config is of type" in str(result.error)
 
@@ -276,7 +276,7 @@ def test_exporter_init_with_invalid_config_type():
     ctx = PluginContext(config=DummyConfig(), system=sys)
     exporter = PLEXOSExporter.from_context(ctx)
 
-    result = exporter.on_build()
+    result = exporter.on_export()
     assert result.is_err()
 
 
@@ -298,7 +298,7 @@ def test_setup_configuration_missing_simulation_config(monkeypatch):
     ctx = PluginContext(config=config, system=sys)
     exporter = PLEXOSExporter.from_context(ctx)
 
-    build_result = exporter.on_build()
+    build_result = exporter.on_export()
     assert build_result.is_ok()
 
     monkeypatch.setattr(exporter.config, "simulation_config", None)
@@ -455,8 +455,8 @@ def test_validate_xml_invalid(tmp_path):
     assert not exporter._validate_xml(str(invalid_xml))
 
 
-def test_on_build_db_none_initializes_from_template(tmp_path):
-    """Test that on_build initializes db from template when db is None - lines 86, 90."""
+def test_on_export_db_none_initializes_from_template(tmp_path):
+    """Test that on_export initializes db from template when db is None - lines 86, 90."""
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     sys = System(name="test")
 
@@ -466,14 +466,14 @@ def test_on_build_db_none_initializes_from_template(tmp_path):
 
     exporter.db = None
 
-    result = exporter.on_build()
+    result = exporter.on_export()
 
     assert result.is_ok()
     assert exporter.db is not None
 
 
-def test_on_build_uses_custom_template(tmp_path):
-    """Test that on_build uses custom template when specified - line 94."""
+def test_on_export_uses_custom_template(tmp_path):
+    """Test that on_export uses custom template when specified - line 94."""
     # Create a minimal custom XML template
     custom_template = tmp_path / "custom_template.xml"
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
@@ -489,14 +489,14 @@ def test_on_build_uses_custom_template(tmp_path):
     exporter.db = None
     exporter.output_path = str(tmp_path)
 
-    result = exporter.on_build()
+    result = exporter.on_export()
 
     assert result.is_ok()
     assert exporter.db is not None
 
 
-def test_on_build_creates_scenario_if_missing(template_db, tmp_path):
-    """Test that on_build creates scenario if it doesn't exist - lines 97-98."""
+def test_on_export_creates_scenario_if_missing(template_db, tmp_path):
+    """Test that on_export creates scenario if it doesn't exist - lines 97-98."""
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     sys = System(name="test")
 
@@ -509,14 +509,14 @@ def test_on_build_creates_scenario_if_missing(template_db, tmp_path):
     if exporter.db.check_object_exists(ClassEnum.Scenario, "new_scenario"):
         exporter.db.delete_object(ClassEnum.Scenario, name="new_scenario")
 
-    result = exporter.on_build()
+    result = exporter.on_export()
 
     assert result.is_ok()
     assert exporter.db.check_object_exists(ClassEnum.Scenario, "new_scenario")
 
 
-def test_on_build_exception_returns_err(template_db):
-    """Test that exceptions in on_build are caught and returned as Err - line 121."""
+def test_on_export_exception_returns_err(template_db):
+    """Test that exceptions in on_export are caught and returned as Err - line 121."""
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     sys = System(name="test")
 
@@ -525,8 +525,7 @@ def test_on_build_exception_returns_err(template_db):
     exporter.db = template_db
 
     with patch.object(exporter, "setup_configuration", side_effect=Exception("Test error")):
-        result = exporter.on_build()
-
+        result = exporter.on_export()
     assert result.is_err()
     assert "Export failed" in result.error
 
