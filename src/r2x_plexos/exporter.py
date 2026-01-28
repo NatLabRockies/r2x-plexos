@@ -42,6 +42,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         """
         super().__init__()
 
+        self.should_export_time_series: bool = True
         self.exclude_defaults: bool = True
         self.output_path: str | None = None
         self.solve_year: int | None = None
@@ -49,7 +50,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         self.plexos_scenario: str = "default"
         self.db: PlexosDB | None = None
 
-    def on_build(self) -> Result[None, str]:
+    def on_export(self) -> Result[None, str]:
         """Initialize the exporter after context is set.
 
         Returns
@@ -259,7 +260,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         self._add_component_memberships()
 
         logger.info("Exporting time series")
-        ts_result = self.export_time_series()
+        if self.should_export_time_series:
+            ts_result = self.export_time_series()
+
         if isinstance(ts_result, Err):
             logger.error("Failed to export time series: {}", ts_result.error)
             return ts_result
@@ -550,10 +553,6 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
         logger.info(f"Exported {len(csv_filepaths)} time series files to {output_dir}")
 
-        return Ok(None)
-
-    def validate_export(self) -> Result[None, str]:
-        """Validate the export (placeholder for future validation logic)."""
         return Ok(None)
 
     def _create_datafile_objects(self) -> None:
