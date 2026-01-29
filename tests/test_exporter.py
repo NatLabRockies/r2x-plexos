@@ -1023,9 +1023,14 @@ def test_create_datafile_objects_no_directory(tmp_path, caplog):
 
     ctx = PluginContext(config=config, system=sys)
     exporter = PLEXOSExporter.from_context(ctx)
-    exporter.output_path = str(tmp_path)
 
-    exporter._create_datafile_objects()
+    # Use a non-existent path that won't be created
+    non_existent_path = tmp_path / "does_not_exist" / "nested"
+    exporter.output_path = str(non_existent_path)
+
+    # Mock get_output_directory to return a path that doesn't exist
+    with patch("r2x_plexos.exporter.get_output_directory", return_value=non_existent_path / "Data"):
+        exporter._create_datafile_objects()
 
     assert "No time series directory found" in caplog.text
 
