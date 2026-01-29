@@ -256,19 +256,20 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         if self.db is None:
             return Err("Database not initialized")
 
-        logger.info("Adding properties and memberships")
-
-        self._add_component_datafile_objects()
-        self._add_component_properties()
-        self._add_component_memberships()
-
         logger.info("Exporting time series")
         if self.should_export_time_series:
             ts_result = self.export_time_series()
+            if isinstance(ts_result, Err):
+                logger.error("Failed to export time series: {}", ts_result.error)
+                return ts_result
 
-        if isinstance(ts_result, Err):
-            logger.error("Failed to export time series: {}", ts_result.error)
-            return ts_result
+        logger.info("Creating DataFile objects from exported CSVs")
+        self._add_component_datafile_objects()
+
+        logger.info("Adding properties and memberships")
+        self._add_component_properties()
+
+        self._add_component_memberships()
 
         output_dir = get_output_directory(self.config, self.system, output_path=self.output_path)
         base_folder = Path(self.output_path) if self.output_path else output_dir.parent
@@ -562,8 +563,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         """Create DataFile objects for the CSVs that are being created."""
         logger.info("Creating DataFile objects...")
 
-        output_path = self.output_path or "."
-        time_series_dir = os.path.join(output_path, "Data")
+        output_dir = get_output_directory(self.config, self.system, output_path=self.output_path)
+        time_series_dir = str(output_dir)
+
         if not os.path.exists(time_series_dir):
             logger.info(f"No time series directory found at {time_series_dir}")
             return
@@ -577,6 +579,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 )
                 if not self.system.has_component(datafile_obj):
                     self.system.add_component(datafile_obj)
+                    logger.debug(f"Created DataFile object: {datafile_obj.name}")
 
     def _validate_xml(self, xml_path: str) -> bool:
         """Validate XML file structure."""
