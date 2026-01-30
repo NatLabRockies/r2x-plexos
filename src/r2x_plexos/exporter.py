@@ -266,9 +266,8 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         logger.info("Creating DataFile objects from exported CSVs")
         self._add_component_datafile_objects()
 
-        logger.info("Adding properties and memberships")
+        logger.info("Adding component properties and memberships")
         self._add_component_properties()
-
         self._add_component_memberships()
 
         output_dir = get_output_directory(self.config, self.system, output_path=self.output_path)
@@ -295,20 +294,18 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
         logger.info("Adding component properties...")
 
-        # Add properties for PlexosDataFile objects first
         for component in self.system.get_components(PLEXOSDatafile):
-            datafile_text = component.name
+            relative_path = f"Data/{component.name}.csv"
 
             self.db.add_property(
                 ClassEnum.DataFile,
                 object_name=component.name,
                 name="Filename",
                 value=0,
-                datafile_text=datafile_text,
+                datafile_text=relative_path,
             )
-            logger.debug(f"Added Filename property for DataFile: {component.name}")
+            logger.debug(f"Added Filename property for DataFile: {component.name} -> {relative_path}")
 
-        # Add properties for each component type except Datafile and Membership
         skip_types = {PLEXOSModel, PLEXOSHorizon, PLEXOSDatafile, PLEXOSMembership}
 
         for component_type in self.system.get_component_types():
@@ -339,6 +336,8 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
             if not plexos_records:
                 continue
+
+            # print(plexos_records, " ", class_enum)
 
             logger.debug(f"Adding properties for {len(plexos_records)} {component_type.__name__} components")
             self.db.add_properties_from_records(
@@ -441,48 +440,170 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         for data_file in datafiles:
             object_id = self.db.get_object_id(ClassEnum.DataFile, data_file.name)
             data_file.object_id = object_id
-            if data_file.filename is not None and hasattr(data_file.filename, "datafile_id"):
-                data_file.filename.datafile_id = object_id
-            else:
-                logger.debug(f"DataFile {data_file.name} has no filename property to update.")
+            logger.debug(f"Set object_id={object_id} for DataFile: {data_file.name}")
 
-    def _insert_component_tags(self, component_type: type["PLEXOSObject"]) -> None:
-        """Insert tags for all components of the given type."""
+        self._link_datafiles_to_components()
+
+    def _link_datafiles_to_components(self) -> None:
+        """Link DataFile objects to component properties that reference time series CSVs.
+
+        This method finds components with time series, matches them to the exported CSV files,
+        and updates the component's property to reference the DataFile object via datafile_text
+        and t_tag table entries.
+        """
+        import re
+
         if self.db is None:
             logger.error("Database not initialized")
             return
 
-        for component in self.system.get_components(
-            component_type,
-            filter_func=lambda x: self.system.has_time_series(x),
-        ):
-            attr_list = self.system.list_time_series_keys(component)
-            for attr in attr_list:
-                attr_value = getattr(component, attr.name)
-                if (
-                    getattr(attr_value, "datafile_id", None) is not None
-                    or getattr(attr_value, "variable_id", None) is not None
+        logger.info("Linking DataFiles to component properties...")
+
+        output_dir = get_output_directory(self.config, self.system, output_path=self.output_path)
+
+        for component_type in self.system.get_component_types():
+            components = list(self.system.get_components(component_type))
+            components_with_ts = [c for c in components if self.system.has_time_series(c)]
+
+            for component in components_with_ts:
+                ts_keys = self.system.list_time_series_keys(component)
+
+                category = getattr(component, "category", "").lower()
+
+                if "hydro" in category:
+                    ts_keys = [key for key in ts_keys if key.name == "max_active_power"]
+
+                if "head" in category or "tail" in category:
+                    breakpoint()
+                    ts_keys = [key for key in ts_keys if key.name in ("natural_inflow", "inflow")]
+
+                if any(
+                    x in category for x in ("renewable-dispatch", "renewable-non-dispatch", "solar", "wind")
                 ):
-                    object_data_ids = self.db.get_object_data_ids(
-                        PLEXOS_TYPE_MAP_INVERTED[component_type],
-                        component.name,
-                        property_names=component_type.model_fields[attr.name].alias,
-                    )
+                    ts_keys = [key for key in ts_keys if key.name in ("max_active_power", "active_power")]
 
-                    for object_data_id in object_data_ids:
-                        if getattr(attr_value, "datafile_id", None) is not None:
-                            self._insert_tag(attr_value.datafile_id, object_data_id)
-                        if getattr(attr_value, "variable_id", None) is not None:
-                            self._insert_tag(attr_value.variable_id, object_data_id)
+                for ts_key in ts_keys:
+                    property_name = self._get_time_series_property_name(component)
+                    if not property_name:
+                        logger.debug(f"No property mapping for {type(component).__name__}.{ts_key.name}")
+                        continue
 
-    def _insert_tag(self, object_id: int, data_id: int) -> None:
-        """Insert a tag linking an object to a data file."""
+                    component_class = type(component).__name__
+                    pattern = re.compile(rf"{re.escape(component_class)}_{re.escape(ts_key.name)}_.*\.csv")
+
+                    matched_file = None
+                    for filename in os.listdir(output_dir):
+                        if pattern.match(filename):
+                            matched_file = filename
+                            break
+
+                    if not matched_file:
+                        logger.warning(f"No CSV file found for {component.name}.{ts_key.name}")
+                        continue
+
+                    datafile_name = matched_file.removesuffix(".csv")
+                    datafile = self.system.get_component(PLEXOSDatafile, name=datafile_name)
+
+                    if not datafile or datafile.object_id is None:
+                        logger.warning(f"No DataFile object found for {matched_file}")
+                        continue
+
+                    class_enum = PLEXOS_TYPE_MAP_INVERTED.get(cast(type[PLEXOSObject], type(component)))
+                    if not class_enum:
+                        continue
+
+                    try:
+                        property_data_id = self.db.add_property(
+                            class_enum,
+                            object_name=component.name,
+                            name=property_name,
+                            value=0,
+                            datafile_text=datafile_name,
+                            scenario=self.plexos_scenario,
+                        )
+
+                        self._insert_tag(object_id=datafile.object_id, data_id=property_data_id, action_id=1)
+
+                        logger.debug(
+                            f"Linked {component.name}.{property_name} to DataFile {datafile.name} "
+                            f"for time series '{ts_key.name}'"
+                        )
+
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to link {component.name}.{property_name} to {datafile.name}: {e}"
+                        )
+
+    def _get_time_series_property_name(self, component: Any) -> str | None:
+        """Get the PLEXOS property name that should reference the time series CSV."""
+        from .models import (
+            PLEXOSGenerator,
+            PLEXOSRegion,
+            PLEXOSReserve,
+            PLEXOSStorage,
+        )
+
+        if isinstance(component, PLEXOSReserve):
+            ts_keys = self.system.list_time_series_keys(component)
+            if ts_keys:
+                ts_key = ts_keys[0]
+                variable_name = ts_key.name
+                if variable_name == "min_provision":
+                    return "Min Provision"
+            return "Min Provision"
+
+        elif isinstance(component, PLEXOSRegion):
+            return "Load"
+
+        elif isinstance(component, PLEXOSStorage):
+            ts_keys = self.system.list_time_series_keys(component)
+            if ts_keys:
+                ts_key = ts_keys[0]
+                variable_name = ts_key.name
+
+                if variable_name in ("natural_inflow"):
+                    return "Natural Inflow"
+                elif variable_name in ("fixed_load"):
+                    return "Fixed Load"
+
+            return "Natural Inflow"
+
+        elif isinstance(component, PLEXOSGenerator):
+            category = getattr(component, "category", "").lower()
+
+            if "hydro" in category:
+                ts_keys = self.system.list_time_series_keys(component)
+                if ts_keys:
+                    ts_key = ts_keys[0]
+                    variable_name = ts_key.name
+
+                    if variable_name in ("fixed_load", "max_capacity", "rating"):
+                        return "Fixed Load"
+
+                return "Fixed Load"
+
+            ts_keys = self.system.list_time_series_keys(component)
+            if ts_keys:
+                ts_key = ts_keys[0]
+                variable_name = ts_key.name
+
+                if variable_name in ("rating", "max_capacity"):
+                    return "Rating"
+                elif variable_name in ("fixed_load"):
+                    return "Fixed Load"
+
+            return "Rating"
+
+        return None
+
+    def _insert_tag(self, object_id: int, data_id: int, action_id: int = 1) -> None:
+        """Insert a tag linking an object to a property."""
         if self.db is None:
             logger.error("Database not initialized")
             return
 
-        query = "INSERT INTO t_tag (object_id, data_id) VALUES (?, ?)"
-        self.db._db.execute(query, (object_id, data_id))
+        query = "INSERT INTO t_tag (object_id, data_id, action_id) VALUES (?, ?, ?)"
+        self.db._db.execute(query, (object_id, data_id, action_id))
 
     def export_time_series(self) -> Result[None, str]:
         """Export time series to CSV files and update property references.
