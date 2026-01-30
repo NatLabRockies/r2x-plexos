@@ -982,7 +982,7 @@ def test_add_component_datafile_objects_updates_object_ids(template_db):
 
 
 def test_add_component_datafile_objects_handles_no_filename(template_db, caplog):
-    """Test _add_component_datafile_objects handles datafile without filename - lines 570-577."""
+    """Test _add_component_datafile_objects handles datafile without filename."""
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     sys = System(name="test")
 
@@ -995,7 +995,8 @@ def test_add_component_datafile_objects_handles_no_filename(template_db, caplog)
 
     exporter._add_component_datafile_objects()
 
-    assert "has no filename property" in caplog.text
+    datafiles_in_db = template_db.list_objects_by_class(ClassEnum.DataFile)
+    assert "TestFile" in datafiles_in_db
 
 
 def test_export_time_series_no_components_with_ts(template_db):

@@ -337,8 +337,6 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             if not plexos_records:
                 continue
 
-            # print(plexos_records, " ", class_enum)
-
             logger.debug(f"Adding properties for {len(plexos_records)} {component_type.__name__} components")
             self.db.add_properties_from_records(
                 plexos_records,
@@ -474,7 +472,6 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                     ts_keys = [key for key in ts_keys if key.name == "max_active_power"]
 
                 if "head" in category or "tail" in category:
-                    breakpoint()
                     ts_keys = [key for key in ts_keys if key.name in ("natural_inflow", "inflow")]
 
                 if any(
