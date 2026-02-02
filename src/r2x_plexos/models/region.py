@@ -912,7 +912,7 @@ class PLEXOSRegion(PLEXOSTopology):
             description="Flag if the Region is included in the simulation.",
             json_schema_extra={"enum": [0, 1]},
         ),
-    ] = 1
+    ]
     unserved_energy_method: Annotated[
         int,
         PLEXOSProperty(is_enum=True),
@@ -1050,5 +1050,6 @@ class PLEXOSRegion(PLEXOSTopology):
         """Create an example PLEXOSRegion."""
         return PLEXOSRegion(
             name="ExampleRegion",
+            units=1,
             object_id=1,
         )

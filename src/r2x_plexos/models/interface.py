@@ -251,7 +251,7 @@ class PLEXOSInterface(PLEXOSObject):
             description="Flag if interface is in service",
             json_schema_extra={"enum": [0, 1]},
         ),
-    ] = 1
+    ]
     wacc: Annotated[
         float | int,
         PLEXOSProperty(units="%"),
@@ -288,5 +288,6 @@ class PLEXOSInterface(PLEXOSObject):
         """Create an example PLEXOSInterface."""
         return PLEXOSInterface(
             name="Example Line",
+            units=1,
             max_flow=100,
         )

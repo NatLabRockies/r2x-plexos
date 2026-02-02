@@ -510,7 +510,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                         continue
 
                     try:
-                        property_data_id = self.db.add_property(
+                        self.db.add_property(
                             class_enum,
                             object_name=component.name,
                             name=property_name,
@@ -518,8 +518,6 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                             datafile_text=datafile_name,
                             scenario=self.plexos_scenario,
                         )
-
-                        self._insert_tag(object_id=datafile.object_id, data_id=property_data_id, action_id=1)
 
                         logger.debug(
                             f"Linked {component.name}.{property_name} to DataFile {datafile.name} "
@@ -592,15 +590,6 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             return "Rating"
 
         return None
-
-    def _insert_tag(self, object_id: int, data_id: int, action_id: int = 1) -> None:
-        """Insert a tag linking an object to a property."""
-        if self.db is None:
-            logger.error("Database not initialized")
-            return
-
-        query = "INSERT INTO t_tag (object_id, data_id, action_id) VALUES (?, ?, ?)"
-        self.db._db.execute(query, (object_id, data_id, action_id))
 
     def export_time_series(self) -> Result[None, str]:
         """Export time series to CSV files and update property references.

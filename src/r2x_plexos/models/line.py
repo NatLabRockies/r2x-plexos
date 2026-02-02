@@ -722,7 +722,7 @@ class PLEXOSLine(PLEXOSObject):
             description="Flag if the line is in service (0,1)",
             json_schema_extra={"enum": [0, 1]},
         ),
-    ] = 1
+    ]
     units_out: Annotated[
         float | int,
         Field(
@@ -799,6 +799,7 @@ class PLEXOSLine(PLEXOSObject):
         """Create an example PLEXOSLine."""
         return PLEXOSLine(
             name="Example Line",
+            units=1,
             max_flow=100,
             resistance=0.1,
             reactance=0.1,
