@@ -11,7 +11,21 @@ from plexosdb.enums import get_default_collection
 
 from r2x_core import Err, Ok, Plugin, Result
 
-from .models import PLEXOSDatafile, PLEXOSHorizon, PLEXOSMembership, PLEXOSModel, PLEXOSObject
+from .models import (
+    PLEXOSBattery,
+    PLEXOSDatafile,
+    PLEXOSGenerator,
+    PLEXOSHorizon,
+    PLEXOSInterface,
+    PLEXOSLine,
+    PLEXOSMembership,
+    PLEXOSModel,
+    PLEXOSNode,
+    PLEXOSObject,
+    PLEXOSRegion,
+    PLEXOSReserve,
+    PLEXOSStorage,
+)
 from .models.property import PLEXOSPropertyValue
 from .plugin_config import PLEXOSConfig
 from .utils_exporter import (
@@ -28,6 +42,29 @@ from .utils_simulation import (
 
 NESTED_ATTRIBUTES = {"ext", "bus", "services"}
 DEFAULT_XML_TEMPLATE = "master_9.2R6_btu.xml"
+
+REQUIRED_PROPERTIES = {
+    PLEXOSGenerator: {
+        "units",
+        "forced_outage_rate",
+        "min_stable_level",
+        "maintenance_rate",
+        "mean_time_to_repair",
+    },
+    PLEXOSStorage: {"units", "initial_volume", "max_capacity"},
+    PLEXOSRegion: {"units"},
+    PLEXOSBattery: {
+        "units",
+        "initial_soc",
+        "min_soc",
+        "max_soc",
+        "charge_efficiency",
+        "discharge_efficiency",
+    },
+    PLEXOSLine: {"units"},
+    PLEXOSNode: {"units"},
+    PLEXOSInterface: {"units"},
+}
 
 
 class PLEXOSExporter(Plugin[PLEXOSConfig]):
@@ -319,10 +356,24 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             collection = get_default_collection(class_enum)
             plexos_records = []
 
+            required_for_type = REQUIRED_PROPERTIES.get(component_type, set())
+
             for comp in self.system.get_components(component_type):
                 aliased_dict = comp.model_dump(by_alias=True, exclude_defaults=self.exclude_defaults)
+
+                if self.exclude_defaults and required_for_type:
+                    for prop_name in required_for_type:
+                        field = comp.__class__.model_fields.get(prop_name)
+                        if field:
+                            alias_name = getattr(field, "alias", prop_name)
+                            if alias_name not in aliased_dict:
+                                value = getattr(comp, prop_name, None)
+                                if value is not None:
+                                    aliased_dict[alias_name] = value
+
                 metadata_fields = {"name", "category", "uuid", "label", "description", "object_id"}
                 properties: dict[str, Any] = {}
+
                 for k, v in aliased_dict.items():
                     if k in metadata_fields or v is None:
                         continue
@@ -330,6 +381,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                         properties[k] = {"value": v, "band": 1}
                     elif isinstance(v, dict) and "text" in v:
                         properties[k] = v
+
                 if properties:
                     plexos_record = {"name": comp.name, "properties": properties}
                     plexos_records.append(plexos_record)
@@ -534,7 +586,6 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         from .models import (
             PLEXOSGenerator,
             PLEXOSRegion,
-            PLEXOSReserve,
             PLEXOSStorage,
         )
 

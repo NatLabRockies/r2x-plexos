@@ -2466,7 +2466,7 @@ class PLEXOSGenerator(PLEXOSObject):
             description="Number of installed units",
             ge=0,
         ),
-    ] = 0
+    ] = 1
     units_out: Annotated[
         float | int,
         PLEXOSProperty,

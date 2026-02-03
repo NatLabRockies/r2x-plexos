@@ -251,7 +251,7 @@ class PLEXOSNode(PLEXOSTopology):
             description="Flag if bus is in service",
             json_schema_extra={"enum": [0, 1]},
         ),
-    ]
+    ] = 1
     voltage: Annotated[
         float | int,
         PLEXOSProperty(units="kV"),
@@ -291,5 +291,4 @@ class PLEXOSNode(PLEXOSTopology):
             object_id=1,
             is_slack_bus=-1,
             load=100.0,
-            units=1,
         )
