@@ -66,6 +66,15 @@ REQUIRED_PROPERTIES = {
     PLEXOSInterface: {"units"},
 }
 
+TIME_SERIES_ONLY_PROPERTIES = {
+    "Min Provision",  # PLEXOSReserve
+    "load Subtracter",  # PLEXOSGenerator
+    "Rating",  # PLEXOSGenerator
+    "Load",  # PLEXOSRegion
+    "Natural Inflow",  # PLEXOSStorage
+    "Fixed Load",  # PLEXOSGeneratorv
+}
+
 
 class PLEXOSExporter(Plugin[PLEXOSConfig]):
     """PLEXOS XML exporter."""
@@ -293,6 +302,11 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         if self.db is None:
             return Err("Database not initialized")
 
+        # Define base and output diectories
+        output_dir = get_output_directory(self.config, self.system, output_path=self.output_path)
+        datafile_prefix = output_dir.name
+        base_folder = Path(self.output_path) if self.output_path else output_dir.parent
+
         logger.info("Exporting time series")
         if self.should_export_time_series:
             ts_result = self.export_time_series()
@@ -304,11 +318,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         self._add_component_datafile_objects()
 
         logger.info("Adding component properties and memberships")
-        self._add_component_properties()
+        self._add_component_properties(datafile_prefix=datafile_prefix)
         self._add_component_memberships()
 
-        output_dir = get_output_directory(self.config, self.system, output_path=self.output_path)
-        base_folder = Path(self.output_path) if self.output_path else output_dir.parent
         xml_filename = f"{self.config.model_name}.xml"
         xml_path = base_folder / xml_filename
 
@@ -323,7 +335,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
         return Ok(None)
 
-    def _add_component_properties(self) -> None:
+    def _add_component_properties(self, datafile_prefix: str = "Data") -> None:
         """Add properties for all components, including DataFile objects first."""
         if self.db is None:
             logger.error("Database not initialized")
@@ -332,7 +344,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         logger.info("Adding component properties...")
 
         for component in self.system.get_components(PLEXOSDatafile):
-            relative_path = f"Data/{component.name}.csv"
+            relative_path = f"{datafile_prefix}/{component.name}.csv"
 
             self.db.add_property(
                 ClassEnum.DataFile,
@@ -359,6 +371,11 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             required_for_type = REQUIRED_PROPERTIES.get(component_type, set())
 
             for comp in self.system.get_components(component_type):
+                has_time_series = self.system.has_time_series(comp)
+                ts_property_name = None
+                if has_time_series:
+                    ts_property_name = self._get_time_series_property_name(comp)
+
                 aliased_dict = comp.model_dump(by_alias=True, exclude_defaults=self.exclude_defaults)
 
                 if self.exclude_defaults and required_for_type:
@@ -376,6 +393,10 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
                 for k, v in aliased_dict.items():
                     if k in metadata_fields or v is None:
+                        continue
+                    if k in TIME_SERIES_ONLY_PROPERTIES:
+                        continue
+                    if ts_property_name and k == ts_property_name:
                         continue
                     if isinstance(v, (int, float, str, bool)):
                         properties[k] = {"value": v, "band": 1}
@@ -515,28 +536,28 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             components = list(self.system.get_components(component_type))
             components_with_ts = [c for c in components if self.system.has_time_series(c)]
 
+            if not components_with_ts:
+                continue
+
             for component in components_with_ts:
                 ts_keys = self.system.list_time_series_keys(component)
 
+                if not ts_keys:
+                    continue
+
                 category = getattr(component, "category", "").lower()
-
-                if "hydro" in category:
+                if isinstance(component, PLEXOSReserve):
+                    ts_keys = [key for key in ts_keys if key.name in ("min_provision", "requirement")]
+                elif "hydro" in category:
                     ts_keys = [key for key in ts_keys if key.name == "max_active_power"]
-
-                if "head" in category or "tail" in category:
+                elif "head" in category or "tail" in category:
                     ts_keys = [key for key in ts_keys if key.name in ("natural_inflow", "inflow")]
-
-                if any(
+                elif any(
                     x in category for x in ("renewable-dispatch", "renewable-non-dispatch", "solar", "wind")
                 ):
                     ts_keys = [key for key in ts_keys if key.name in ("max_active_power", "active_power")]
 
                 for ts_key in ts_keys:
-                    property_name = self._get_time_series_property_name(component)
-                    if not property_name:
-                        logger.debug(f"No property mapping for {type(component).__name__}.{ts_key.name}")
-                        continue
-
                     component_class = type(component).__name__
                     pattern = re.compile(rf"{re.escape(component_class)}_{re.escape(ts_key.name)}_.*\.csv")
 
@@ -547,96 +568,81 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                             break
 
                     if not matched_file:
-                        logger.warning(f"No CSV file found for {component.name}.{ts_key.name}")
                         continue
 
                     datafile_name = matched_file.removesuffix(".csv")
                     datafile = self.system.get_component(PLEXOSDatafile, name=datafile_name)
 
                     if not datafile or datafile.object_id is None:
-                        logger.warning(f"No DataFile object found for {matched_file}")
                         continue
 
                     class_enum = PLEXOS_TYPE_MAP_INVERTED.get(cast(type[PLEXOSObject], type(component)))
                     if not class_enum:
                         continue
 
-                    try:
-                        self.db.add_property(
-                            class_enum,
-                            object_name=component.name,
-                            name=property_name,
-                            value=0,
-                            datafile_text=datafile_name,
-                            scenario=self.plexos_scenario,
-                        )
+                    property_names = []
+                    # This two-property time series is for VariableGenerators
+                    if isinstance(component, PLEXOSGenerator) and ts_key.name == "max_active_power":
+                        property_names = ["Rating", "Load Subtracter"]
+                    else:
+                        property_name = self._get_time_series_property_name(component, ts_key_name=ts_key.name)
+                        if property_name:
+                            property_names = [property_name]
 
-                        logger.debug(
-                            f"Linked {component.name}.{property_name} to DataFile {datafile.name} "
-                            f"for time series '{ts_key.name}'"
-                        )
+                    for property_name in property_names:
+                        try:
+                            self.db.add_property(
+                                class_enum,
+                                object_name=component.name,
+                                name=property_name,
+                                value=0,
+                                datafile_text=datafile_name,
+                                scenario=self.plexos_scenario,
+                            )
+                            logger.debug(f"Linked {component.name}.{property_name} to {datafile_name}")
 
-                    except Exception as e:
-                        logger.error(
-                            f"Failed to link {component.name}.{property_name} to {datafile.name}: {e}"
-                        )
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to link {component.name}.{property_name} to {datafile_name}: {e}"
+                            )
 
-    def _get_time_series_property_name(self, component: Any) -> str | None:
-        """Get the PLEXOS property name that should reference the time series CSV."""
-        from .models import (
-            PLEXOSGenerator,
-            PLEXOSRegion,
-            PLEXOSStorage,
-        )
+    def _get_time_series_property_name(self, component: Any, ts_key_name: str | None = None) -> str | None:
+        """Get the PLEXOS property name that should reference the time series CSV.
 
+        Uses hot paths for common component types and property mappings.
+
+        Parameters
+        ----------
+        component : Any
+            The component to get the property name for
+        ts_key_name : str | None
+            The specific time series key name (e.g., 'max_active_power', 'load_subtracter')
+            If None, will use the first time series key found
+        """
         if isinstance(component, PLEXOSReserve):
-            ts_keys = self.system.list_time_series_keys(component)
-            if ts_keys:
-                ts_key = ts_keys[0]
-                variable_name = ts_key.name
-                if variable_name == "min_provision":
-                    return "Min Provision"
             return "Min Provision"
 
-        elif isinstance(component, PLEXOSRegion):
+        if isinstance(component, PLEXOSRegion):
             return "Load"
 
-        elif isinstance(component, PLEXOSStorage):
-            ts_keys = self.system.list_time_series_keys(component)
-            if ts_keys:
-                ts_key = ts_keys[0]
-                variable_name = ts_key.name
-
-                if variable_name in ("natural_inflow"):
-                    return "Natural Inflow"
-                elif variable_name in ("fixed_load"):
-                    return "Fixed Load"
-
+        if isinstance(component, PLEXOSStorage):
             return "Natural Inflow"
 
-        elif isinstance(component, PLEXOSGenerator):
-            category = getattr(component, "category", "").lower()
-
-            if "hydro" in category:
+        if isinstance(component, PLEXOSGenerator):
+            if ts_key_name:
+                variable_name = ts_key_name
+            else:
                 ts_keys = self.system.list_time_series_keys(component)
-                if ts_keys:
-                    ts_key = ts_keys[0]
-                    variable_name = ts_key.name
+                if not ts_keys:
+                    return None
+                variable_name = ts_keys[0].name
 
-                    if variable_name in ("fixed_load", "max_capacity", "rating"):
-                        return "Fixed Load"
-
+            if variable_name in ("max_active_power"):
+                return "Rating"
+            elif variable_name == "load_subtracter":
+                return "Load Subtracter"
+            elif variable_name == "hydro_budget":
                 return "Fixed Load"
-
-            ts_keys = self.system.list_time_series_keys(component)
-            if ts_keys:
-                ts_key = ts_keys[0]
-                variable_name = ts_key.name
-
-                if variable_name in ("rating", "max_capacity"):
-                    return "Rating"
-                elif variable_name in ("fixed_load"):
-                    return "Fixed Load"
 
             return "Rating"
 
