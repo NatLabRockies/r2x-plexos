@@ -25,6 +25,7 @@ from .models import (
     PLEXOSRegion,
     PLEXOSReserve,
     PLEXOSStorage,
+    PLEXOSTransformer,
 )
 from .models.property import PLEXOSPropertyValue
 from .plugin_config import PLEXOSConfig
@@ -62,6 +63,7 @@ REQUIRED_PROPERTIES = {
         "discharge_efficiency",
     },
     PLEXOSLine: {"units"},
+    PLEXOSTransformer: {"units"},
     PLEXOSNode: {"units"},
     PLEXOSInterface: {"units"},
 }
