@@ -43,29 +43,39 @@ from .utils_simulation import (
 
 NESTED_ATTRIBUTES = {"ext", "bus", "services"}
 DEFAULT_XML_TEMPLATE = "master_9.2R6_btu.xml"
-
 REQUIRED_PROPERTIES = {
     PLEXOSGenerator: {
         "units",
+        "commit",
+        "pump_load",
+        "pump_efficiency",
+        "fuel_price",
+        "vom_charge",
+        "fom_charge",
+        "start_cost",
         "forced_outage_rate",
         "min_stable_level",
         "maintenance_rate",
         "mean_time_to_repair",
     },
-    PLEXOSStorage: {"units", "initial_volume", "max_capacity"},
+    PLEXOSStorage: {"units", "commit", "initial_volume", "max_capacity"},
     PLEXOSRegion: {"units"},
     PLEXOSBattery: {
         "units",
+        "commit",
         "initial_soc",
         "min_soc",
         "max_soc",
+        "capacity",
+        "vom_charge",
         "charge_efficiency",
         "discharge_efficiency",
     },
-    PLEXOSLine: {"units"},
+    PLEXOSLine: {"units", "loss_incr", "wheeling_charge", "wheeling_charge_back"},
     PLEXOSTransformer: {"units"},
     PLEXOSNode: {"units"},
     PLEXOSInterface: {"units"},
+    PLEXOSReserve: {"duration", "type", "is_enabled"},
 }
 
 TIME_SERIES_ONLY_PROPERTIES = {
@@ -74,7 +84,7 @@ TIME_SERIES_ONLY_PROPERTIES = {
     "Rating",  # PLEXOSGenerator
     "Load",  # PLEXOSRegion
     "Natural Inflow",  # PLEXOSStorage
-    "Fixed Load",  # PLEXOSGeneratorv
+    "Fixed Load",  # PLEXOSGenerator
 }
 
 
