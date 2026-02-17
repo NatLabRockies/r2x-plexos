@@ -57,9 +57,18 @@ REQUIRED_PROPERTIES = {
         "min_stable_level",
         "maintenance_rate",
         "mean_time_to_repair",
+        "min_up_time",
+        "min_down_time"
     },
-    PLEXOSStorage: {"units", "commit", "initial_volume", "max_capacity"},
-    PLEXOSRegion: {"units"},
+    PLEXOSStorage: {
+        "units",
+        "commit",
+        "initial_volume",
+        "max_capacity"
+    },
+    PLEXOSRegion: {
+        "units"
+    },
     PLEXOSBattery: {
         "units",
         "commit",
@@ -75,16 +84,7 @@ REQUIRED_PROPERTIES = {
     PLEXOSTransformer: {"units"},
     PLEXOSNode: {"units"},
     PLEXOSInterface: {"units"},
-    PLEXOSReserve: {"duration", "type", "is_enabled"},
-}
-
-TIME_SERIES_ONLY_PROPERTIES = {
-    "Min Provision",  # PLEXOSReserve
-    "load Subtracter",  # PLEXOSGenerator
-    "Rating",  # PLEXOSGenerator
-    "Load",  # PLEXOSRegion
-    "Natural Inflow",  # PLEXOSStorage
-    "Fixed Load",  # PLEXOSGenerator
+    PLEXOSReserve: {"min_provision", "duration", "type", "is_enabled"},
 }
 
 
@@ -406,8 +406,6 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 for k, v in aliased_dict.items():
                     if k in metadata_fields or v is None:
                         continue
-                    if k in TIME_SERIES_ONLY_PROPERTIES:
-                        continue
                     if ts_property_name and k == ts_property_name:
                         continue
                     if isinstance(v, (int, float, str, bool)):
@@ -557,18 +555,6 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 if not ts_keys:
                     continue
 
-                category = getattr(component, "category", "").lower()
-                if isinstance(component, PLEXOSReserve):
-                    ts_keys = [key for key in ts_keys if key.name in ("min_provision", "requirement")]
-                elif "hydro" in category:
-                    ts_keys = [key for key in ts_keys if key.name == "max_active_power"]
-                elif "head" in category or "tail" in category:
-                    ts_keys = [key for key in ts_keys if key.name in ("natural_inflow", "inflow")]
-                elif any(
-                    x in category for x in ("renewable-dispatch", "renewable-non-dispatch", "solar", "wind")
-                ):
-                    ts_keys = [key for key in ts_keys if key.name in ("max_active_power", "active_power")]
-
                 for ts_key in ts_keys:
                     component_class = type(component).__name__
                     pattern = re.compile(rf"{re.escape(component_class)}_{re.escape(ts_key.name)}_.*\.csv")
@@ -593,7 +579,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                         continue
 
                     property_names = []
-                    # This two-property time series is for VariableGenerators
+                    # This two-property time series is for VariableGenerators (solar/wind)
                     if isinstance(component, PLEXOSGenerator) and ts_key.name == "max_active_power":
                         property_names = ["Rating", "Load Subtracter"]
                     else:
@@ -628,7 +614,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         component : Any
             The component to get the property name for
         ts_key_name : str | None
-            The specific time series key name (e.g., 'max_active_power', 'load_subtracter')
+            The specific time series key name (e.g., 'max_active_power')
             If None, will use the first time series key found
         """
         if isinstance(component, PLEXOSReserve):
@@ -649,15 +635,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                     return None
                 variable_name = ts_keys[0].name
 
-            if variable_name in ("max_active_power"):
-                return "Rating"
-            elif variable_name == "load_subtracter":
-                return "Load Subtracter"
-            elif variable_name == "hydro_budget":
-                return "Fixed Load"
-
+            if variable_name == "hydro_budget":
+                return "Max Energy Day"
             return "Rating"
-
         return None
 
     def export_time_series(self) -> Result[None, str]:
