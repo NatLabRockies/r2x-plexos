@@ -107,6 +107,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         self.weather_year: int | None = None
         self.plexos_scenario: str = "default"
         self.db: PlexosDB | None = None
+        self.defaults: dict[str, Any] = PLEXOSConfig.load_defaults()
 
     def on_export(self) -> Result[None, str]:
         """Initialize the exporter after context is set.
@@ -126,8 +127,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 )
                 return Err(msg)
 
-            if self.plexos_scenario == "default":
-                self.plexos_scenario = self.config.model_name
+            self.plexos_scenario = self.plexos_scenario or self.config.model_name
 
             if self.db is None:
                 xml_fname = self.config.template
@@ -157,48 +157,20 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             return Err(f"Export failed: {e}")
 
     def setup_configuration(self) -> Result[None, str]:
-        """Set up simulation configuration (models, horizons, and simulation configs).
-
-        This method supports two workflows:
-
-        1. **Existing Database Workflow**: If the database already contains models and horizons
-           (e.g., loaded from an existing XML template), the simulation configuration is skipped.
-           This allows users to work with pre-configured databases without modification.
-
-        2. **New Database Workflow**: If the database is new (no models or horizons exist),
-           this method creates the complete simulation structure from user configuration:
-           - Models and horizons based on horizon_year and resolution
-           - Model-horizon memberships
-           - Simulation configuration objects (Performance, Production, etc.)
-
-        Returns
-        -------
-        Result[None, str]
-            Ok(None) if successful, Err with error message if failed
-        """
+        """Set up simulation configuration (models, horizons, and simulation configs)."""
         if self.db is None:
             return Err("Database not initialized")
 
         logger.info("Setting up simulation configuration")
 
-        existing_models = self.db.list_objects_by_class(ClassEnum.Model)
-        existing_horizons = self.db.list_objects_by_class(ClassEnum.Horizon)
-
-        if existing_models and existing_horizons:
-            logger.info(
-                f"Using existing database configuration: "
-                f"{len(existing_models)} model(s), {len(existing_horizons)} horizon(s)"
-            )
-            return Ok(None)
-
-        logger.info("New database detected - creating simulation configuration from user input")
+        static_model_defaults = PLEXOSConfig.load_static_models()
         simulation_config_dict = getattr(self.config, "simulation_config", None)
         if simulation_config_dict is None:
             logger.debug("Using default simulation configuration")
             simulation_config_dict = get_default_simulation_config()
 
         horizon_year = getattr(self.config, "horizon_year", None) or getattr(
-            self.config, "reference_year", None
+            self.config, "solve_year", None
         )
         if horizon_year is None:
             return Err(
@@ -212,10 +184,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         }
 
         logger.info(f"Building simulation for year {horizon_year}")
-
         simulation_result = build_plexos_simulation(
             config=sim_config,
-            defaults=None,
+            defaults=static_model_defaults,
             simulation_config=simulation_config_dict,
         )
 
@@ -348,7 +319,22 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         return Ok(None)
 
     def _add_component_properties(self, datafile_prefix: str = "Data") -> None:
-        """Add properties for all components, including DataFile objects first."""
+        """
+        Add properties for all components in the system to the database.
+
+        This method performs the following:
+        1. Adds 'Filename' properties for all PLEXOSDatafile objects, referencing their CSV files.
+        2. Iterates over all component types (excluding models, horizons, datafiles, and memberships).
+        3. For each component, collects its properties, ensuring that all required properties (as defined in defaults.json)
+        are included, even if their values are not set by default.
+        4. Handles time series properties and excludes metadata fields.
+        5. Performs a bulk insert of properties for each component type into the database.
+
+        Parameters
+        ----------
+        datafile_prefix : str, optional
+            The prefix to use for datafile paths (default is "Data").
+        """
         if self.db is None:
             logger.error("Database not initialized")
             return
@@ -380,7 +366,8 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             collection = get_default_collection(class_enum)
             plexos_records = []
 
-            required_for_type = REQUIRED_PROPERTIES.get(component_type, set())
+            required_properties = self.defaults.get("required-properties", {})
+            required_property_for_type = set(required_properties.get(component_type.__name__, []))
 
             for comp in self.system.get_components(component_type):
                 has_time_series = self.system.has_time_series(comp)
@@ -390,8 +377,8 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
                 aliased_dict = comp.model_dump(by_alias=True, exclude_defaults=self.exclude_defaults)
 
-                if self.exclude_defaults and required_for_type:
-                    for prop_name in required_for_type:
+                if self.exclude_defaults and required_property_for_type:
+                    for prop_name in required_property_for_type:
                         field = comp.__class__.model_fields.get(prop_name)
                         if field:
                             alias_name = getattr(field, "alias", prop_name)
@@ -430,7 +417,20 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             )
 
     def _add_component_memberships(self) -> None:
-        """Add membership relationships to the database."""
+        """
+        Add membership relationships between components to the database.
+
+        This method collects all PLEXOSMembership objects from the system and adds their relationships
+        to the database. It performs the following steps:
+        1. Retrieves all supplemental membership attributes from the system.
+        2. Skips memberships with missing parent or child objects, or with unmapped classes/collections.
+        3. Ignores memberships involving Model or Horizon objects, as these are handled elsewhere.
+        4. Looks up the database IDs for parent and child objects and their collection.
+        5. Avoids inserting duplicate memberships by tracking unique (parent_object_id, collection_id, child_object_id) keys.
+        6. Bulk inserts all valid membership records into the database.
+
+        Warnings and errors are logged for missing or invalid memberships, and a summary is logged upon completion.
+        """
         if self.db is None:
             logger.error("Database not initialized")
             return
@@ -442,7 +442,8 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             return
 
         records = []
-        seen_memberships = set()  # Track unique (parent_object_id, collection_id, child_object_id)
+        # Track unique (parent_object_id, collection_id, child_object_id)
+        seen_memberships = set()
         duplicate_count = 0
 
         for membership in memberships:
@@ -474,13 +475,11 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
                 # Check for duplicates based on the unique constraint
                 membership_key = (parent_object_id, collection_id, child_object_id)
-
                 if membership_key in seen_memberships:
                     duplicate_count += 1
                     continue
 
                 seen_memberships.add(membership_key)
-
                 record = {
                     "parent_class_id": self.db.get_class_id(parent_class),
                     "parent_object_id": parent_object_id,
@@ -495,14 +494,25 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 continue
 
         if not records:
-            logger.warning("No valid membership records to add")
+            logger.warning("No valid membership records to add.")
             return
 
         self.db.add_memberships_from_records(records)
-        logger.success(f"Successfully added {len(records)} memberships")
+        logger.success(f"Successfully added {len(records)} memberships.")
 
     def _add_component_datafile_objects(self) -> None:
-        """Add PLEXOSDatafile objects from the system to the database."""
+        """
+        Add PLEXOSDatafile objects from the system to the database.
+
+        This method:
+        1. Calls _create_datafile_objects() to ensure all DataFile objects for exported CSVs exist in the system.
+        2. Retrieves all PLEXOSDatafile components from the system.
+        3. Adds each DataFile object to the database with the appropriate class and category.
+        4. Updates each DataFile object with its assigned database object_id.
+        5. Links DataFile objects to component properties that reference time series CSVs.
+
+        Logs progress and warnings for missing or empty DataFile sets.
+        """
         if self.db is None:
             logger.error("Database not initialized")
             return
@@ -526,11 +536,24 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         self._link_datafiles_to_components()
 
     def _link_datafiles_to_components(self) -> None:
-        """Link DataFile objects to component properties that reference time series CSVs.
+        """
+        Link DataFile objects to component properties that reference time series CSVs.
 
-        This method finds components with time series, matches them to the exported CSV files,
-        and updates the component's property to reference the DataFile object via datafile_text
-        and t_tag table entries.
+        This method finds all components in the system that have associated time series data,
+        matches each time series to its exported CSV file, and updates the corresponding
+        component property to reference the correct DataFile object. The linkage is made
+        via the `datafile_text` field and, if applicable, the t_tag table in the database.
+
+        Steps performed:
+        1. Iterates over all component types and finds those with time series.
+        2. For each time series key, matches the exported CSV file using a naming pattern.
+        3. Looks up the corresponding PLEXOSDatafile object and ensures it has a valid object_id.
+        4. Determines the correct property name(s) for the time series (handling special cases).
+        5. Adds a property to the database linking the component property to the DataFile.
+        6. Logs all linkages and any errors encountered.
+
+        This ensures that all time series properties in the exported XML reference the correct
+        DataFile objects, enabling PLEXOS to locate and use the time series CSVs.
         """
         import re
 
@@ -605,17 +628,25 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                             )
 
     def _get_time_series_property_name(self, component: Any, ts_key_name: str | None = None) -> str | None:
-        """Get the PLEXOS property name that should reference the time series CSV.
+        """
+        Get the PLEXOS property name that should reference the time series CSV.
 
-        Uses hot paths for common component types and property mappings.
+        This method determines the correct property name in PLEXOS that should be linked to a time series CSV
+        for a given component and time series key. It uses specific mappings for common component types and
+        time series variable names, and falls back to generic mappings if needed.
 
         Parameters
         ----------
         component : Any
-            The component to get the property name for
-        ts_key_name : str | None
-            The specific time series key name (e.g., 'max_active_power')
-            If None, will use the first time series key found
+            The component to get the property name for.
+        ts_key_name : str | None, optional
+            The specific time series key name (e.g., 'max_active_power').
+            If None, will use the first time series key found for the component.
+
+        Returns
+        -------
+        str | None
+            The property name to use for the time series, or None if not applicable.
         """
         if isinstance(component, PLEXOSReserve):
             return "Min Provision"
@@ -641,14 +672,21 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         return None
 
     def export_time_series(self) -> Result[None, str]:
-        """Export time series to CSV files and update property references.
+        """
+        Export all time series data from the system to CSV files and update property references.
+
+        This method performs the following:
+        1. Finds all components in the system that have associated time series data.
+        2. Groups time series by field name and metadata, generating a unique CSV filename for each group.
+        3. Exports each group of time series data to a CSV file in the output directory.
+        4. Logs the number of exported files and any errors encountered.
+        5. Returns Ok(None) on success, or Err with an error message on failure.
 
         Returns
         -------
-        Result[None, ExporterError]
-            Ok(None) on success, Err(ExporterError) on failure
+        Result[None, str]
+            Ok(None) on success, Err(error_message) on failure.
         """
-        # Get ALL components with time series, not just PLEXOSObject
         all_components_with_ts = []
         for component_type in self.system.get_component_types():
             components = list(
@@ -716,7 +754,23 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         return Ok(None)
 
     def _create_datafile_objects(self) -> None:
-        """Create DataFile objects for the CSVs that are being created."""
+        """
+        Create PLEXOSDatafile objects for each CSV file being created.
+
+        This method scans the output directory for all CSV files representing exported time series.
+        For each CSV file found, it creates a corresponding PLEXOSDatafile object (if it does not already exist in the system)
+        with the appropriate name and filename property. These DataFile objects are then available for linking to component
+        properties that reference time series data.
+
+        Steps performed:
+        1. Determines the output directory for time series CSVs.
+        2. Checks for the existence of the directory and logs if missing.
+        3. Iterates over all CSV files in the directory.
+        4. For each CSV, creates a PLEXOSDatafile object with the correct name and filename.
+        5. Adds the DataFile object to the system if it does not already exist.
+
+        Logs each DataFile object created.
+        """
         logger.info("Creating DataFile objects...")
 
         output_dir = get_output_directory(self.config, self.system, output_path=self.output_path)
@@ -738,7 +792,22 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                     logger.debug(f"Created DataFile object: {datafile_obj.name}")
 
     def _validate_xml(self, xml_path: str) -> bool:
-        """Validate XML file structure."""
+        """
+        Validate the structure of an XML file.
+
+        Attempts to parse the XML file at the given path using ElementTree.
+        Returns True if the file is well-formed and can be parsed, otherwise False.
+
+        Parameters
+        ----------
+        xml_path : str
+            Path to the XML file to validate.
+
+        Returns
+        -------
+        bool
+            True if the XML is valid, False otherwise.
+        """
         try:
             import xml.etree.ElementTree as ET
 

@@ -6,13 +6,65 @@
   "horizon_year": null,
   "model-properties": {},
   "models": [],
-  "properties-defaults": {
-    "Decomposition Method": 1,
-    "Dump Energy Price": -100,
-    "VoLL": 1000000.0,
-    "Wheeling Charge": 0.001,
-    "Wheeling Charge Back": 0.001
-  },
   "resolution": null,
-  "template": null
+  "template": null,
+  "required-properties": {
+    "PLEXOSGenerator": [
+      "units",
+      "commit",
+      "pump_load",
+      "pump_efficiency",
+      "fuel_price",
+      "vom_charge",
+      "fom_charge",
+      "start_cost",
+      "forced_outage_rate",
+      "min_stable_level",
+      "maintenance_rate",
+      "mean_time_to_repair",
+      "min_up_time",
+      "min_down_time"
+    ],
+    "PLEXOSStorage": [
+      "units",
+      "commit",
+      "initial_volume",
+      "max_capacity"
+    ],
+    "PLEXOSRegion": [
+      "units"
+    ],
+    "PLEXOSBattery": [
+      "units",
+      "commit",
+      "initial_soc",
+      "min_soc",
+      "max_soc",
+      "capacity",
+      "vom_charge",
+      "charge_efficiency",
+      "discharge_efficiency"
+    ],
+    "PLEXOSLine": [
+      "units",
+      "loss_incr",
+      "wheeling_charge",
+      "wheeling_charge_back"
+    ],
+    "PLEXOSTransformer": [
+      "units"
+    ],
+    "PLEXOSNode": [
+      "units"
+    ],
+    "PLEXOSInterface": [
+      "units"
+    ],
+    "PLEXOSReserve": [
+      "min_provision",
+      "duration",
+      "type",
+      "is_enabled"
+    ]
+  }
 }

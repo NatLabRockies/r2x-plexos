@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from loguru import logger
-from plexosdb import ClassEnum, CollectionEnum, PlexosDB
+from plexosdb import ClassEnum, PlexosDB
 
 from r2x_core import Err, Ok, Result
 from r2x_plexos.models import PLEXOSHorizon, PLEXOSModel
@@ -21,6 +21,7 @@ from r2x_plexos.models.simulation_config import (
     PLEXOSSTSchedule,
     PLEXOSTransmission,
 )
+from r2x_plexos.utils_mappings import CONFIG_CLASS_MAP, MEMBERSHIP_TYPE_MAP
 from r2x_plexos.utils_plexosdb import validate_simulation_attribute
 
 
@@ -280,6 +281,52 @@ def ingest_simulation_config_to_plexosdb(
     )
 
 
+def _build_from_static_models(
+    defaults: dict[str, Any],
+    simulation_config: dict[str, PLEXOSConfiguration | None] | None = None,
+) -> Result[SimulationConfig, str]:
+    static_models = {}
+    if "static_models" in defaults:
+        static_models.update(defaults["static_models"])
+    if "static_models_overlap" in defaults:
+        static_models.update(defaults["static_models_overlap"])
+    static_horizons = defaults.get("static_horizons", {})
+
+    models = []
+    horizons = []
+    memberships = []
+
+    # Build horizons (if present)
+    horizons.extend(
+        PLEXOSHorizon(
+            name=horizon_name,
+            **horizon_data["attributes"]
+        )
+        for horizon_name, horizon_data in static_horizons.items()
+    )
+
+    for model_name, model_data in static_models.items():
+        model = PLEXOSModel(
+            name=model_name,
+            category=model_data.get("category", None),
+            **model_data.get("attributes", {})
+        )
+        models.append(model)
+        if "memberships" in model_data:
+            for membership_type, child_name in model_data["memberships"].items():
+                memberships.append((model_name, child_name, membership_type))
+
+
+    return Ok(
+        SimulationConfig(
+            models=models,
+            horizons=horizons,
+            memberships=memberships,
+            simulation_configs=simulation_config,
+        )
+    )
+
+
 def build_plexos_simulation(
     config: dict[str, Any],
     defaults: dict[str, Any] | None = None,
@@ -362,8 +409,14 @@ def build_plexos_simulation(
     if defaults is None:
         defaults = {}
 
+    if "models" not in config and "template" not in config and "horizon_year" not in config:
+        return Err("Must specify 'horizon_year' in simulation config")
+
     # Route to appropriate builder based on config
     result: Result[SimulationConfig, str]
+    if "static_models" in defaults and "static_horizons" in defaults:
+        return _build_from_static_models(defaults, simulation_config)
+
     if "models" in config:
         # Fully custom configuration
         result = _build_custom_simulation(config, defaults)
@@ -392,49 +445,35 @@ def build_plexos_simulation(
 def _build_simple_simulation(
     config: dict[str, Any], defaults: dict[str, Any]
 ) -> Result[SimulationConfig, str]:
-    """Build simulation from simple config (horizon_year + resolution)."""
-    horizon_year = config.get("horizon_year")
-    resolution = config.get("resolution", "1D")
+    """Build simulation from all models and horizons in defaults."""
+    static_models = {}
+    if "static_models" in defaults:
+        static_models.update(defaults["static_models"])
+    if "static_models_overlap" in defaults:
+        static_models.update(defaults["static_models_overlap"])
 
-    if not horizon_year:
-        return Err("Configuration must specify 'horizon_year'")
+    models = []
+    horizons = {}
+    memberships = []
 
-    # Create single model for full horizon_year
-    start_date = datetime(horizon_year, 1, 1)
-    datetime(horizon_year, 12, 31, 23, 59, 59)
-
-    # Determine chrono_step_count based on resolution
-    if resolution == "1D":
-        days_in_year = 366 if calendar.isleap(horizon_year) else 365
-        chrono_step_count = days_in_year
-        chrono_step_type = 2  # Daily
-    elif resolution == "1H":
-        days_in_year = 366 if calendar.isleap(horizon_year) else 365
-        chrono_step_count = days_in_year
-        chrono_step_type = 1  # Hourly
-    else:
-        return Err(f"Unsupported resolution: {resolution}")
-
-    horizon = PLEXOSHorizon(
-        name=f"Horizon_{horizon_year}",
-        chrono_date_from=datetime_to_ole_date(start_date),
-        date_from=datetime_to_ole_date(start_date),
-        chrono_step_count=chrono_step_count,
-        chrono_step_type=chrono_step_type,
-        step_count=1,
-        periods_per_day=24,
-    )
-
-    model = PLEXOSModel(
-        name=f"Model_{horizon_year}",
-        category=f"model_{horizon_year}",
-    )
+    for model_name, model_data in static_models.items():
+        model = PLEXOSModel(
+            name=model_name,
+            category=model_data.get("category", None),
+            **model_data.get("attributes", {})
+        )
+        models.append(model)
+        if "memberships" in model_data:
+            for membership_type, child_name in model_data["memberships"].items():
+                memberships.append((model_name, child_name, membership_type))
+                if membership_type == "Horizon" and child_name not in horizons:
+                    horizons[child_name] = PLEXOSHorizon(name=child_name)
 
     return Ok(
         SimulationConfig(
-            models=[model],
-            horizons=[horizon],
-            memberships=[(model.name, horizon.name)],
+            models=models,
+            horizons=list(horizons.values()),
+            memberships=memberships,
         )
     )
 
@@ -460,7 +499,6 @@ def _build_from_template(config: dict[str, Any], defaults: dict[str, Any]) -> Re
 def _build_monthly_models(
     horizon_year: int, config: dict[str, Any], defaults: dict[str, Any]
 ) -> Result[SimulationConfig, str]:
-    """Generate 12 monthly models for the specified horizon_year."""
     models = []
     horizons = []
     memberships = []
@@ -469,20 +507,18 @@ def _build_monthly_models(
     horizon_properties = config.get("horizon_properties", {})
 
     for month in range(1, 13):
-        # Calculate month boundaries
         start_date = datetime(horizon_year, month, 1)
         _, last_day = calendar.monthrange(horizon_year, month)
         end_date = datetime(horizon_year, month, last_day, 23, 59, 59)
         days_in_month = (end_date - start_date).days + 1
 
-        # Create horizon
         horizon_name = f"Horizon_{horizon_year}_M{month:02d}"
         horizon_data = {
             "name": horizon_name,
             "chrono_date_from": datetime_to_ole_date(start_date),
             "date_from": datetime_to_ole_date(datetime(horizon_year, 1, 1)),
             "chrono_step_count": days_in_month,
-            "chrono_step_type": 2,  # Daily
+            "chrono_step_type": 2,
             "step_count": 1,
             "periods_per_day": 24,
         }
@@ -490,7 +526,6 @@ def _build_monthly_models(
         horizon = PLEXOSHorizon(**horizon_data)
         horizons.append(horizon)
 
-        # Create model
         model_name = f"Model_{horizon_year}_M{month:02d}"
         model_data = {
             "name": model_name,
@@ -500,8 +535,8 @@ def _build_monthly_models(
         model = PLEXOSModel(**model_data)
         models.append(model)
 
-        # Track membership
-        memberships.append((model_name, horizon_name))
+        # Track membership with type
+        memberships.append((model_name, horizon_name, "Horizon"))
 
     return Ok(
         SimulationConfig(
@@ -515,7 +550,6 @@ def _build_monthly_models(
 def _build_weekly_models(
     horizon_year: int, config: dict[str, Any], defaults: dict[str, Any]
 ) -> Result[SimulationConfig, str]:
-    """Generate 52 weekly models for the specified horizon_year."""
     models = []
     horizons = []
     memberships = []
@@ -526,24 +560,19 @@ def _build_weekly_models(
     start_of_year = datetime(horizon_year, 1, 1)
 
     for week in range(1, 53):
-        # Calculate week boundaries
         start_date = start_of_year + timedelta(weeks=week - 1)
         end_date = start_date + timedelta(days=6, hours=23, minutes=59, seconds=59)
-
-        # Don't go beyond horizon_year boundary
         if end_date.year > horizon_year:
             end_date = datetime(horizon_year, 12, 31, 23, 59, 59)
-
         days_in_week = (end_date - start_date).days + 1
 
-        # Create horizon
         horizon_name = f"Horizon_{horizon_year}_W{week:02d}"
         horizon_data = {
             "name": horizon_name,
             "chrono_date_from": datetime_to_ole_date(start_date),
             "date_from": datetime_to_ole_date(start_of_year),
             "chrono_step_count": days_in_week,
-            "chrono_step_type": 2,  # Daily
+            "chrono_step_type": 2,
             "step_count": 1,
             "periods_per_day": 24,
         }
@@ -551,7 +580,6 @@ def _build_weekly_models(
         horizon = PLEXOSHorizon(**horizon_data)
         horizons.append(horizon)
 
-        # Create model
         model_name = f"Model_{horizon_year}_W{week:02d}"
         model_data = {
             "name": model_name,
@@ -561,8 +589,7 @@ def _build_weekly_models(
         model = PLEXOSModel(**model_data)
         models.append(model)
 
-        # Track membership
-        memberships.append((model_name, horizon_name))
+        memberships.append((model_name, horizon_name, "Horizon"))
 
     return Ok(
         SimulationConfig(
@@ -576,7 +603,6 @@ def _build_weekly_models(
 def _build_quarterly_models(
     horizon_year: int, config: dict[str, Any], defaults: dict[str, Any]
 ) -> Result[SimulationConfig, str]:
-    """Generate 4 quarterly models for the specified horizon_year."""
     models = []
     horizons = []
     memberships = []
@@ -592,20 +618,18 @@ def _build_quarterly_models(
     ]
 
     for _quarter_num, quarter_name, months in quarters:
-        # Calculate quarter boundaries
         start_date = datetime(horizon_year, months[0], 1)
         _, last_day = calendar.monthrange(horizon_year, months[-1])
         end_date = datetime(horizon_year, months[-1], last_day, 23, 59, 59)
         days_in_quarter = (end_date - start_date).days + 1
 
-        # Create horizon
         horizon_name = f"Horizon_{horizon_year}_{quarter_name}"
         horizon_data = {
             "name": horizon_name,
             "chrono_date_from": datetime_to_ole_date(start_date),
             "date_from": datetime_to_ole_date(datetime(horizon_year, 1, 1)),
             "chrono_step_count": days_in_quarter,
-            "chrono_step_type": 2,  # Daily
+            "chrono_step_type": 2,
             "step_count": 1,
             "periods_per_day": 24,
         }
@@ -613,7 +637,6 @@ def _build_quarterly_models(
         horizon = PLEXOSHorizon(**horizon_data)
         horizons.append(horizon)
 
-        # Create model
         model_name = f"Model_{horizon_year}_{quarter_name}"
         model_data = {
             "name": model_name,
@@ -623,8 +646,7 @@ def _build_quarterly_models(
         model = PLEXOSModel(**model_data)
         models.append(model)
 
-        # Track membership
-        memberships.append((model_name, horizon_name))
+        memberships.append((model_name, horizon_name, "Horizon"))
 
     return Ok(
         SimulationConfig(
@@ -638,7 +660,6 @@ def _build_quarterly_models(
 def _build_custom_simulation(
     config: dict[str, Any], defaults: dict[str, Any]
 ) -> Result[SimulationConfig, str]:
-    """Build simulation from fully custom specification."""
     models = []
     horizons = []
     memberships = []
@@ -647,7 +668,6 @@ def _build_custom_simulation(
         model_name = model_config["name"]
         horizon_config = model_config["horizon"]
 
-        # Parse dates - fromisoformat can raise ValueError
         start_str = horizon_config.get("start")
         end_str = horizon_config.get("end")
 
@@ -665,7 +685,6 @@ def _build_custom_simulation(
                 f"Model '{model_name}' has invalid date range: start '{start_str}' must be before end '{end_str}'"
             )
 
-        # Create horizon
         horizon_name = horizon_config.get("name", f"{model_name}_Horizon")
         horizon = PLEXOSHorizon(
             name=horizon_name,
@@ -678,15 +697,13 @@ def _build_custom_simulation(
         )
         horizons.append(horizon)
 
-        # Create model
         model = PLEXOSModel(
             name=model_name,
             category=model_config.get("category", "custom"),
         )
         models.append(model)
 
-        # Track membership
-        memberships.append((model_name, horizon_name))
+        memberships.append((model_name, horizon_name, "Horizon"))
 
     return Ok(
         SimulationConfig(
@@ -740,64 +757,51 @@ def ingest_simulation_to_plexosdb(
 
     This function ingests models, horizons, their memberships, and simulation
     configuration objects (Performance, Production, etc.) into a PlexosDB instance.
-
-    Parameters
-    ----------
-    db : PlexosDB
-        The PlexosDB instance to write to
-    result : SimulationBuildResult
-        Output from build_plexos_simulation containing models, horizons, and memberships
-    validate : bool, optional
-        Whether to validate simulation config attributes before ingestion, by default True
-
-    Returns
-    -------
-    Result[dict[str, Any], str]
-        Ok with dictionary containing:
-            - 'models': Dict mapping model names to IDs
-            - 'horizons': Dict mapping horizon names to IDs
-            - 'simulation_objects': List of dicts with simulation object ingestion info
-        or Err with error message.
-
-    Examples
-    --------
-    >>> result = build_plexos_simulation({"horizon_year": 2012, "template": "monthly"})
-    >>> if result.is_ok():
-    ...     build_result = result.unwrap()
-    ...     db = PlexosDB.from_xml("my_model.xml")
-    ...     ingest_result = ingest_simulation_to_plexosdb(db, build_result)
-    ...     if ingest_result.is_ok():
-    ...         ids = ingest_result.unwrap()
-    ...         print(f"Created {len(ids['models'])} models and {len(ids['horizons'])} horizons")
     """
     horizon_ids: dict[str, int] = {}
     model_ids: dict[str, int] = {}
 
     logger.info(f"Creating {len(result.horizons)} horizon object(s)...")
     for horizon in result.horizons:
-        horizon_id = db.add_object(ClassEnum.Horizon, horizon.name)
+        try:
+            horizon_id = db.add_object(ClassEnum.Horizon, horizon.name)
+        except Exception as e:
+            return Err(f"Failed to add object {horizon.name}: {e}")
         horizon_ids[horizon.name] = horizon_id
-
         _add_horizon_attributes(db, horizon)
-
         logger.debug(f"Created horizon '{horizon.name}' (ID: {horizon_id})")
 
     logger.info(f"Creating {len(result.models)} model object(s)...")
     for model in result.models:
-        model_id = db.add_object(ClassEnum.Model, model.name, category=model.category)
+        try:
+            model_id = db.add_object(ClassEnum.Model, model.name, category=model.category)
+        except Exception as e:
+            return Err(f"Failed to add object {model.name}: {e}")
         model_ids[model.name] = model_id
         logger.debug(f"Created model '{model.name}' (ID: {model_id})")
 
-    logger.info(f"Creating {len(result.memberships)} model-horizon membership(s)...")
-    for model_name, horizon_name in result.memberships:
+    referenced_objects = {(child_name, membership_type) for _, child_name, membership_type in result.memberships}
+    already_created = set(horizon_ids) | set(model_ids)
+    for obj_name, membership_type in referenced_objects:
+        if obj_name not in already_created:
+            child_class_enum, _ = MEMBERSHIP_TYPE_MAP[membership_type]
+            try:
+                db.add_object(child_class_enum, obj_name)
+                logger.debug(f"Created simulation config object '{obj_name}' as {child_class_enum.name}")
+            except Exception:
+                continue
+
+    logger.info(f"Creating {len(result.memberships)} model memberships...")
+    for model_name, child_name, membership_type in result.memberships:
+        child_class_enum, collection_enum = MEMBERSHIP_TYPE_MAP[membership_type]
         db.add_membership(
             ClassEnum.Model,
-            ClassEnum.Horizon,
+            child_class_enum,
             model_name,
-            horizon_name,
-            CollectionEnum.Horizon,
+            child_name,
+            collection_enum,
         )
-        logger.debug(f"Linked model '{model_name}' → horizon '{horizon_name}'")
+        logger.debug(f"Linked model '{model_name}' → '{child_name}' ({membership_type})")
 
     simulation_objects_added: list[dict[str, Any]] = []
     if not result.simulation_configs:
@@ -806,26 +810,14 @@ def ingest_simulation_to_plexosdb(
         total_configs = len(result.simulation_configs)
         logger.info(f"Ingesting simulation configuration objects (0/{total_configs})...")
 
-        config_class_map = {
-            "mt_schedule": ClassEnum.MTSchedule,
-            "st_schedule": ClassEnum.STSchedule,
-            "production": ClassEnum.Production,
-            "pasa": ClassEnum.PASA,
-            "performance": ClassEnum.Performance,
-            "report": ClassEnum.Report,
-            "transmission": ClassEnum.Transmission,
-            "diagnostic": ClassEnum.Diagnostic,
-        }
-
         for config_key, sim_config in result.simulation_configs.items():
             if sim_config is None:
                 continue
 
-            class_enum = config_class_map.get(config_key)
+            class_enum = CONFIG_CLASS_MAP.get(config_key)
             if class_enum is None:
                 logger.warning(f"Skipping unknown simulation config type: '{config_key}'")
                 continue
-
             ingest_result = ingest_simulation_config_to_plexosdb(
                 db, class_enum, sim_config, validate=validate
             )
