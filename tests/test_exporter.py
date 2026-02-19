@@ -72,7 +72,7 @@ def test_setup_configuration_creates_simulation(plexos_config, serialized_plexos
     models_before = exporter.db.list_objects_by_class(ClassEnum.Model)
     horizons_before = exporter.db.list_objects_by_class(ClassEnum.Horizon)
     assert len(models_before) == 14
-    assert len(horizons_before) == 14
+    assert len(horizons_before) == 26
 
     models_after = exporter.db.list_objects_by_class(ClassEnum.Model)
     assert len(models_after) > 0, "No models were created"
@@ -108,7 +108,7 @@ def test_setup_configuration_creates_simulation(plexos_config, serialized_plexos
         raise AssertionError("No horizon attributes were set") from e
 
 
-def test_setup_configuration_skips_existing(plexos_config, serialized_plexos_system, template_db, caplog):
+def test_setup_configuration_skips_existing(plexos_config, serialized_plexos_system, template_db):
     """Test that setup_configuration skips if models/horizons already exist."""
     sys = serialized_plexos_system
 
@@ -129,8 +129,7 @@ def test_setup_configuration_skips_existing(plexos_config, serialized_plexos_sys
     horizons_count = len(exporter.db.list_objects_by_class(ClassEnum.Horizon))
 
     result2 = exporter.setup_configuration()
-    assert result2.is_err(), "Second setup should fail due to duplicate objects"
-    assert "failed to add object" in str(result2.error).lower()
+    assert result2.is_ok(), "Second setup should succeed and skip duplicates"
 
     models_count2 = len(exporter.db.list_objects_by_class(ClassEnum.Model))
     horizons_count2 = len(exporter.db.list_objects_by_class(ClassEnum.Horizon))

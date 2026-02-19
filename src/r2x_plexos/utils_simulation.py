@@ -1060,6 +1060,17 @@ def ingest_simulation_to_plexosdb(
     logger.info(f"Creating {len(result.memberships)} model memberships...")
     for model_name, child_name, membership_type in result.memberships:
         child_class_enum, collection_enum = MEMBERSHIP_TYPE_MAP[membership_type]
+        # Check if membership exists
+        try:
+            membership_id = db.get_membership_id(
+                model_name,
+                child_name,
+                collection_enum,
+            )
+            logger.debug(f"Membership {membership_id} already exists: {model_name} → {child_name} ({membership_type})")
+            continue
+        except AssertionError:
+            pass
         db.add_membership(
             ClassEnum.Model,
             child_class_enum,
