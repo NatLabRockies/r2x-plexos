@@ -61,7 +61,6 @@
       "units"
     ],
     "PLEXOSReserve": [
-      "min_provision",
       "duration",
       "type",
       "is_enabled"

@@ -7,6 +7,7 @@ from typing import Any
 
 from loguru import logger
 from plexosdb import ClassEnum, PlexosDB
+from plexosdb.enums import get_default_collection
 
 from r2x_core import Err, Ok, Result
 from r2x_plexos.models import PLEXOSHorizon, PLEXOSModel
@@ -938,6 +939,7 @@ def ingest_simulation_to_plexosdb(
     db: PlexosDB,
     result: SimulationConfig,
     validate: bool = True,
+    scenario_name: str = "default"
 ) -> Result[dict[str, Any], str]:
     """
     Write simulation configuration to plexosdb.
@@ -966,6 +968,22 @@ def ingest_simulation_to_plexosdb(
             return Err(f"Failed to add object {model.name}: {e}")
         model_ids[model.name] = model_id
         logger.debug(f"Created model '{model.name}' (ID: {model_id})")
+
+    if not db.check_object_exists(ClassEnum.Scenario, scenario_name):
+        db.add_object(ClassEnum.Scenario, scenario_name)
+
+    for model_name in model_ids:
+        try:
+            db.add_membership(
+                ClassEnum.Model,
+                ClassEnum.Scenario,
+                model_name,
+                scenario_name,
+                get_default_collection(ClassEnum.Scenario),
+            )
+            logger.debug(f"Linked scenario '{scenario_name}' → model '{model_name}'")
+        except Exception as e:
+            logger.warning(f"Failed to link scenario '{scenario_name}' to model '{model_name}': {e}")
 
     referenced_objects = {(child_name, membership_type) for _, child_name, membership_type in result.memberships}
     already_created = set(horizon_ids) | set(model_ids)

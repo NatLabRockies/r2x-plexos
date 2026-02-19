@@ -201,7 +201,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             f"{len(build_result.memberships)} membership(s)"
         )
 
-        ingest_result = ingest_simulation_to_plexosdb(self.db, build_result, validate=False)
+        ingest_result = ingest_simulation_to_plexosdb(self.db, build_result, validate=False, scenario_name=self.plexos_scenario)
         if ingest_result.is_err():
             assert isinstance(ingest_result, Err)
             return Err(f"Failed to ingest simulation: {ingest_result.error}")
