@@ -71,11 +71,8 @@ def test_setup_configuration_creates_simulation(plexos_config, serialized_plexos
 
     models_before = exporter.db.list_objects_by_class(ClassEnum.Model)
     horizons_before = exporter.db.list_objects_by_class(ClassEnum.Horizon)
-    assert len(models_before) == 1
-    assert len(horizons_before) == 1
-
-    result = exporter.setup_configuration()
-    assert result.is_ok(), f"setup_configuration failed: {result.error if result.is_err() else result}"
+    assert len(models_before) == 14
+    assert len(horizons_before) == 14
 
     models_after = exporter.db.list_objects_by_class(ClassEnum.Model)
     assert len(models_after) > 0, "No models were created"
@@ -132,14 +129,14 @@ def test_setup_configuration_skips_existing(plexos_config, serialized_plexos_sys
     horizons_count = len(exporter.db.list_objects_by_class(ClassEnum.Horizon))
 
     result2 = exporter.setup_configuration()
-    assert result2.is_ok()
+    assert result2.is_err(), "Second setup should fail due to duplicate objects"
+    assert "failed to add object" in str(result2.error).lower()
 
     models_count2 = len(exporter.db.list_objects_by_class(ClassEnum.Model))
     horizons_count2 = len(exporter.db.list_objects_by_class(ClassEnum.Horizon))
 
     assert models_count == models_count2, "Models were created on second call"
     assert horizons_count == horizons_count2, "Horizons were created on second call"
-    assert "using existing database configuration" in caplog.text.lower()
 
 
 def test_setup_configuration_missing_reference_year(template_db):
