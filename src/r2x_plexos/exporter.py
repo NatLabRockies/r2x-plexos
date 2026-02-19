@@ -610,6 +610,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                         if property_name:
                             property_names = [property_name]
 
+                    csv_relative_path = str(output_dir.relative_to(output_dir.parent) / matched_file)
                     for property_name in property_names:
                         try:
                             self.db.add_property(
@@ -617,14 +618,14 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                                 object_name=component.name,
                                 name=property_name,
                                 value=0,
-                                datafile_text=datafile_name,
+                                datafile_text=csv_relative_path,
                                 scenario=self.plexos_scenario,
                             )
-                            logger.debug(f"Linked {component.name}.{property_name} to {datafile_name}")
+                            logger.debug(f"Linked {component.name}.{property_name} to {csv_relative_path}")
 
                         except Exception as e:
                             logger.error(
-                                f"Failed to link {component.name}.{property_name} to {datafile_name}: {e}"
+                                f"Failed to link {component.name}.{property_name} to {csv_relative_path}: {e}"
                             )
 
     def _get_time_series_property_name(self, component: Any, ts_key_name: str | None = None) -> str | None:
