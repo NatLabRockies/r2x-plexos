@@ -285,6 +285,40 @@ def _build_from_static_models(
     defaults: dict[str, Any],
     simulation_config: dict[str, PLEXOSConfiguration | None] | None = None,
 ) -> Result[SimulationConfig, str]:
+    """
+    Build simulation configuration from static models and horizons.
+
+    This function constructs SimulationConfig objects using static model and horizon
+    definitions provided in the defaults dictionary. Each model and horizon is created
+    with its attributes, and memberships are established as specified.
+
+    Parameters
+    ----------
+    defaults : dict[str, Any]
+        Dictionary containing "static_models", "static_models_overlap", and "static_horizons".
+        Each entry should include attributes and memberships for models and horizons.
+    simulation_config : dict[str, PLEXOSConfiguration | None], optional
+        Optional simulation configuration objects to include in the result.
+
+    Returns
+    -------
+    Result[SimulationConfig, str]
+        Ok with SimulationConfig containing lists of models, horizons, memberships,
+        and simulation_configs, or Err with error message.
+
+    Examples
+    --------
+    >>> defaults = {
+    ...     "static_models": {"ModelA": {"attributes": {...}}},
+    ...     "static_horizons": {"HorizonA": {"attributes": {...}}}
+    ... }
+    >>> result = _build_from_static_models(defaults)
+    >>> build_result = result.unwrap()
+    >>> len(build_result.models)
+    1
+    >>> len(build_result.horizons)
+    1
+    """
     static_models = {}
     if "static_models" in defaults:
         static_models.update(defaults["static_models"])
@@ -499,6 +533,39 @@ def _build_from_template(config: dict[str, Any], defaults: dict[str, Any]) -> Re
 def _build_monthly_models(
     horizon_year: int, config: dict[str, Any], defaults: dict[str, Any]
 ) -> Result[SimulationConfig, str]:
+    """
+    Build a simulation configuration with monthly models and horizons for a given year.
+
+    This function generates one model and one horizon for each month in the specified horizon_year.
+    Each horizon covers the full month, and each model is associated with its corresponding horizon.
+    Optional model and horizon properties can be provided via the config.
+
+    Parameters
+    ----------
+    horizon_year : int
+        The year for which to build monthly models and horizons.
+    config : dict[str, Any]
+        Configuration dictionary. Supports optional keys:
+            - "model_properties": dict of properties to apply to each model.
+            - "horizon_properties": dict of properties to apply to each horizon.
+    defaults : dict[str, Any]
+        Dictionary of default settings (not used in this function).
+
+    Returns
+    -------
+    Result[SimulationConfig, str]
+        Ok with SimulationConfig containing lists of models, horizons, and memberships,
+        or Err with error message.
+
+    Examples
+    --------
+    >>> result = _build_monthly_models(2012, {}, {})
+    >>> build_result = result.unwrap()
+    >>> len(build_result.models)
+    12
+    >>> len(build_result.horizons)
+    12
+    """
     models = []
     horizons = []
     memberships = []
@@ -550,6 +617,39 @@ def _build_monthly_models(
 def _build_weekly_models(
     horizon_year: int, config: dict[str, Any], defaults: dict[str, Any]
 ) -> Result[SimulationConfig, str]:
+    """
+    Build a simulation configuration with weekly models and horizons for a given year.
+
+    This function generates one model and one horizon for each week in the specified horizon_year.
+    Each horizon covers a full week, and each model is associated with its corresponding horizon.
+    Optional model and horizon properties can be provided via the config.
+
+    Parameters
+    ----------
+    horizon_year : int
+        The year for which to build weekly models and horizons.
+    config : dict[str, Any]
+        Configuration dictionary. Supports optional keys:
+            - "model_properties": dict of properties to apply to each model.
+            - "horizon_properties": dict of properties to apply to each horizon.
+    defaults : dict[str, Any]
+        Dictionary of default settings (not used in this function).
+
+    Returns
+    -------
+    Result[SimulationConfig, str]
+        Ok with SimulationConfig containing lists of models, horizons, and memberships,
+        or Err with error message.
+
+    Examples
+    --------
+    >>> result = _build_weekly_models(2012, {}, {})
+    >>> build_result = result.unwrap()
+    >>> len(build_result.models)
+    52
+    >>> len(build_result.horizons)
+    52
+    """
     models = []
     horizons = []
     memberships = []
@@ -603,6 +703,39 @@ def _build_weekly_models(
 def _build_quarterly_models(
     horizon_year: int, config: dict[str, Any], defaults: dict[str, Any]
 ) -> Result[SimulationConfig, str]:
+    """
+    Build a simulation configuration with quarterly models and horizons for a given year.
+
+    This function generates one model and one horizon for each quarter in the specified horizon_year.
+    Each horizon covers the full quarter, and each model is associated with its corresponding horizon.
+    Optional model and horizon properties can be provided via the config.
+
+    Parameters
+    ----------
+    horizon_year : int
+        The year for which to build quarterly models and horizons.
+    config : dict[str, Any]
+        Configuration dictionary. Supports optional keys:
+            - "model_properties": dict of properties to apply to each model.
+            - "horizon_properties": dict of properties to apply to each horizon.
+    defaults : dict[str, Any]
+        Dictionary of default settings (not used in this function).
+
+    Returns
+    -------
+    Result[SimulationConfig, str]
+        Ok with SimulationConfig containing lists of models, horizons, and memberships,
+        or Err with error message.
+
+    Examples
+    --------
+    >>> result = _build_quarterly_models(2012, {}, {})
+    >>> build_result = result.unwrap()
+    >>> len(build_result.models)
+    4
+    >>> len(build_result.horizons)
+    4
+    """
     models = []
     horizons = []
     memberships = []
@@ -660,6 +793,60 @@ def _build_quarterly_models(
 def _build_custom_simulation(
     config: dict[str, Any], defaults: dict[str, Any]
 ) -> Result[SimulationConfig, str]:
+    """
+    Build a simulation configuration from a fully custom user specification.
+
+    This function generates models and horizons based on the "models" key in the config,
+    where each model specifies its own horizon with start/end dates and other attributes.
+    Memberships between models and horizons are established automatically.
+
+    Parameters
+    ----------
+    config : dict[str, Any]
+        User configuration dictionary. Must include a "models" key, which is a list of model
+        definitions. Each model definition must include:
+            - "name": Name of the model
+            - "horizon": Dictionary with keys:
+                - "name": Name of the horizon (optional, defaults to "<model_name>_Horizon")
+                - "start": Start date (ISO format string, required)
+                - "end": End date (ISO format string, required)
+                - "chrono_step_type": Step type (optional, default 2)
+                - "chrono_step_count": Step count (optional, default is days in range)
+                - "step_count": Step count (optional, default 1)
+                - "periods_per_day": Periods per day (optional, default 24)
+            - "category": Model category (optional, default "custom")
+    defaults : dict[str, Any]
+        Dictionary of default settings (not used in this function).
+
+    Returns
+    -------
+    Result[SimulationConfig, str]
+        Ok with SimulationConfig containing lists of models, horizons, and memberships,
+        or Err with error message.
+
+    Examples
+    --------
+    >>> config = {
+    ...     "models": [
+    ...         {
+    ...             "name": "Summer_2012",
+    ...             "horizon": {
+    ...                 "name": "Summer_Horizon",
+    ...                 "start": "2012-06-01",
+    ...                 "end": "2012-08-31",
+    ...                 "chrono_step_type": 2,
+    ...                 "chrono_step_count": 91
+    ...             }
+    ...         }
+    ...     ]
+    ... }
+    >>> result = _build_custom_simulation(config, {})
+    >>> build_result = result.unwrap()
+    >>> len(build_result.models)
+    1
+    >>> len(build_result.horizons)
+    1
+    """
     models = []
     horizons = []
     memberships = []
