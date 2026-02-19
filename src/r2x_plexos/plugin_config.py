@@ -1,5 +1,6 @@
 """PLEXOS configuration class."""
 
+import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any
@@ -80,3 +81,17 @@ class PLEXOSConfig(PluginConfig):
         if resolve_method:
             return resolve_method(None)
         return cls._package_config_path()
+
+    @classmethod
+    def load_defaults(cls) -> dict[str, Any]:
+        """Load default configuration from defaults.json."""
+        config_path = Path(__file__).parent / "config" / "defaults.json"
+        with open(config_path) as f:
+            return json.load(f)
+
+    @classmethod
+    def load_static_models(cls) -> dict[str, Any]:
+        """Load static models and horizons from JSON."""
+        config_path = Path(__file__).parent / "config" / "plexos_models.json"
+        with open(config_path) as f:
+            return json.load(f)
