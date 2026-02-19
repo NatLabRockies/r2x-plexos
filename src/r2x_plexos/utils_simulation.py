@@ -1,6 +1,7 @@
 """Utilities for building PLEXOS simulation configurations."""
 
 import calendar
+import difflib
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -34,6 +35,56 @@ class SimulationConfig:
     horizons: list[PLEXOSHorizon]
     memberships: list[tuple[str, str]]  # (model_name, horizon_name) pairs
     simulation_configs: dict[str, PLEXOSConfiguration] | None = None
+
+
+def get_enum_from_string(string: str, enum_class, prefix: str | None = None):
+    """
+    Find the closest matching enum member for a given string.
+
+    Uses sequence similarity to match the input string (optionally with a prefix)
+    to the enum member names (case-insensitive). Returns the enum member with the
+    highest similarity above a threshold, or raises KeyError if no match is found.
+
+    Parameters
+    ----------
+    string : str
+        The string to match to an enum member.
+    enum_class : Enum
+        The enum class to search.
+    prefix : str | None, optional
+        Optional prefix to prepend to the string before matching.
+
+    Returns
+    -------
+    Enum
+        The closest matching enum member.
+
+    Raises
+    ------
+    KeyError
+        If no matching enum member is found above the similarity threshold.
+
+    Examples
+    --------
+    >>> get_enum_from_string("generator", ClassEnum)
+    <ClassEnum.Generator: ...>
+    """
+    max_similarity = 0.95
+    closest_enum = None
+    if prefix is None:
+        prefix = ""
+
+    # We lower to do a caseinsensitive mapping.
+    requested_string = (prefix + string).lower()
+    for enum_member in enum_class:
+        enum_member_string = enum_member.lower()
+        similarity = difflib.SequenceMatcher(None, requested_string, enum_member_string).ratio()
+        if similarity > max_similarity:
+            max_similarity = similarity
+            closest_enum = enum_member
+    if closest_enum is None:
+        raise KeyError(f"No matching enum found for string '{string}'")
+    return closest_enum
 
 
 def datetime_to_ole_date(dt: datetime) -> float:
@@ -320,25 +371,26 @@ def _build_from_static_models(
     >>> len(build_result.horizons)
     1
     """
+    from r2x_plexos.plugin_config import PLEXOSConfig
+
     static_models = {}
     if "static_models" in defaults:
         static_models.update(defaults["static_models"])
     if "static_models_overlap" in defaults:
         static_models.update(defaults["static_models_overlap"])
-    static_horizons = defaults.get("static_horizons", {})
+
+    horizons_data = PLEXOSConfig.load_static_horizons()
+    static_horizons = horizons_data.get("static_horizons", {})
+    static_horizons_overlap = horizons_data.get("static_horizons_overlap", {})
 
     models = []
     horizons = []
     memberships = []
 
-    # Build horizons (if present)
-    horizons.extend(
-        PLEXOSHorizon(
-            name=horizon_name,
-            **horizon_data["attributes"]
-        )
-        for horizon_name, horizon_data in static_horizons.items()
-    )
+    for horizon_name, horizon_data in static_horizons.items():
+        horizons.append(PLEXOSHorizon(name=horizon_name, **horizon_data["attributes"]))
+    for horizon_name, horizon_data in static_horizons_overlap.items():
+        horizons.append(PLEXOSHorizon(name=horizon_name, **horizon_data["attributes"]))
 
     for model_name, model_data in static_models.items():
         model = PLEXOSModel(
@@ -350,7 +402,6 @@ def _build_from_static_models(
         if "memberships" in model_data:
             for membership_type, child_name in model_data["memberships"].items():
                 memberships.append((model_name, child_name, membership_type))
-
 
     return Ok(
         SimulationConfig(
@@ -952,22 +1003,32 @@ def ingest_simulation_to_plexosdb(
 
     logger.info(f"Creating {len(result.horizons)} horizon object(s)...")
     for horizon in result.horizons:
-        try:
-            horizon_id = db.add_object(ClassEnum.Horizon, horizon.name)
-        except Exception as e:
-            return Err(f"Failed to add object {horizon.name}: {e}")
-        horizon_ids[horizon.name] = horizon_id
-        _add_horizon_attributes(db, horizon)
-        logger.debug(f"Created horizon '{horizon.name}' (ID: {horizon_id})")
+        # Check if horizon already exists
+        if not db.check_object_exists(ClassEnum.Horizon, horizon.name):
+            try:
+                horizon_id = db.add_object(ClassEnum.Horizon, horizon.name)
+            except Exception as e:
+                return Err(f"Failed to add object {horizon.name}: {e}")
+            horizon_ids[horizon.name] = horizon_id
+            _add_horizon_attributes(db, horizon)
+            logger.debug(f"Created horizon '{horizon.name}' (ID: {horizon_id})")
+        else:
+            horizon_ids[horizon.name] = db.get_object_id(ClassEnum.Horizon, horizon.name)
+            logger.debug(f"Horizon '{horizon.name}' already exists.")
 
     logger.info(f"Creating {len(result.models)} model object(s)...")
+
     for model in result.models:
-        try:
-            model_id = db.add_object(ClassEnum.Model, model.name, category=model.category)
-        except Exception as e:
-            return Err(f"Failed to add object {model.name}: {e}")
-        model_ids[model.name] = model_id
-        logger.debug(f"Created model '{model.name}' (ID: {model_id})")
+        if not db.check_object_exists(ClassEnum.Model, model.name):
+            try:
+                model_id = db.add_object(ClassEnum.Model, model.name, category=model.category)
+            except Exception as e:
+                return Err(f"Failed to add object {model.name}: {e}")
+            model_ids[model.name] = model_id
+            logger.debug(f"Created model '{model.name}' (ID: {model_id})")
+        else:
+            model_ids[model.name] = db.get_object_id(ClassEnum.Model, model.name)
+            logger.debug(f"Model '{model.name}' already exists.")
 
     if not db.check_object_exists(ClassEnum.Scenario, scenario_name):
         db.add_object(ClassEnum.Scenario, scenario_name)

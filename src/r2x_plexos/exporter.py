@@ -7,7 +7,7 @@ from typing import Any, cast
 
 from loguru import logger
 from plexosdb import ClassEnum, PlexosDB
-from plexosdb.enums import get_default_collection
+from plexosdb.enums import CollectionEnum, get_default_collection
 
 from r2x_core import Err, Ok, Plugin, Result
 
@@ -38,6 +38,7 @@ from .utils_mappings import PLEXOS_TYPE_MAP_INVERTED
 from .utils_simulation import (
     build_plexos_simulation,
     get_default_simulation_config,
+    get_enum_from_string,
     ingest_simulation_to_plexosdb,
 )
 
@@ -144,6 +145,8 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             if setup_result.is_err():
                 return setup_result
 
+            self._add_reports()
+
             prepare_result = self.prepare_export()
             if prepare_result.is_err():
                 return prepare_result
@@ -157,13 +160,28 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             return Err(f"Export failed: {e}")
 
     def setup_configuration(self) -> Result[None, str]:
-        """Set up simulation configuration (models, horizons, and simulation configs)."""
+        """
+        Set up the simulation configuration in the PlexosDB.
+
+        Loads static model and horizon definitions from JSON files, merges them,
+        and builds the simulation configuration for the specified year and resolution.
+        Also applies simulation configuration objects (Performance, Production, etc.)
+        if provided. Returns Ok(None) on success or Err with an error message.
+
+        Returns
+        -------
+        Result[None, str]
+            Ok(None) if setup is successful, Err(error message) otherwise.
+        """
         if self.db is None:
             return Err("Database not initialized")
 
         logger.info("Setting up simulation configuration")
 
         static_model_defaults = PLEXOSConfig.load_static_models()
+        static_horizon_defaults = PLEXOSConfig.load_static_horizons()
+        defaults = {**static_model_defaults, **static_horizon_defaults}
+
         simulation_config_dict = getattr(self.config, "simulation_config", None)
         if simulation_config_dict is None:
             logger.debug("Using default simulation configuration")
@@ -186,7 +204,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         logger.info(f"Building simulation for year {horizon_year}")
         simulation_result = build_plexos_simulation(
             config=sim_config,
-            defaults=static_model_defaults,
+            defaults=defaults,
             simulation_config=simulation_config_dict,
         )
 
@@ -817,3 +835,13 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             return True
         except ET.ParseError:
             return False
+
+
+    def _add_reports(self) -> None:
+        """Add report definitions from plexos_reports.json to the PlexosDB."""
+        report_objects = PLEXOSConfig.load_reports()
+        for report_object in report_objects:
+            report_object["collection"] = get_enum_from_string(report_object["collection"], CollectionEnum)
+            report_object["parent_class"] = get_enum_from_string(report_object["parent_class"], ClassEnum)
+            report_object["child_class"] = get_enum_from_string(report_object["child_class"], ClassEnum)
+            self.db.add_report(**report_object)

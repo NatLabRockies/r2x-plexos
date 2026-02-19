@@ -95,3 +95,17 @@ class PLEXOSConfig(PluginConfig):
         config_path = Path(__file__).parent / "config" / "plexos_models.json"
         with open(config_path) as f:
             return json.load(f)
+
+    @classmethod
+    def load_static_horizons(cls) -> dict[str, Any]:
+        """Load static horizons from JSON."""
+        config_path = Path(__file__).parent / "config" / "plexos_horizons.json"
+        with open(config_path) as f:
+            return json.load(f)
+
+    @classmethod
+    def load_reports(cls) -> list[dict[str, Any]]:
+        """Load report definitions from plexos_reports.json."""
+        config_path = Path(__file__).parent / "config" / "plexos_reports.json"
+        with open(config_path) as f:
+            return json.load(f)
