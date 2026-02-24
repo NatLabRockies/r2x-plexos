@@ -274,7 +274,12 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         self._add_component_properties(datafile_prefix=datafile_prefix)
         self._add_component_memberships()
 
-        xml_filename = f"{self.config.model_name}.xml"
+        year_suffix = "_".join(str(y) for y in (self.weather_year, self.solve_year) if y is not None)
+        xml_filename = (
+            f"{self.config.model_name}_{year_suffix}.xml"
+            if year_suffix
+            else f"{self.config.model_name}.xml"
+        )
         xml_path = base_folder / xml_filename
 
         logger.info(f"Exporting XML to {xml_path}")
