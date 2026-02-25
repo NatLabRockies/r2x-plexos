@@ -52,6 +52,10 @@ from .utils_plexosdb import (
 __version__ = version("r2x_plexos")
 
 SCENARIO_ORDER = files("r2x_plexos.sql").joinpath("scenario_read_order.sql").read_text(encoding="utf-8-sig")
+HYDRO_TS_NAME_MAP: dict[str, str] = {
+    "fixed_load": "max_active_power",
+    "max_energy_day": "hydro_budget",
+}
 
 
 class TimeSeriesSourceType(str, Enum):
@@ -1144,13 +1148,14 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
                     for key, entry in list(prop_value.entries.items()):
                         prop_value.entries[key] = create_plexos_row(single_value, entry)
         else:
+            ts_name = HYDRO_TS_NAME_MAP.get(ref.field_name, ref.field_name)
             field_ts = SingleTimeSeries.from_array(
                 data=ts.data,
-                name=ref.field_name,
+                name=ts_name,
                 initial_timestamp=ts.initial_timestamp,
                 resolution=ts.resolution,
             )
-            features = {"horizon": horizon} if horizon else {}
+            features = {"horizon": datetime.fromisoformat(horizon[0]).year} if horizon else {}
             logger.trace(f"Attaching time series to {ref.component_name}.{ref.field_name}")
             self.system.add_time_series(field_ts, component, context=None, **features)
 
@@ -1198,17 +1203,17 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
             logger.debug(
                 f"Updating constant collection property value for {ref.component_name}.{ref.field_name}: {single_value}"
             )
-
             for key, entry in list(property_value.entries.items()):
                 property_value.entries[key] = create_plexos_row(single_value, entry)
         else:
+            ts_name = HYDRO_TS_NAME_MAP.get(ref.field_name, ref.field_name)
             field_ts = SingleTimeSeries.from_array(
                 data=ts.data,
-                name=ref.field_name,
+                name=ts_name,
                 initial_timestamp=ts.initial_timestamp,
                 resolution=ts.resolution,
             )
-            features = {"horizon": horizon} if horizon else {}
+            features = {"horizon": datetime.fromisoformat(horizon[0]).year} if horizon else {}
             logger.trace(
                 f"Attaching time series to collection property {ref.component_name}.{ref.field_name}"
             )
@@ -1227,16 +1232,17 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         horizon: tuple[str, str] | None,
     ) -> float:
         """Attach a single band time series to component and return max value."""
+        ts_name = HYDRO_TS_NAME_MAP.get(ref.field_name, ref.field_name)
         field_ts = SingleTimeSeries.from_array(
             data=ts.data,
-            name=ref.field_name,
+            name=ts_name,
             initial_timestamp=ts.initial_timestamp,
             resolution=ts.resolution,
         )
 
         features: dict[str, Any] = {"band": band_num}
         if horizon:
-            features["horizon"] = horizon
+            features["horizon"] = datetime.fromisoformat(horizon[0]).year
 
         logger.debug(f"Attaching band {band_num} time series to {ref.component_name}.{ref.field_name}")
         self.system.add_time_series(field_ts, component, **features)
