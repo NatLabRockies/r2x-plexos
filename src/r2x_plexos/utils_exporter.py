@@ -38,18 +38,9 @@ def get_output_directory(
 def generate_csv_filename(field_name: str, component_class: str, metadata: dict[str, Any]) -> str:
     """Generate a CSV filename for time series export."""
     safe_field = field_name.replace(" ", "_").replace("/", "_")
+
     parts = [str(metadata[key]) for key in ("model_name", "weather_year", "solve_year") if key in metadata]
     metadata_suffix = "_".join(parts) if parts else "default"
-
-    special_class_map = {
-        "hydro_budget": "PLEXOSHydroGenerator",
-        "max_active_power": "PLEXOSVariableGenerator",
-        "max_active_power_load": "PLEXOSDemand",
-        "requirement": "PLEXOSReserve",
-        "natural_inflow": "PLEXOSStorage",
-    }
-
-    component_class = special_class_map.get(safe_field, component_class)
 
     return f"{component_class}_{safe_field}_{metadata_suffix}.csv"
 

@@ -10,9 +10,19 @@ from .component import PLEXOSConfiguration
 class PLEXOSModel(PLEXOSConfiguration):
     """PLEXOS Model class."""
 
+    random_number_seed: Annotated[
+        float | int,
+        Field(
+            alias="Random Number Seed",
+            description="Random number seed assigned to the model",
+            ge=0,
+            le=2147483647,
+        ),
+    ] = 0
+
     @classmethod
     def example(cls) -> "PLEXOSModel":
-        """Create an example PlexosHorizon."""
+        """Create an example PlexosModel."""
         return PLEXOSModel(
             name="PLEXOSModel",
         )

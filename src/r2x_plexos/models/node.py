@@ -291,5 +291,4 @@ class PLEXOSNode(PLEXOSTopology):
             object_id=1,
             is_slack_bus=-1,
             load=100.0,
-            units=1,
         )

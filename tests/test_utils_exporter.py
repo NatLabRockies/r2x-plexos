@@ -155,20 +155,20 @@ def test_generate_csv_filename_no_metadata():
 
 
 def test_generate_csv_filename_special_fields():
-    """Test filename generation with special field names that map to specific classes."""
+    """Test filename generation with different field names."""
     metadata = {"model_name": "Base"}
 
     result = generate_csv_filename("hydro_budget", "PLEXOSGenerator", metadata)
-    assert "PLEXOSHydroGenerator" in result
+    assert result == "PLEXOSGenerator_hydro_budget_Base.csv"
 
     result = generate_csv_filename("max_active_power", "PLEXOSGenerator", metadata)
-    assert "PLEXOSVariableGenerator" in result
+    assert result == "PLEXOSGenerator_max_active_power_Base.csv"
 
-    result = generate_csv_filename("requirement", "PLEXOSGenerator", metadata)
-    assert "PLEXOSReserve" in result
+    result = generate_csv_filename("requirement", "PLEXOSReserve", metadata)
+    assert result == "PLEXOSReserve_requirement_Base.csv"
 
-    result = generate_csv_filename("natural_inflow", "PLEXOSGenerator", metadata)
-    assert "PLEXOSStorage" in result
+    result = generate_csv_filename("natural_inflow", "PLEXOSStorage", metadata)
+    assert result == "PLEXOSStorage_natural_inflow_Base.csv"
 
 
 def test_generate_csv_filename_partial_metadata():

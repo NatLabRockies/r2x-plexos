@@ -1,6 +1,6 @@
 """MAPPING FOR CLASS ENUM."""
 
-from plexosdb import ClassEnum
+from plexosdb import ClassEnum, CollectionEnum
 
 from .models import (
     PLEXOSBattery,
@@ -41,3 +41,26 @@ PLEXOS_TYPE_MAP: dict[ClassEnum, type[PLEXOSObject]] = {
     ClassEnum.Horizon: PLEXOSHorizon,
 }
 PLEXOS_TYPE_MAP_INVERTED = dict(zip(PLEXOS_TYPE_MAP.values(), PLEXOS_TYPE_MAP.keys(), strict=False))
+
+MEMBERSHIP_TYPE_MAP = {
+    "Horizon": (ClassEnum.Horizon, CollectionEnum.Horizon),
+    "Diagnostic": (ClassEnum.Diagnostic, CollectionEnum.Diagnostic),
+    "MT Schedule": (ClassEnum.MTSchedule, CollectionEnum.MTSchedule),
+    "ST Schedule": (ClassEnum.STSchedule, CollectionEnum.STSchedule),
+    "Production": (ClassEnum.Production, CollectionEnum.Production),
+    "PASA": (ClassEnum.PASA, CollectionEnum.PASA),
+    "Performance": (ClassEnum.Performance, CollectionEnum.Performance),
+    "Report": (ClassEnum.Report, CollectionEnum.Report),
+    "Transmission": (ClassEnum.Transmission, CollectionEnum.Transmission),
+}
+
+CONFIG_CLASS_MAP = {
+    "mt_schedule": ClassEnum.MTSchedule,
+    "st_schedule": ClassEnum.STSchedule,
+    "production": ClassEnum.Production,
+    "pasa": ClassEnum.PASA,
+    "performance": ClassEnum.Performance,
+    "report": ClassEnum.Report,
+    "transmission": ClassEnum.Transmission,
+    "diagnostic": ClassEnum.Diagnostic,
+}

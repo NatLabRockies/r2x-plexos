@@ -19,7 +19,7 @@ class PLEXOSBattery(PLEXOSObject):
             description="Initial state of charge of the battery",
             ge=0,
         ),
-    ] = 0
+    ] = 50
     charge_efficiency: Annotated[
         float | int,
         PLEXOSProperty(units="%"),
@@ -1407,10 +1407,6 @@ class PLEXOSBattery(PLEXOSObject):
         """Create an example PLEXOSBattery."""
         return PLEXOSBattery(
             name="ExampleBattery",
-            initial_soc=100,
-            charge_efficiency=95,
-            discharge_efficiency=95,
             capacity=4,  # 4 hour duration
             max_power=1,  # 1MW Battery
-            units=1,
         )
