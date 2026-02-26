@@ -55,6 +55,10 @@ SCENARIO_ORDER = files("r2x_plexos.sql").joinpath("scenario_read_order.sql").rea
 HYDRO_TS_NAME_MAP: dict[str, str] = {
     "fixed_load": "max_active_power",
     "max_energy_day": "hydro_budget",
+    "min_provision": "requirement",
+    "load_subtracter": "max_active_power",
+    "rating": "max_active_power",
+    "load": "max_active_power",
 }
 
 
@@ -573,6 +577,11 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         membership_id : int
             Parent-child relationship identifier
         """
+        if self._is_duplicate_ts_reference(component, field_name):
+            logger.debug(
+                f"Skipping {field_name} for {component.name} - duplicate target already registered"
+            )
+            return
         if property.has_datafile():
             for row in property.entries.values():
                 name = row.datafile_name or (
@@ -737,6 +746,23 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
                     setattr(component, field_name, property_value)
         return
 
+    def _is_duplicate_ts_reference(self, component: PLEXOSObject, field_name: str) -> bool:
+        """Check if a time series reference would be a duplicate mapping.
+
+        Returns True if field_name maps to the same target as an already
+        registered reference for this component (e.g. load_subtracter and
+        rating both map to max_active_power).
+        """
+        target_name = HYDRO_TS_NAME_MAP.get(field_name)
+        if target_name is None:
+            return False
+
+        return any(
+            ref.component_uuid == component.uuid
+            and HYDRO_TS_NAME_MAP.get(ref.field_name) == target_name
+            for ref in self.time_series_references
+        )
+
     def _register_time_series_reference(
         self, component: PLEXOSObject, field_name: str, property: PLEXOSPropertyValue
     ) -> None:
@@ -762,6 +788,11 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         scenarios have multiple entries, but attachment logic handles this
         during build_time_series phase.
         """
+        if self._is_duplicate_ts_reference(component, field_name):
+            logger.debug(
+                f"Skipping {field_name} for {component.name} - duplicate target already registered"
+            )
+            return
         if property.has_datafile():
             for row in property.entries.values():
                 name = row.datafile_name or (
