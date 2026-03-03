@@ -293,6 +293,47 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
         return Ok(None)
 
+    def _get_required_properties_for_component(self, comp: Any, type_name: str) -> set[str]:
+        """Resolve required properties for a component using category-group aware lookup.
+
+        Resolution order:
+        1. Check if component category belongs to a category-group (e.g. 'renewable-dispatch')
+        2. If so, use '{TypeName}.{group_name}' required properties if defined
+        3. Otherwise fallback to base '{TypeName}' required properties
+
+        Parameters
+        ----------
+        comp : Any
+            The component instance.
+        type_name : str
+            The class name of the component (e.g. 'PLEXOSGenerator').
+
+        Returns
+        -------
+        set[str]
+            Set of required property names.
+        """
+        required_properties = self.defaults.get("required-properties", {})
+        category_groups = self.defaults.get("category-groups", {})
+        category = getattr(comp, "category", None)
+
+        if category:
+            category_to_group = {
+                cat: group_name
+                for group_name, categories in category_groups.items()
+                for cat in categories
+            }
+            group_name = category_to_group.get(category)
+            if group_name:
+                group_key = f"{type_name}.{group_name}"
+                if group_key in required_properties:
+                    value = required_properties[group_key]
+                    if isinstance(value, str):
+                        value = required_properties.get(value, [])
+                    return set(value)
+
+        return set(required_properties.get(type_name, []))
+
     def _add_component_properties(self, datafile_prefix: str = "Data") -> None:
         """
         Add properties for all components in the system to the database.
@@ -341,9 +382,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             collection = get_default_collection(class_enum)
             plexos_records = []
 
-            required_properties = self.defaults.get("required-properties", {})
-            required_property_for_type = set(required_properties.get(component_type.__name__, []))
-
+            type_name = component_type.__name__
             for comp in self.system.get_components(component_type):
                 has_time_series = self.system.has_time_series(comp)
                 ts_property_name = None
@@ -352,8 +391,10 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
                 aliased_dict = comp.model_dump(by_alias=True, exclude_defaults=self.exclude_defaults)
 
-                if self.exclude_defaults and required_property_for_type:
-                    for prop_name in required_property_for_type:
+                if self.exclude_defaults:
+                    required_property_for_comp = self._get_required_properties_for_component(comp, type_name)
+
+                    for prop_name in required_property_for_comp:
                         field = comp.__class__.model_fields.get(prop_name)
                         if field:
                             alias_name = getattr(field, "alias", prop_name)

@@ -8,15 +8,67 @@
   "models": [],
   "resolution": null,
   "template": null,
+  "category-groups": {
+    "renewable-non-dispatch": ["distpv", "csp", "csp1", "csp2"],
+    "renewable-dispatch": ["pvb", "upv", "wind-ons", "wind-ofs"],
+    "thermal-standard": [
+      "beccs_mod",
+      "biopower",
+      "coal-ccs_mod",
+      "coal-igcc",
+      "coal-igcc_coal-ccs_mod",
+      "coal-new",
+      "coal-new_coal-ccs_mod",
+      "coaloldscr",
+      "coaloldscr_coal-ccs_mod",
+      "coalolduns",
+      "coalolduns_coal-ccs_mod",
+      "coaluns",
+      "egs",
+      "egs_nearfield",
+      "gas-cc",
+      "gas-cc-ccs_mod",
+      "gas-cc_gas-cc-ccs_mod",
+      "gas-cc_h2-ct",
+      "gas-ct",
+      "gas-ct_h2-ct",
+      "geohydro",
+      "h2-ct",
+      "lfill-gas",
+      "nuclear",
+      "nuclear-smr",
+      "o-g-s",
+      "smr"
+    ],
+    "hydro-energy-reservoir": [
+      "hydend",
+      "hydnd",
+      "hydnpnd",
+      "hydsnd",
+      "hydund"
+    ],
+    "hydro-pump-storage":[
+      "pumped-hydro"
+    ],
+    "hydro-dispatch": [
+      "can-imports",
+      "hyded",
+      "hydud"
+    ],
+    "energy-reservoir-storage": [
+      "battery"
+    ],
+    "interruptible-power-load": [
+      "electrolyzer",
+      "electrolyzer_saf"
+    ]
+  },
   "required-properties": {
-    "PLEXOSGenerator": [
+    "PLEXOSGenerator.thermal-standard": [
       "units",
       "commit",
-      "pump_load",
-      "pump_efficiency",
       "fuel_price",
       "vom_charge",
-      "fom_charge",
       "start_cost",
       "forced_outage_rate",
       "min_stable_level",
@@ -25,16 +77,36 @@
       "min_up_time",
       "min_down_time"
     ],
+    "PLEXOSGenerator.hydro-pump-storage": [
+      "units",
+      "commit", 
+      "vom_charge",
+      "max_capacity",
+      "forced_outage_rate",
+      "maintenance_rate",
+      "mean_time_to_repair",
+      "min_stable_level",
+      "pump_efficiency",
+      "pump_load"
+    ],
+    "PLEXOSGenerator.renewable-non-dispatch": "PLEXOSGenerator.renewable-dispatch",
     "PLEXOSStorage": [
       "units",
       "commit",
       "initial_volume",
       "max_capacity"
     ],
-    "PLEXOSRegion": [
-      "units"
+    "PLEXOSGenerator.renewable-dispatch": [
+      "units",
+      "commit",
+      "fuel_price",
+      "vom_charge",
+      "fom_charge",
+      "forced_outage_rate",
+      "maintenance_rate",
+      "mean_time_to_repair"
     ],
-    "PLEXOSBattery": [
+    "PLEXOSBattery.energy-reservoir-storage": [
       "units",
       "commit",
       "initial_soc",
@@ -44,6 +116,9 @@
       "vom_charge",
       "charge_efficiency",
       "discharge_efficiency"
+    ],
+    "PLEXOSRegion": [
+      "units"
     ],
     "PLEXOSLine": [
       "units",
