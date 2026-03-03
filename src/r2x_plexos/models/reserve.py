@@ -5,6 +5,7 @@ from typing import Annotated
 from pydantic import Field
 
 from .component import PLEXOSObject
+from .property import PLEXOSPropertyValue
 from .property_specification import PLEXOSProperty
 
 
@@ -180,7 +181,7 @@ class PLEXOSReserve(PLEXOSObject):
         ),
     ] = 0
     static_risk: Annotated[
-        float | int,
+        float | int | PLEXOSPropertyValue,
         Field(
             alias="Static Risk",
             description="Additional static risk over and above dynamic risk",
