@@ -785,7 +785,7 @@ def test_add_component_properties_filters_metadata_fields(template_db):
 
     gen = PLEXOSGenerator(
         name="TestGen",
-        category="thermal",
+        category="coaloldscr",
         units=1,
         rating=50.0,
     )
@@ -841,7 +841,7 @@ def test_add_component_properties_skips_none_values(template_db):
 
     gen = PLEXOSGenerator(
         name="TestGen",
-        category="thermal",
+        category="biopower",
         units=1,
         rating=50.0,
     )
