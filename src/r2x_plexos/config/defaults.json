@@ -99,7 +99,6 @@
     "PLEXOSGenerator.renewable-dispatch": [
       "units",
       "commit",
-      "fuel_price",
       "vom_charge",
       "fom_charge",
       "forced_outage_rate",
