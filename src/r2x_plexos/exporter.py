@@ -39,6 +39,7 @@ from .utils_simulation import (
 
 NESTED_ATTRIBUTES = {"ext", "bus", "services"}
 DEFAULT_XML_TEMPLATE = "master_9.2R6_btu.xml"
+BATCH_SIZE = 500
 
 
 class PLEXOSExporter(Plugin[PLEXOSConfig]):
@@ -224,14 +225,33 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             # Sort components by category to group them
             components.sort(key=lambda x: x.category or "")  # type: ignore
 
+            # Fetch all existing objects of this class once to avoid duplicate inserts
+            existing = set(self.db.list_objects_by_class(class_enum))
+
             # Group components by category and add each group in one call
             for category, group in groupby(components, key=lambda x: x.category or ""):  # type: ignore
                 names = [comp.name for comp in group]
+
+                # Filter out names that already exist in the database
+                new_names = [n for n in names if n not in existing]
+
+                if not new_names:
+                    logger.debug(f"All {len(names)} {class_enum.name} objects already exist, skipping.")
+                    continue
+
+                if len(new_names) < len(names):
+                    logger.debug(f"Skipping {len(names) - len(new_names)} existing {class_enum.name} objects.")
+
+                logger.debug(f"Adding {len(new_names)} objects for category='{category}' class={class_enum.name}")
+
                 try:
-                    if category:
-                        self.db.add_objects(class_enum, *names, category=category)
-                    else:
-                        self.db.add_objects(class_enum, *names)
+                    # Batch names to avoid SQLite "too many SQL variables" error
+                    for i in range(0, len(new_names), BATCH_SIZE):
+                        batch = new_names[i : i + BATCH_SIZE]
+                        if category:
+                            self.db.add_objects(class_enum, *batch, category=category)
+                        else:
+                            self.db.add_objects(class_enum, *batch)
                 except KeyError as e:
                     logger.error(f"Failed to add {class_enum} objects with category '{category}': {e}")
                     logger.debug(f"Component type: {component_type.__name__}, names: {names[:5]}")
