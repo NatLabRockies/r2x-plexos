@@ -250,7 +250,6 @@ class PLEXOSExporter(BaseExporter):
         Result[None, ExporterError]
             Ok(None) on success, Err(ExporterError) on failure
         """
-        # Get ALL components with time series, not just PLEXOSObject
         all_components_with_ts = []
         for component_type in self.system.get_component_types():
             components = list(
