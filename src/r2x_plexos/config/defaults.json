@@ -105,6 +105,20 @@
       "maintenance_rate",
       "mean_time_to_repair"
     ],
+    "PLEXOSGenerator.hydro-dispatch": [
+      "units",
+      "commit",
+      "vom_charge",
+      "max_capacity",
+      "forced_outage_rate",
+      "maintenance_rate",
+      "mean_time_to_repair",
+      "min_stable_level",
+      "max_energy_day",
+      "max_ramp_up",
+      "max_ramp_down"
+    ],
+    "PLEXOSGenerator.hydro-energy-reservoir": "PLEXOSGenerator.hydro-dispatch",
     "PLEXOSBattery.energy-reservoir-storage": [
       "units",
       "commit",
