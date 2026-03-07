@@ -39,6 +39,7 @@ from .utils_simulation import (
 
 NESTED_ATTRIBUTES = {"ext", "bus", "services"}
 DEFAULT_XML_TEMPLATE = "master_9.2R6_btu.xml"
+BATCH_SIZE = 500
 
 
 class PLEXOSExporter(Plugin[PLEXOSConfig]):
@@ -224,14 +225,33 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             # Sort components by category to group them
             components.sort(key=lambda x: x.category or "")  # type: ignore
 
+            # Fetch all existing objects of this class once to avoid duplicate inserts
+            existing = set(self.db.list_objects_by_class(class_enum))
+
             # Group components by category and add each group in one call
             for category, group in groupby(components, key=lambda x: x.category or ""):  # type: ignore
                 names = [comp.name for comp in group]
+
+                # Filter out names that already exist in the database
+                new_names = [n for n in names if n not in existing]
+
+                if not new_names:
+                    logger.debug(f"All {len(names)} {class_enum.name} objects already exist, skipping.")
+                    continue
+
+                if len(new_names) < len(names):
+                    logger.debug(f"Skipping {len(names) - len(new_names)} existing {class_enum.name} objects.")
+
+                logger.debug(f"Adding {len(new_names)} objects for category='{category}' class={class_enum.name}")
+
                 try:
-                    if category:
-                        self.db.add_objects(class_enum, *names, category=category)
-                    else:
-                        self.db.add_objects(class_enum, *names)
+                    # Batch names to avoid SQLite "too many SQL variables" error
+                    for i in range(0, len(new_names), BATCH_SIZE):
+                        batch = new_names[i : i + BATCH_SIZE]
+                        if category:
+                            self.db.add_objects(class_enum, *batch, category=category)
+                        else:
+                            self.db.add_objects(class_enum, *batch)
                 except KeyError as e:
                     logger.error(f"Failed to add {class_enum} objects with category '{category}': {e}")
                     logger.debug(f"Component type: {component_type.__name__}, names: {names[:5]}")
@@ -293,6 +313,47 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
         return Ok(None)
 
+    def _get_required_properties_for_component(self, comp: Any, type_name: str) -> set[str]:
+        """Resolve required properties for a component using category-group aware lookup.
+
+        Resolution order:
+        1. Check if component category belongs to a category-group (e.g. 'renewable-dispatch')
+        2. If so, use '{TypeName}.{group_name}' required properties if defined
+        3. Otherwise fallback to base '{TypeName}' required properties
+
+        Parameters
+        ----------
+        comp : Any
+            The component instance.
+        type_name : str
+            The class name of the component (e.g. 'PLEXOSGenerator').
+
+        Returns
+        -------
+        set[str]
+            Set of required property names.
+        """
+        required_properties = self.defaults.get("required-properties", {})
+        category_groups = self.defaults.get("category-groups", {})
+        category = getattr(comp, "category", None)
+
+        if category:
+            category_to_group = {
+                cat: group_name
+                for group_name, categories in category_groups.items()
+                for cat in categories
+            }
+            group_name = category_to_group.get(category)
+            if group_name:
+                group_key = f"{type_name}.{group_name}"
+                if group_key in required_properties:
+                    value = required_properties[group_key]
+                    if isinstance(value, str):
+                        value = required_properties.get(value, [])
+                    return set(value)
+
+        return set(required_properties.get(type_name, []))
+
     def _add_component_properties(self, datafile_prefix: str = "Data") -> None:
         """
         Add properties for all components in the system to the database.
@@ -341,9 +402,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             collection = get_default_collection(class_enum)
             plexos_records = []
 
-            required_properties = self.defaults.get("required-properties", {})
-            required_property_for_type = set(required_properties.get(component_type.__name__, []))
-
+            type_name = component_type.__name__
             for comp in self.system.get_components(component_type):
                 has_time_series = self.system.has_time_series(comp)
                 ts_property_name = None
@@ -352,8 +411,10 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
                 aliased_dict = comp.model_dump(by_alias=True, exclude_defaults=self.exclude_defaults)
 
-                if self.exclude_defaults and required_property_for_type:
-                    for prop_name in required_property_for_type:
+                if self.exclude_defaults:
+                    required_property_for_comp = self._get_required_properties_for_component(comp, type_name)
+
+                    for prop_name in required_property_for_comp:
                         field = comp.__class__.model_fields.get(prop_name)
                         if field:
                             alias_name = getattr(field, "alias", prop_name)

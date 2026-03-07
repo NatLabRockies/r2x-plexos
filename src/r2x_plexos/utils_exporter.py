@@ -39,7 +39,14 @@ def generate_csv_filename(field_name: str, component_class: str, metadata: dict[
     """Generate a CSV filename for time series export."""
     safe_field = field_name.replace(" ", "_").replace("/", "_")
 
-    parts = [str(metadata[key]) for key in ("model_name", "weather_year", "solve_year") if key in metadata]
+    parts = []
+    seen = set()
+    for key in ("model_name", "weather_year", "solve_year"):
+        value = str(metadata[key]) if key in metadata else None
+        if value and value not in seen:
+            parts.append(value)
+            seen.add(value)
+
     metadata_suffix = "_".join(parts) if parts else "default"
 
     return f"{component_class}_{safe_field}_{metadata_suffix}.csv"
