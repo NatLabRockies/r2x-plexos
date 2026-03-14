@@ -250,6 +250,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             self.db.add_memberships_from_records(membership_records)
 
     def _chunked(self, items: list[str], size: int = 900) -> list[list[str]]:
+        """Yield successive chunks of items of given size."""
         return [items[i:i + size] for i in range(0, len(items), size)]
 
     def prepare_export(self) -> Result[None, str]:
@@ -377,6 +378,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             return records
 
         def _norm(v: Any) -> Any:
+            """Normalize value for deduplication key."""
             if isinstance(v, float):
                 return round(v, 12)
             return v
@@ -599,6 +601,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
     def _bulk_resolve_object_ids(
         self, class_to_names: dict[ClassEnum, set[str]]
     ) -> dict[tuple[ClassEnum, str], int]:
+        """Bulk resolve object IDs for given class and name pairs."""
         assert self.db is not None
         out: dict[tuple[ClassEnum, str], int] = {}
         for class_enum, names in class_to_names.items():
@@ -918,6 +921,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         return None
 
     def _build_generator_to_storage_map(self) -> dict[str, PLEXOSStorage]:
+        """Build a mapping from generator name to its associated storage component, if any."""
         mapping: dict[str, PLEXOSStorage] = {}
         memberships = self.system.get_supplemental_attributes(PLEXOSMembership)
 
