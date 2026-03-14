@@ -9,9 +9,11 @@
   "resolution": null,
   "template": null,
   "category-groups": {
-    "renewable-non-dispatch": ["distpv", "csp", "csp1", "csp2"],
-    "renewable-dispatch": ["pvb", "upv", "wind-ons", "wind-ofs"],
+    "renewable-non-dispatch": ["distpv", "csp", "csp1", "csp2", "renewable-non-dispatch"],
+    "renewable-dispatch": ["pvb", "upv", "wind-ons", "wind-ofs", "renewable-dispatch"],
     "thermal-standard": [
+      "synchronous-condensers",
+      "thermal",
       "beccs_mod",
       "biopower",
       "coal-ccs_mod",
@@ -51,6 +53,7 @@
       "pumped-hydro"
     ],
     "hydro-dispatch": [
+      "hydro-dispatch",
       "can-imports",
       "hyded",
       "hydud"

@@ -29,7 +29,11 @@ from .utils_exporter import (
     generate_csv_filename,
     get_output_directory,
 )
-from .utils_mappings import PLEXOS_TYPE_MAP_INVERTED
+from .utils_mappings import (
+    GENERATOR_TO_STORAGE_TS_PROPERTY_MAP,
+    GENERATOR_TS_PROPERTY_MAP,
+    PLEXOS_TYPE_MAP_INVERTED,
+)
 from .utils_simulation import (
     build_plexos_simulation,
     get_default_simulation_config,
@@ -38,7 +42,7 @@ from .utils_simulation import (
 )
 
 NESTED_ATTRIBUTES = {"ext", "bus", "services"}
-DEFAULT_XML_TEMPLATE = "master_9.2R6_btu.xml"
+DEFAULT_XML_TEMPLATE = "master_10.0R2_btu.xml"
 BATCH_SIZE = 500
 
 
@@ -188,6 +192,66 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
         return Ok(None)
 
+    def _add_objects_safe(
+        self,
+        class_enum: ClassEnum,
+        names: list[str],
+        category: str | None = None,
+    ) -> None:
+        """Add objects to the database, avoiding duplicates and ensuring collection membership."""
+        import uuid as _uuid
+
+        assert self.db is not None
+        if not names:
+            return
+
+        names = list(set(names))
+        existing = set(self.db.list_objects_by_class(class_enum))
+        new_names = [n for n in names if n not in existing]
+        if not new_names:
+            return
+
+        category_str = category or "-"
+        category_id = self.db.add_category(class_enum, category_str)
+        class_id = self.db.get_class_id(class_enum)
+
+        collection_enum = get_default_collection(class_enum)
+        parent_class_id = self.db.get_class_id(ClassEnum.System)
+        parent_object_id = self.db.get_object_id(ClassEnum.System, "System")
+        collection_id = self.db.get_collection_id(
+            collection_enum, parent_class_enum=ClassEnum.System, child_class_enum=class_enum
+        )
+
+        insert_params = [(name, class_id, category_id, str(_uuid.uuid4())) for name in new_names]
+        self.db._db.executemany(
+            "INSERT INTO t_object(name, class_id, category_id, GUID) VALUES(?,?,?,?)",
+            insert_params,
+        )
+
+        membership_records = []
+        for batch in self._chunked(new_names, 900):
+            placeholders = ",".join("?" for _ in batch)
+            rows = self.db._db.fetchall(
+                f"SELECT object_id FROM t_object WHERE class_id=? AND name IN ({placeholders})",
+                (class_id, *batch),
+            )
+            for (object_id,) in rows:
+                membership_records.append(
+                    {
+                        "parent_class_id": parent_class_id,
+                        "parent_object_id": parent_object_id,
+                        "collection_id": collection_id,
+                        "child_class_id": class_id,
+                        "child_object_id": object_id,
+                    }
+                )
+
+        if membership_records:
+            self.db.add_memberships_from_records(membership_records)
+
+    def _chunked(self, items: list[str], size: int = 900) -> list[list[str]]:
+        return [items[i:i + size] for i in range(0, len(items), size)]
+
     def prepare_export(self) -> Result[None, str]:
         """Add component objects to the database.
 
@@ -245,14 +309,8 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 logger.debug(f"Adding {len(new_names)} objects for category='{category}' class={class_enum.name}")
 
                 try:
-                    # Batch names to avoid SQLite "too many SQL variables" error
-                    for i in range(0, len(new_names), BATCH_SIZE):
-                        batch = new_names[i : i + BATCH_SIZE]
-                        if category:
-                            self.db.add_objects(class_enum, *batch, category=category)
-                        else:
-                            self.db.add_objects(class_enum, *batch)
-                except KeyError as e:
+                    self._add_objects_safe(class_enum, new_names, category=category or None)
+                except Exception as e:
                     logger.error(f"Failed to add {class_enum} objects with category '{category}': {e}")
                     logger.debug(f"Component type: {component_type.__name__}, names: {names[:5]}")
                     raise
@@ -313,37 +371,57 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
         return Ok(None)
 
+    def _deduplicate_property_records(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Deduplicate rows by (name, property, value) to avoid duplicate scenario tags."""
+        if not records:
+            return records
+
+        def _norm(v: Any) -> Any:
+            if isinstance(v, float):
+                return round(v, 12)
+            return v
+
+        merged: dict[tuple[Any, Any, Any], dict[str, Any]] = {}
+
+        for rec in records:
+            key = (rec.get("name"), rec.get("property"), _norm(rec.get("value")))
+            current = merged.get(key)
+            if current is None:
+                merged[key] = dict(rec)
+                continue
+
+            for field in ("band", "date_from", "date_to", "timeslice", "datafile_text"):
+                if current.get(field) is None and rec.get(field) is not None:
+                    current[field] = rec[field]
+
+        deduped = list(merged.values())
+        dropped = len(records) - len(deduped)
+        if dropped > 0:
+            logger.debug("Dropped {} duplicate property rows before bulk insert", dropped)
+        return deduped
+
     def _get_required_properties_for_component(self, comp: Any, type_name: str) -> set[str]:
-        """Resolve required properties for a component using category-group aware lookup.
-
-        Resolution order:
-        1. Check if component category belongs to a category-group (e.g. 'renewable-dispatch')
-        2. If so, use '{TypeName}.{group_name}' required properties if defined
-        3. Otherwise fallback to base '{TypeName}' required properties
-
-        Parameters
-        ----------
-        comp : Any
-            The component instance.
-        type_name : str
-            The class name of the component (e.g. 'PLEXOSGenerator').
-
-        Returns
-        -------
-        set[str]
-            Set of required property names.
-        """
+        """Resolve required properties for a component using category-group aware lookup."""
         required_properties = self.defaults.get("required-properties", {})
         category_groups = self.defaults.get("category-groups", {})
         category = getattr(comp, "category", None)
 
         if category:
+            category_norm = str(category).strip().lower().replace("_", "-")
+            alias_map = {
+                "thermal": "thermal-standard",
+                "renewable": "renewable-dispatch",
+                "storage": "energy-reservoir-storage",
+            }
+            category_norm = alias_map.get(category_norm, category_norm)
+
             category_to_group = {
-                cat: group_name
+                str(cat).strip().lower().replace("_", "-"): group_name
                 for group_name, categories in category_groups.items()
                 for cat in categories
             }
-            group_name = category_to_group.get(category)
+            group_name = category_to_group.get(category_norm)
+
             if group_name:
                 group_key = f"{type_name}.{group_name}"
                 if group_key in required_properties:
@@ -352,24 +430,21 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                         value = required_properties.get(value, [])
                     return set(value)
 
+        if type_name == "PLEXOSGenerator":
+            return set(required_properties.get("PLEXOSGenerator.thermal-standard", []))
+        if type_name == "PLEXOSStorage":
+            return set(required_properties.get("PLEXOSStorage", []))
+        if type_name == "PLEXOSRegion":
+            return set(required_properties.get("PLEXOSRegion", []))
         return set(required_properties.get(type_name, []))
+
 
     def _add_component_properties(self, datafile_prefix: str = "Data") -> None:
         """
         Add properties for all components in the system to the database.
 
-        This method performs the following:
-        1. Adds 'Filename' properties for all PLEXOSDatafile objects, referencing their CSV files.
-        2. Iterates over all component types (excluding models, horizons, datafiles, and memberships).
-        3. For each component, collects its properties, ensuring that all required properties (as defined in defaults.json)
-        are included, even if their values are not set by default.
-        4. Handles time series properties and excludes metadata fields.
-        5. Performs a bulk insert of properties for each component type into the database.
-
-        Parameters
-        ----------
-        datafile_prefix : str, optional
-            The prefix to use for datafile paths (default is "Data").
+        Uses bulk add_properties_from_records (fast path) with flat records so both
+        scalar and serialized PLEXOSPropertyValue payloads are preserved.
         """
         if self.db is None:
             logger.error("Database not initialized")
@@ -377,19 +452,32 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
         logger.info("Adding component properties...")
 
+        # 1) DataFile Filename properties
+        datafile_records: list[dict[str, Any]] = []
         for component in self.system.get_components(PLEXOSDatafile):
             relative_path = f"{datafile_prefix}/{component.name}.csv"
-
-            self.db.add_property(
-                ClassEnum.DataFile,
-                object_name=component.name,
-                name="Filename",
-                value=0,
-                datafile_text=relative_path,
+            datafile_records.append(
+                {
+                    "name": component.name,
+                    "property": "Filename",
+                    "value": 0,
+                    "datafile_text": relative_path,
+                    "band": 1,
+                }
             )
-            logger.debug(f"Added Filename property for DataFile: {component.name} -> {relative_path}")
+
+        if datafile_records:
+            datafile_records = self._deduplicate_property_records(datafile_records)
+            self.db.add_properties_from_records(
+                datafile_records,
+                object_class=ClassEnum.DataFile,
+                parent_class=ClassEnum.System,
+                collection=get_default_collection(ClassEnum.DataFile),
+                scenario=self.plexos_scenario,
+            )
 
         skip_types = {PLEXOSModel, PLEXOSHorizon, PLEXOSDatafile, PLEXOSMembership}
+        metadata_fields = {"name", "category", "uuid", "label", "description", "object_id"}
 
         for component_type in self.system.get_component_types():
             if component_type in skip_types:
@@ -400,57 +488,134 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 continue
 
             collection = get_default_collection(class_enum)
-            plexos_records = []
-
             type_name = component_type.__name__
+            records: list[dict[str, Any]] = []
+
             for comp in self.system.get_components(component_type):
-                has_time_series = self.system.has_time_series(comp)
                 ts_property_name = None
-                if has_time_series:
+                if self.system.has_time_series(comp):
                     ts_property_name = self._get_time_series_property_name(comp)
 
                 aliased_dict = comp.model_dump(by_alias=True, exclude_defaults=self.exclude_defaults)
+                explicit_dict = comp.model_dump(by_alias=True, exclude_unset=True, exclude_defaults=False)
+                for key, value in explicit_dict.items():
+                    aliased_dict.setdefault(key, value)
 
                 if self.exclude_defaults:
-                    required_property_for_comp = self._get_required_properties_for_component(comp, type_name)
-
-                    for prop_name in required_property_for_comp:
+                    for prop_name in self._get_required_properties_for_component(comp, type_name):
                         field = comp.__class__.model_fields.get(prop_name)
-                        if field:
-                            alias_name = getattr(field, "alias", prop_name)
-                            if alias_name not in aliased_dict:
-                                value = getattr(comp, prop_name, None)
-                                if value is not None:
-                                    aliased_dict[alias_name] = value
+                        if not field:
+                            continue
+                        alias_name = getattr(field, "alias", prop_name)
+                        if alias_name not in aliased_dict:
+                            value = getattr(comp, prop_name, None)
+                            if value is not None:
+                                aliased_dict[alias_name] = value
 
-                metadata_fields = {"name", "category", "uuid", "label", "description", "object_id"}
-                properties: dict[str, Any] = {}
-
-                for k, v in aliased_dict.items():
-                    if k in metadata_fields or v is None:
+                for prop_name, raw in aliased_dict.items():
+                    if prop_name in metadata_fields or raw is None:
                         continue
-                    if ts_property_name and k == ts_property_name:
+                    if ts_property_name and prop_name == ts_property_name:
                         continue
-                    if isinstance(v, (int, float, str, bool)):
-                        properties[k] = {"value": v, "band": 1}
-                    elif isinstance(v, dict) and "text" in v:
-                        properties[k] = v
 
-                if properties:
-                    plexos_record = {"name": comp.name, "properties": properties}
-                    plexos_records.append(plexos_record)
+                    if isinstance(raw, (int, float, str, bool)):
+                        records.append(
+                            {
+                                "name": comp.name,
+                                "property": prop_name,
+                                "value": raw,
+                                "band": 1,
+                            }
+                        )
+                        continue
 
-            if not plexos_records:
+                    # Serialized PLEXOSPropertyValue often appears as list[dict]
+                    if isinstance(raw, list):
+                        for rec in raw:
+                            if not isinstance(rec, dict):
+                                continue
+                            rec_value = rec.get("value")
+                            if rec_value is None:
+                                continue
+                            records.append(
+                                {
+                                    "name": comp.name,
+                                    "property": prop_name,
+                                    "value": rec_value,
+                                    "band": rec.get("band", 1),
+                                    "date_from": rec.get("date_from"),
+                                    "date_to": rec.get("date_to"),
+                                    "timeslice": rec.get("timeslice_name")
+                                    or rec.get("timeslice")
+                                    or rec.get("time_slice"),
+                                    "datafile_text": rec.get("datafile_text")
+                                    or rec.get("datafile_name")
+                                    or rec.get("text"),
+                                }
+                            )
+                        continue
+
+                    if isinstance(raw, dict):
+                        records.append(
+                            {
+                                "name": comp.name,
+                                "property": prop_name,
+                                "value": raw.get("value", 0),
+                                "band": raw.get("band", 1),
+                                "date_from": raw.get("date_from"),
+                                "date_to": raw.get("date_to"),
+                                "timeslice": raw.get("timeslice"),
+                                "datafile_text": raw.get("datafile_text")
+                                or raw.get("datafile_name")
+                                or raw.get("text"),
+                            }
+                        )
+                        continue
+
+            if not records:
                 continue
 
-            logger.debug(f"Adding properties for {len(plexos_records)} {component_type.__name__} components")
+            records = self._deduplicate_property_records(records)
+            if not records:
+                continue
+
+            logger.debug(
+                "Adding properties for {} {} components ({} property rows)",
+                len({r["name"] for r in records}),
+                component_type.__name__,
+                len(records),
+            )
             self.db.add_properties_from_records(
-                plexos_records,
+                records,
                 object_class=class_enum,
                 parent_class=ClassEnum.System,
                 collection=collection,
                 scenario=self.plexos_scenario,
             )
+
+    def _chunked(self, items: list[str], size: int = 900) -> list[list[str]]:
+        return [items[i:i + size] for i in range(0, len(items), size)]
+
+    def _bulk_resolve_object_ids(
+        self, class_to_names: dict[ClassEnum, set[str]]
+    ) -> dict[tuple[ClassEnum, str], int]:
+        assert self.db is not None
+        out: dict[tuple[ClassEnum, str], int] = {}
+        for class_enum, names in class_to_names.items():
+            if not names:
+                continue
+            class_id = self.db.get_class_id(class_enum)
+            for batch in self._chunked(sorted(names), 900):
+                placeholders = ",".join("?" for _ in batch)
+                query = f"""
+                    SELECT name, object_id
+                    FROM t_object
+                    WHERE class_id = ? AND name IN ({placeholders})
+                """
+                rows = self.db._db.fetchall(query, (class_id, *batch))
+                for name, object_id in rows:
+                    out[(class_enum, name)] = object_id
+        return out
 
     def _add_component_memberships(self) -> None:
         """
@@ -472,69 +637,82 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             return
 
         memberships = list(self.system.get_supplemental_attributes(PLEXOSMembership))
-
         if not memberships:
             logger.warning("No memberships found in system")
             return
 
-        records = []
-        # Track unique (parent_object_id, collection_id, child_object_id)
-        seen_memberships = set()
-        duplicate_count = 0
+        filtered: list[tuple[ClassEnum, str, ClassEnum, str, CollectionEnum]] = []
+        class_to_names: dict[ClassEnum, set[str]] = {}
+        collection_keys: set[tuple[CollectionEnum, ClassEnum, ClassEnum]] = set()
 
-        for membership in memberships:
-            if not membership.parent_object or not membership.child_object:
-                logger.debug("Skipping membership with missing parent or child object")
+        for m in memberships:
+            if not m.parent_object or not m.child_object or not m.collection:
+                continue
+            parent_class = PLEXOS_TYPE_MAP_INVERTED.get(type(m.parent_object))
+            child_class = PLEXOS_TYPE_MAP_INVERTED.get(type(m.child_object))
+            if not parent_class or not child_class:
+                continue
+            if parent_class in (ClassEnum.Model, ClassEnum.Horizon) or child_class in (ClassEnum.Model, ClassEnum.Horizon):
                 continue
 
-            parent_class = PLEXOS_TYPE_MAP_INVERTED.get(type(membership.parent_object))
-            child_class = PLEXOS_TYPE_MAP_INVERTED.get(type(membership.child_object))
+            parent_name = m.parent_object.name
+            child_name = m.child_object.name
+            collection = m.collection
 
-            if not parent_class or not child_class or not membership.collection:
-                logger.info("Skipping membership with unmapped classes or missing collection")
+            filtered.append((parent_class, parent_name, child_class, child_name, collection))
+            class_to_names.setdefault(parent_class, set()).add(parent_name)
+            class_to_names.setdefault(child_class, set()).add(child_name)
+            collection_keys.add((collection, parent_class, child_class))
+
+        object_id_map = self._bulk_resolve_object_ids(class_to_names)
+
+        class_id_cache: dict[ClassEnum, int] = {}
+        for class_enum in class_to_names:
+            class_id_cache[class_enum] = self.db.get_class_id(class_enum)
+
+        collection_id_cache: dict[tuple[CollectionEnum, ClassEnum, ClassEnum], int] = {}
+        for key in collection_keys:
+            collection, parent_class, child_class = key
+            collection_id_cache[key] = self.db.get_collection_id(
+                collection,
+                parent_class_enum=parent_class,
+                child_class_enum=child_class,
+            )
+
+        records: list[dict[str, int]] = []
+        seen: set[tuple[int, int, int]] = set()
+
+        for idx, (parent_class, parent_name, child_class, child_name, collection) in enumerate(filtered, start=1):
+            parent_id = object_id_map.get((parent_class, parent_name))
+            child_id = object_id_map.get((child_class, child_name))
+            if parent_id is None or child_id is None:
                 continue
 
-            if parent_class in (ClassEnum.Model, ClassEnum.Horizon) or child_class in (
-                ClassEnum.Model,
-                ClassEnum.Horizon,
-            ):
+            collection_id = collection_id_cache[(collection, parent_class, child_class)]
+            key = (parent_id, collection_id, child_id)
+            if key in seen:
                 continue
+            seen.add(key)
 
-            try:
-                parent_object_id = self.db.get_object_id(parent_class, membership.parent_object.name)
-                child_object_id = self.db.get_object_id(child_class, membership.child_object.name)
-                collection_id = self.db.get_collection_id(
-                    membership.collection,
-                    parent_class_enum=parent_class,
-                    child_class_enum=child_class,
-                )
-
-                # Check for duplicates based on the unique constraint
-                membership_key = (parent_object_id, collection_id, child_object_id)
-                if membership_key in seen_memberships:
-                    duplicate_count += 1
-                    continue
-
-                seen_memberships.add(membership_key)
-                record = {
-                    "parent_class_id": self.db.get_class_id(parent_class),
-                    "parent_object_id": parent_object_id,
+            records.append(
+                {
+                    "parent_class_id": class_id_cache[parent_class],
+                    "parent_object_id": parent_id,
                     "collection_id": collection_id,
-                    "child_class_id": self.db.get_class_id(child_class),
-                    "child_object_id": child_object_id,
+                    "child_class_id": class_id_cache[child_class],
+                    "child_object_id": child_id,
                 }
-                records.append(record)
+            )
 
-            except Exception:
-                logger.debug("Failed to process membership: {}", membership)
-                continue
+            if idx % 100000 == 0:
+                logger.info("Prepared {} membership rows...", idx)
 
         if not records:
             logger.warning("No valid membership records to add.")
             return
 
         self.db.add_memberships_from_records(records)
-        logger.success(f"Successfully added {len(records)} memberships.")
+        logger.success("Successfully added {} memberships.", len(records))
 
     def _add_component_datafile_objects(self) -> None:
         """
@@ -562,7 +740,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         logger.debug(f"Adding {len(datafiles)} PLEXOSDatafile objects to DB.")
 
         names = [df.name for df in datafiles]
-        self.db.add_objects(ClassEnum.DataFile, *names, category="CSV")
+        self._add_objects_safe(ClassEnum.DataFile, names, category="CSV")
 
         for data_file in datafiles:
             object_id = self.db.get_object_id(ClassEnum.DataFile, data_file.name)
@@ -601,6 +779,12 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
         output_dir = get_output_directory(self.config, self.system, output_path=self.output_path)
 
+        # Build once: hydro turbine generator -> storage reservoir
+        generator_to_storage = self._build_generator_to_storage_map()
+
+        # Prevent duplicate links for same target/property/csv
+        seen_links: set[tuple[str, str, str]] = set()  # (object_name, property_name, csv_relative_path)
+
         for component_type in self.system.get_component_types():
             components = list(self.system.get_components(component_type))
             components_with_ts = [c for c in components if self.system.has_time_series(c)]
@@ -610,7 +794,6 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
             for component in components_with_ts:
                 ts_keys = self.system.list_time_series_keys(component)
-
                 if not ts_keys:
                     continue
 
@@ -629,7 +812,6 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
                     datafile_name = matched_file.removesuffix(".csv")
                     datafile = self.system.get_component(PLEXOSDatafile, name=datafile_name)
-
                     if not datafile or datafile.object_id is None:
                         continue
 
@@ -637,31 +819,63 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                     if not class_enum:
                         continue
 
-                    property_names = []
-                    # This two-property time series is for VariableGenerators (solar/wind)
-                    if isinstance(component, PLEXOSGenerator) and ts_key.name == "max_active_power":
-                        property_names = ["Rating", "Load Subtracter"]
+                    key = ts_key.name.strip().lower().replace(" ", "_")
+
+                    target_component = component
+                    target_class_enum = class_enum
+                    property_names: list[str] = []
+
+                    redirected_storage_property = GENERATOR_TO_STORAGE_TS_PROPERTY_MAP.get(key)
+                    if isinstance(component, PLEXOSGenerator) and redirected_storage_property:
+                        storage = generator_to_storage.get(component.name)
+                        if storage:
+                            storage_class = PLEXOS_TYPE_MAP_INVERTED.get(type(storage))
+                            if storage_class:
+                                target_component = storage
+                                target_class_enum = storage_class
+                                property_names = [redirected_storage_property]
+                        else:
+                            logger.warning(
+                                f"No storage counterpart found for generator {component.name} "
+                                f"with key {key}; skipping TS link."
+                            )
                     else:
-                        property_name = self._get_time_series_property_name(component, ts_key_name=ts_key.name)
-                        if property_name:
-                            property_names = [property_name]
+                        if isinstance(component, PLEXOSGenerator) and key == "max_active_power":
+                            property_names = ["Rating", "Load Subtracter"]
+                        else:
+                            property_name = self._get_time_series_property_name(
+                                component, ts_key_name=ts_key.name
+                            )
+                            if property_name:
+                                property_names = [property_name]
+
+                    if not property_names:
+                        continue
 
                     csv_relative_path = str(output_dir.relative_to(output_dir.parent) / matched_file)
+
                     for property_name in property_names:
+                        link_key = (target_component.name, property_name, csv_relative_path)
+                        if link_key in seen_links:
+                            continue
+                        seen_links.add(link_key)
+
                         try:
                             self.db.add_property(
-                                class_enum,
-                                object_name=component.name,
+                                target_class_enum,
+                                object_name=target_component.name,
                                 name=property_name,
                                 value=0,
                                 datafile_text=csv_relative_path,
                                 scenario=self.plexos_scenario,
                             )
-                            logger.debug(f"Linked {component.name}.{property_name} to {csv_relative_path}")
-
+                            logger.debug(
+                                f"Linked {target_component.name}.{property_name} to {csv_relative_path}"
+                            )
                         except Exception as e:
                             logger.error(
-                                f"Failed to link {component.name}.{property_name} to {csv_relative_path}: {e}"
+                                f"Failed to link {target_component.name}.{property_name} "
+                                f"to {csv_relative_path}: {e}"
                             )
 
     def _get_time_series_property_name(self, component: Any, ts_key_name: str | None = None) -> str | None:
@@ -685,28 +899,40 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         str | None
             The property name to use for the time series, or None if not applicable.
         """
-        if isinstance(component, PLEXOSReserve):
-            return "Min Provision"
+        key = (ts_key_name or "").strip().lower().replace(" ", "_")
 
-        if isinstance(component, PLEXOSRegion):
-            return "Load"
+        fixed_property_by_type: dict[type[Any], str] = {
+            PLEXOSReserve: "Min Provision",
+            PLEXOSRegion: "Load",
+            PLEXOSStorage: "Natural Inflow",
+        }
 
-        if isinstance(component, PLEXOSStorage):
-            return "Natural Inflow"
+        fixed = fixed_property_by_type.get(type(component))
+        if fixed is not None:
+            return fixed
 
+        # Generator mapping is key-dependent and already defined in utils_mappings
         if isinstance(component, PLEXOSGenerator):
-            if ts_key_name:
-                variable_name = ts_key_name
-            else:
-                ts_keys = self.system.list_time_series_keys(component)
-                if not ts_keys:
-                    return None
-                variable_name = ts_keys[0].name
+            return GENERATOR_TS_PROPERTY_MAP.get(key)
 
-            if variable_name == "hydro_budget":
-                return "Max Energy Day"
-            return "Rating"
         return None
+
+    def _build_generator_to_storage_map(self) -> dict[str, PLEXOSStorage]:
+        mapping: dict[str, PLEXOSStorage] = {}
+        memberships = self.system.get_supplemental_attributes(PLEXOSMembership)
+
+        for m in memberships:
+            parent = m.parent_object
+            child = m.child_object
+            if parent is None or child is None:
+                continue
+
+            if isinstance(parent, PLEXOSGenerator) and isinstance(child, PLEXOSStorage):
+                mapping[parent.name] = child
+            elif isinstance(parent, PLEXOSStorage) and isinstance(child, PLEXOSGenerator):
+                mapping[child.name] = parent
+
+        return mapping
 
     def export_time_series(self) -> Result[None, str]:
         """

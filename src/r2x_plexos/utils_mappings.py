@@ -64,3 +64,15 @@ CONFIG_CLASS_MAP = {
     "transmission": ClassEnum.Transmission,
     "diagnostic": ClassEnum.Diagnostic,
 }
+
+GENERATOR_TS_PROPERTY_MAP: dict[str, str] = {
+    "max_active_power": "Rating",
+    "load": "Load",
+    "fixed_load": "Rating",
+    "hydro_budget": "Max Energy Day"
+}
+
+GENERATOR_TO_STORAGE_TS_PROPERTY_MAP: dict[str, str] = {
+    "natural_inflow": "Natural Inflow",
+    "inflow": "Natural Inflow",
+}
