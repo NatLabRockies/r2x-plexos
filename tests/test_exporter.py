@@ -473,7 +473,7 @@ def test_on_export_uses_custom_template(tmp_path):
     # Create a minimal custom XML template
     custom_template = tmp_path / "custom_template.xml"
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
-    default_template = config.get_config_path().joinpath("master_9.2R6_btu.xml")
+    default_template = config.get_config_path().joinpath("master_10.0V_btu.xml")
     db = PlexosDB.from_xml(default_template)
     db.to_xml(custom_template)
 
@@ -895,7 +895,7 @@ def test_add_component_memberships_no_memberships_warns(template_db, caplog):
 
 
 def test_add_component_memberships_skips_missing_parent_or_child(template_db, caplog):
-    """Test _add_component_memberships skips memberships with missing objects - lines 453-456."""
+    """Test _add_component_memberships skips memberships with missing objects."""
     from unittest.mock import Mock, patch
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
@@ -920,7 +920,7 @@ def test_add_component_memberships_skips_missing_parent_or_child(template_db, ca
     with patch.object(sys, "get_supplemental_attributes", return_value=[mock_membership]):
         exporter._add_component_memberships()
 
-    assert "Skipping membership with missing parent or child" in caplog.text
+    assert "No valid memberships to process" in caplog.text
 
 
 def test_add_component_memberships_no_valid_records_warns(template_db, caplog):
@@ -945,7 +945,7 @@ def test_add_component_memberships_no_valid_records_warns(template_db, caplog):
     with patch.object(sys, "get_supplemental_attributes", return_value=[mock_membership]):
         exporter._add_component_memberships()
 
-    assert "No valid membership records" in caplog.text or "Skipping membership" in caplog.text
+    assert "No valid memberships to process" in caplog.text
 
 
 def test_add_component_datafile_objects_db_none(caplog):

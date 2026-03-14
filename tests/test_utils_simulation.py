@@ -24,6 +24,8 @@ from r2x_plexos.utils_simulation import (
     validate_simulation_config,
 )
 
+FILE_NAME = "master_10.0V_btu.xml"
+
 
 def test_datetime_to_ole_date():
     """Test OLE date conversion."""
@@ -413,7 +415,7 @@ def test_validate_simulation_config_success(tmp_path):
     from r2x_plexos import PLEXOSConfig
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
-    template_path = config.get_config_path().joinpath("master_9.2R6_btu.xml")
+    template_path = config.get_config_path().joinpath(FILE_NAME)
     db = PlexosDB.from_xml(template_path)
 
     perf = PLEXOSPerformance(name="TestPerf", solver=4)
@@ -427,7 +429,7 @@ def test_validate_simulation_config_invalid_attribute(tmp_path):
     from r2x_plexos import PLEXOSConfig
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
-    template_path = config.get_config_path().joinpath("master_9.2R6_btu.xml")
+    template_path = config.get_config_path().joinpath(FILE_NAME)
     db = PlexosDB.from_xml(template_path)
 
     # Create a config with an invalid attribute name
@@ -446,7 +448,7 @@ def test_ingest_simulation_config_success(tmp_path):
     from r2x_plexos import PLEXOSConfig
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
-    template_path = config.get_config_path().joinpath("master_9.2R6_btu.xml")
+    template_path = config.get_config_path().joinpath(FILE_NAME)
     db = PlexosDB.from_xml(template_path)
 
     perf = PLEXOSPerformance(name="TestPerformance", solver=4, mip_relative_gap=0.01)
@@ -471,7 +473,7 @@ def test_ingest_simulation_config_without_name():
     from r2x_plexos import PLEXOSConfig
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
-    template_path = config.get_config_path().joinpath("master_9.2R6_btu.xml")
+    template_path = config.get_config_path().joinpath(FILE_NAME)
     db = PlexosDB.from_xml(template_path)
 
     # Create a mock object that bypasses Pydantic validation
@@ -491,7 +493,7 @@ def test_ingest_simulation_to_plexosdb_success(tmp_path):
     from r2x_plexos import PLEXOSConfig
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
-    template_path = config.get_config_path().joinpath("master_9.2R6_btu.xml")
+    template_path = config.get_config_path().joinpath(FILE_NAME)
     db = PlexosDB.from_xml(template_path)
 
     # Build simple simulation with a model
@@ -538,7 +540,7 @@ def test_ingest_simulation_with_configs(tmp_path):
     from r2x_plexos import PLEXOSConfig
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
-    template_path = config.get_config_path().joinpath("master_9.2R6_btu.xml")
+    template_path = config.get_config_path().joinpath(FILE_NAME)
     db = PlexosDB.from_xml(template_path)
 
     # Build simulation with configs
@@ -597,7 +599,7 @@ def test_ingest_with_unknown_config_type(tmp_path):
     from r2x_plexos import PLEXOSConfig
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
-    template_path = config.get_config_path().joinpath("master_9.2R6_btu.xml")
+    template_path = config.get_config_path().joinpath(FILE_NAME)
     db = PlexosDB.from_xml(template_path)
 
     sim_config = {"horizon_year": 2012, "resolution": "1D"}
@@ -624,7 +626,7 @@ def test_ingest_simulation_without_configs(tmp_path):
     from r2x_plexos import PLEXOSConfig
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
-    template_path = config.get_config_path().joinpath("master_9.2R6_btu.xml")
+    template_path = config.get_config_path().joinpath(FILE_NAME)
     db = PlexosDB.from_xml(template_path)
 
     sim_config = {"horizon_year": 2012, "resolution": "1D"}
