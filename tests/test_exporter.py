@@ -473,7 +473,7 @@ def test_on_export_uses_custom_template(tmp_path):
     # Create a minimal custom XML template
     custom_template = tmp_path / "custom_template.xml"
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
-    default_template = config.get_config_path().joinpath("master_10.0V_btu.xml")
+    default_template = config.get_config_path().joinpath(DEFAULT_XML_TEMPLATE)
     db = PlexosDB.from_xml(default_template)
     db.to_xml(custom_template)
 
@@ -684,7 +684,7 @@ def test_prepare_export_add_objects_raises_key_error(template_db):
     exporter = PLEXOSExporter.from_context(ctx)
     exporter.db = template_db
 
-    with patch.object(template_db, "add_objects", side_effect=KeyError("Invalid category")):  # noqa: SIM117
+    with patch.object(exporter, "_add_objects_safe", side_effect=KeyError("Invalid category")):  # noqa: SIM117
         with pytest.raises(KeyError):
             exporter.prepare_export()
 
@@ -920,7 +920,7 @@ def test_add_component_memberships_skips_missing_parent_or_child(template_db, ca
     with patch.object(sys, "get_supplemental_attributes", return_value=[mock_membership]):
         exporter._add_component_memberships()
 
-    assert "No valid memberships to process" in caplog.text
+    assert "No valid membership records to add." in caplog.text
 
 
 def test_add_component_memberships_no_valid_records_warns(template_db, caplog):
@@ -945,7 +945,7 @@ def test_add_component_memberships_no_valid_records_warns(template_db, caplog):
     with patch.object(sys, "get_supplemental_attributes", return_value=[mock_membership]):
         exporter._add_component_memberships()
 
-    assert "No valid memberships to process" in caplog.text
+    assert "No valid membership records to add." in caplog.text
 
 
 def test_add_component_datafile_objects_db_none(caplog):

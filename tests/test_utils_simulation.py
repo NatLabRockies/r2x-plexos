@@ -24,7 +24,7 @@ from r2x_plexos.utils_simulation import (
     validate_simulation_config,
 )
 
-FILE_NAME = "master_10.0V_btu.xml"
+FILE_NAME = "master_10.0R2_btu.xml"
 
 
 def test_datetime_to_ole_date():
