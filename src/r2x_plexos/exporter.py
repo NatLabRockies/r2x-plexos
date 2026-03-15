@@ -595,9 +595,6 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 scenario=self.plexos_scenario,
             )
 
-    def _chunked(self, items: list[str], size: int = 900) -> list[list[str]]:
-        return [items[i:i + size] for i in range(0, len(items), size)]
-
     def _bulk_resolve_object_ids(
         self, class_to_names: dict[ClassEnum, set[str]]
     ) -> dict[tuple[ClassEnum, str], int]:

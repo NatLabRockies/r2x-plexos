@@ -11,6 +11,7 @@
   "category-groups": {
     "renewable-non-dispatch": ["distpv", "csp", "csp1", "csp2", "renewable-non-dispatch"],
     "renewable-dispatch": ["pvb", "upv", "wind-ons", "wind-ofs", "renewable-dispatch"],
+    "hydro-turbine": ["hydro-turbine"],
     "thermal-standard": [
       "synchronous-condensers",
       "thermal",
