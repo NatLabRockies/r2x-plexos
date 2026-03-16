@@ -76,3 +76,9 @@ GENERATOR_TO_STORAGE_TS_PROPERTY_MAP: dict[str, str] = {
     "natural_inflow": "Natural Inflow",
     "inflow": "Natural Inflow",
 }
+
+FIXED_TS_PROP: dict[type, str] = {
+    PLEXOSReserve: "Min Provision",
+    PLEXOSRegion: "Load",
+    PLEXOSStorage: "Natural Inflow",
+}

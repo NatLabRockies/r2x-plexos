@@ -30,6 +30,7 @@ from .utils_exporter import (
     get_output_directory,
 )
 from .utils_mappings import (
+    FIXED_TS_PROP,
     GENERATOR_TO_STORAGE_TS_PROPERTY_MAP,
     GENERATOR_TS_PROPERTY_MAP,
     PLEXOS_TYPE_MAP_INVERTED,
@@ -491,12 +492,33 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
             collection = get_default_collection(class_enum)
             type_name = component_type.__name__
+
+            all_comps = list(self.system.get_components(component_type))
+            fixed_ts_prop: str | None = FIXED_TS_PROP.get(component_type)
+            comp_ts_props: dict[str, set[str]] = {}
+
+            for _comp in all_comps:
+                if not self.system.has_time_series(_comp):
+                    continue
+                if fixed_ts_prop is not None:
+                    comp_ts_props[_comp.name] = {fixed_ts_prop}
+                elif isinstance(_comp, PLEXOSGenerator):
+                    _props: set[str] = set()
+                    for ts_key in self.system.list_time_series_keys(_comp):
+                        key = ts_key.name.strip().lower().replace(" ", "_")
+                        if key == "max_active_power":
+                            _props.update(["Rating", "Load Subtracter"])
+                        else:
+                            mapped = GENERATOR_TS_PROPERTY_MAP.get(key)
+                            if mapped:
+                                _props.add(mapped)
+                    if _props:
+                        comp_ts_props[_comp.name] = _props
+
             records: list[dict[str, Any]] = []
 
-            for comp in self.system.get_components(component_type):
-                ts_property_name = None
-                if self.system.has_time_series(comp):
-                    ts_property_name = self._get_time_series_property_name(comp)
+            for comp in all_comps:
+                ts_property_names = comp_ts_props.get(comp.name, set())
 
                 aliased_dict = comp.model_dump(by_alias=True, exclude_defaults=self.exclude_defaults)
                 explicit_dict = comp.model_dump(by_alias=True, exclude_unset=True, exclude_defaults=False)
@@ -517,7 +539,8 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 for prop_name, raw in aliased_dict.items():
                     if prop_name in metadata_fields or raw is None:
                         continue
-                    if ts_property_name and prop_name == ts_property_name:
+                    # Skip static value when this property is driven by a time series datafile.
+                    if prop_name in ts_property_names:
                         continue
 
                     if isinstance(raw, (int, float, str, bool)):
@@ -764,7 +787,8 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         3. Looks up the corresponding PLEXOSDatafile object and ensures it has a valid object_id.
         4. Determines the correct property name(s) for the time series (handling special cases).
         5. Adds a property to the database linking the component property to the DataFile.
-        6. Logs all linkages and any errors encountered.
+        6. Marks all DataFile-linked properties as is_dynamic=1 so PLEXOS accepts them.
+        7. Logs all linkages and any errors encountered.
 
         This ensures that all time series properties in the exported XML reference the correct
         DataFile objects, enabling PLEXOS to locate and use the time series CSVs.
@@ -785,6 +809,12 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         # Prevent duplicate links for same target/property/csv
         seen_links: set[tuple[str, str, str]] = set()  # (object_name, property_name, csv_relative_path)
 
+        try:
+            dir_files = os.listdir(output_dir)
+        except FileNotFoundError:
+            logger.warning("Output directory {} not found, skipping DataFile linking.", output_dir)
+            return
+
         for component_type in self.system.get_component_types():
             components = list(self.system.get_components(component_type))
             components_with_ts = [c for c in components if self.system.has_time_series(c)]
@@ -799,10 +829,11 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
                 for ts_key in ts_keys:
                     component_class = type(component).__name__
-                    pattern = re.compile(rf"{re.escape(component_class)}_{re.escape(ts_key.name)}_.*\.csv")
+                    safe_ts_name = ts_key.name.replace(" ", "_").replace("/", "_")
+                    pattern = re.compile(rf"{re.escape(component_class)}_{re.escape(safe_ts_name)}_.*\.csv")
 
                     matched_file = None
-                    for filename in os.listdir(output_dir):
+                    for filename in dir_files:
                         if pattern.match(filename):
                             matched_file = filename
                             break
@@ -877,6 +908,19 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                                 f"Failed to link {target_component.name}.{property_name} "
                                 f"to {csv_relative_path}: {e}"
                             )
+
+        # Set time series properties as dynamic so PLEXOS accepts them without error
+        self.db._db.execute(
+            """
+            UPDATE t_property SET is_dynamic = 1
+            WHERE property_id IN (
+                SELECT DISTINCT d.property_id
+                FROM t_data d
+                JOIN t_text tx ON d.data_id = tx.data_id
+            )
+            """
+        )
+        logger.debug("Marked all DataFile-linked properties as is_dynamic=1")
 
     def _get_time_series_property_name(self, component: Any, ts_key_name: str | None = None) -> str | None:
         """

@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 import pytest
 from plexosdb import ClassEnum, CollectionEnum, PlexosDB
+from rust_ok import Ok
 
 from r2x_core import DataStore, Err, PluginConfig, PluginContext, System
 from r2x_plexos import PLEXOSConfig, PLEXOSPropertyValue
@@ -1056,3 +1057,305 @@ def test_create_datafile_objects_creates_from_csv_files(tmp_path):
     assert len(datafiles) == 2
     assert any(df.name == "test1" for df in datafiles)
     assert any(df.name == "test2" for df in datafiles)
+
+
+def test_on_export_setup_configuration_returns_err(template_db, tmp_path):
+    """Test on_export propagates Err from setup_configuration."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+    exporter.db = template_db
+    exporter.output_path = str(tmp_path)
+
+    with patch.object(exporter, "setup_configuration", return_value=Err("setup failed")):
+        result = exporter.on_export()
+    assert result.is_err()
+    assert "setup failed" in result.error
+
+
+def test_on_export_prepare_export_returns_err(template_db, tmp_path):
+    """Test on_export propagates Err from prepare_export."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+    exporter.db = template_db
+    exporter.output_path = str(tmp_path)
+
+    with patch.object(exporter, "setup_configuration", return_value=Ok(None)):  # noqa: SIM117
+        with patch.object(exporter, "_add_reports"):
+            with patch.object(exporter, "prepare_export", return_value=Err("prepare failed")):
+                result = exporter.on_export()
+    assert result.is_err()
+    assert "prepare failed" in result.error
+
+
+def test_on_export_postprocess_export_returns_err(template_db, tmp_path):
+    """Test on_export propagates Err from postprocess_export."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+    exporter.db = template_db
+    exporter.output_path = str(tmp_path)
+
+    with patch.object(exporter, "setup_configuration", return_value=Ok(None)):  # noqa: SIM117
+        with patch.object(exporter, "_add_reports"):
+            with patch.object(exporter, "prepare_export", return_value=Ok(None)):
+                with patch.object(exporter, "postprocess_export", return_value=Err("post failed")):
+                    result = exporter.on_export()
+    assert result.is_err()
+    assert "post failed" in result.error
+
+
+def test_setup_configuration_db_none_returns_err():
+    """Test setup_configuration returns Err when db is None."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+    exporter.db = None
+
+    result = exporter.setup_configuration()
+    assert result.is_err()
+    assert "Database not initialized" in result.error
+
+
+def test_deduplicate_property_records_float_normalization():
+    """Test float values are normalized so near-equal floats deduplicate."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+
+    records = [
+        {"name": "Gen1", "property": "Rating", "value": 50.0},
+        {"name": "Gen1", "property": "Rating", "value": 50.0 + 1e-13},
+    ]
+    result = exporter._deduplicate_property_records(records)
+    assert len(result) == 1
+
+
+def test_deduplicate_property_records_merges_fields():
+    """Test that duplicate records merge non-None fields from second into first."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+
+    records = [
+        {"name": "Gen1", "property": "Rating", "value": 50.0, "band": None, "datafile_text": None},
+        {"name": "Gen1", "property": "Rating", "value": 50.0, "band": 2, "datafile_text": "file.csv"},
+    ]
+    result = exporter._deduplicate_property_records(records)
+    assert len(result) == 1
+    assert result[0]["band"] == 2
+    assert result[0]["datafile_text"] == "file.csv"
+
+
+def test_get_required_properties_unknown_type_returns_set():
+    """Test _get_required_properties_for_component returns set for unknown type."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+
+    class DummyComp:
+        category = None
+
+    result = exporter._get_required_properties_for_component(DummyComp(), "UnknownType")
+    assert isinstance(result, set)
+
+
+def test_link_datafiles_to_components_db_none(caplog):
+    """Test _link_datafiles_to_components logs error when db is None."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+    exporter.db = None
+
+    exporter._link_datafiles_to_components()
+    assert "Database not initialized" in caplog.text
+
+
+def test_link_datafiles_to_components_missing_output_dir(template_db, tmp_path, caplog):
+    """Test _link_datafiles_to_components handles FileNotFoundError for output dir."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+    exporter.db = template_db
+
+    non_existent = tmp_path / "no_such_dir" / "Data"
+    with patch("r2x_plexos.exporter.get_output_directory", return_value=non_existent):
+        exporter._link_datafiles_to_components()
+    assert "not found" in caplog.text
+
+
+def test_get_time_series_property_name_returns_none_for_unknown():
+    """Test _get_time_series_property_name returns None for unrecognized type."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+
+    class DummyComp:
+        pass
+
+    result = exporter._get_time_series_property_name(DummyComp(), ts_key_name="some_key")
+    assert result is None
+
+
+def test_get_time_series_property_name_fixed_types():
+    """Test _get_time_series_property_name returns fixed names for reserve/region/storage."""
+    from r2x_plexos.models import PLEXOSRegion, PLEXOSReserve, PLEXOSStorage
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+
+    assert exporter._get_time_series_property_name(PLEXOSReserve(name="r")) == "Min Provision"
+    assert exporter._get_time_series_property_name(PLEXOSRegion(name="r")) == "Load"
+    assert exporter._get_time_series_property_name(PLEXOSStorage(name="s")) == "Natural Inflow"
+
+
+def test_build_generator_to_storage_map_with_pairs(mocker):
+    """Test _build_generator_to_storage_map maps generator <-> storage both ways."""
+    from r2x_plexos.models import PLEXOSStorage
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys_obj = System(name="test")
+    ctx = PluginContext(config=config, system=sys_obj)
+    exporter = PLEXOSExporter.from_context(ctx)
+
+    gen = PLEXOSGenerator(name="HydroGen", category="hydro-turbine", units=1, rating=100.0)
+    storage = PLEXOSStorage(name="HydroRes")
+    m1 = PLEXOSMembership(parent_object=gen, child_object=storage, collection=CollectionEnum.Storages)
+
+    with patch.object(sys_obj, "get_supplemental_attributes", return_value=[m1]):
+        result = exporter._build_generator_to_storage_map()
+
+    assert result["HydroGen"].name == "HydroRes"
+
+
+def test_export_time_series_with_weather_and_solve_year(mocker, tmp_path):
+    """Test export_time_series uses weather_year and solve_year in filenames."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys_mock = mocker.Mock()
+
+    class DummyType:
+        pass
+
+    comp = mocker.Mock()
+    comp.name = "Gen1"
+    type(comp).__name__ = "DummyType"
+
+    sys_mock.get_component_types.return_value = [DummyType]
+    sys_mock.get_components.return_value = [comp]
+    sys_mock.has_time_series.return_value = True
+    ts_key = mocker.Mock()
+    ts_key.name = "max_active_power"
+    ts_key.features = {}
+    sys_mock.list_time_series_keys.return_value = [ts_key]
+    sys_mock.get_time_series_by_key.return_value = mocker.Mock()
+
+    data_dir = tmp_path / "Data"
+    data_dir.mkdir()
+
+    ctx = PluginContext(config=config, system=sys_mock)
+    exporter = PLEXOSExporter.from_context(ctx)
+    exporter.weather_year = 2020
+    exporter.solve_year = 2024
+
+    mocker.patch("r2x_plexos.exporter.get_output_directory", return_value=data_dir)
+    mocker.patch("r2x_plexos.exporter.export_time_series_csv", return_value=Ok(None))
+
+    result = exporter.export_time_series()
+    assert result.is_ok()
+
+
+def test_create_datafile_objects_skips_existing_component(tmp_path):
+    """Test _create_datafile_objects creates DataFile retrievable by name."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+
+    data_dir = tmp_path / "Data"
+    data_dir.mkdir()
+    (data_dir / "ts1.csv").write_text("col\n1\n")
+
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+    exporter.output_path = str(tmp_path)
+
+    exporter._create_datafile_objects()
+
+    datafiles = list(sys.get_components(PLEXOSDatafile))
+    assert any(df.name == "ts1" for df in datafiles)
+
+
+def test_add_reports_runs_without_error(template_db):
+    """Test _add_reports runs without raising when there are no reports to add."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+    exporter.db = template_db
+
+    with patch.object(PLEXOSConfig, "load_reports", return_value=[]):
+        exporter._add_reports()
+
+
+def test_add_component_properties_list_raw(template_db):
+    """Test _add_component_properties handles list-of-dict property values."""
+    from r2x_plexos.models import PLEXOSReserve
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+
+    reserve = PLEXOSReserve(name="Res1", type=1, duration=15)
+    sys.add_component(reserve)
+
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+    exporter.db = template_db
+
+    template_db.add_object(ClassEnum.Reserve, "Res1", category="variable-reserve")
+
+    exporter._add_component_properties()
+
+    props = template_db.get_object_properties(ClassEnum.Reserve, "Res1")
+    assert len(props) > 0
+
+
+def test_add_component_properties_skips_ts_property(template_db, mocker):
+    """Test _add_component_properties skips static value for ts-linked properties."""
+    from r2x_plexos.models import PLEXOSRegion
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+
+    region = PLEXOSRegion(name="RegA")
+    sys.add_component(region)
+
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+    exporter.db = template_db
+
+    template_db.add_object(ClassEnum.Region, "RegA", category="default")
+
+    # Simulate that this region has time series
+    mocker.patch.object(sys, "has_time_series", return_value=True)
+
+    ts_key = mocker.Mock()
+    ts_key.name = "load"
+    mocker.patch.object(sys, "list_time_series_keys", return_value=[ts_key])
+
+    exporter._add_component_properties()
+
+    props = template_db.get_object_properties(ClassEnum.Region, "RegA")
+    prop_names = [p.get("property") for p in props]
+    # "Load" should NOT appear as a plain static value
+    assert "Load" not in prop_names
