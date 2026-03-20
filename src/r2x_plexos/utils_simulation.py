@@ -985,6 +985,29 @@ def _add_horizon_attributes(db: PlexosDB, horizon: PLEXOSHorizon) -> None:
                 attribute_value=attr_value,
             )
 
+def _add_model_attributes(db: PlexosDB, model: PLEXOSModel) -> None:
+    """
+    Add model attributes to the database.
+    """
+    metadata_fields = {"name", "category", "object_id", "uuid", "label", "description"}
+
+    model_dict = model.model_dump(
+        by_alias=True,
+        exclude_none=True,
+        exclude_defaults=True,
+    )
+
+    for attr_name, attr_value in model_dict.items():
+        if attr_name in metadata_fields:
+            continue
+
+        db.add_attribute(
+            ClassEnum.Model,
+            model.name,
+            attribute_name=attr_name,
+            attribute_value=attr_value,
+        )
+
 
 def ingest_simulation_to_plexosdb(
     db: PlexosDB,
@@ -1025,6 +1048,12 @@ def ingest_simulation_to_plexosdb(
             except Exception as e:
                 return Err(f"Failed to add object {model.name}: {e}")
             model_ids[model.name] = model_id
+
+            try:
+                _add_model_attributes(db, model)
+            except Exception as e:
+                return Err(f"Failed to add attributes for model {model.name}: {e}")
+
             logger.debug(f"Created model '{model.name}' (ID: {model_id})")
         else:
             model_ids[model.name] = db.get_object_id(ClassEnum.Model, model.name)
