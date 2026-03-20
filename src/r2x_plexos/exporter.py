@@ -907,10 +907,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                                 f"to {csv_relative_path}: {e}"
                             )
 
-        # Set time series properties as dynamic so PLEXOS accepts them without error
         self.db._db.execute(
             """
-            UPDATE t_property SET is_dynamic = 1
+            UPDATE t_property SET is_dynamic = 1, is_enabled = 1
             WHERE property_id IN (
                 SELECT DISTINCT d.property_id
                 FROM t_data d
@@ -918,7 +917,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             )
             """
         )
-        logger.debug("Marked all DataFile-linked properties as is_dynamic=1")
+        logger.debug("Marked all DataFile-linked properties as is_dynamic=1, is_enabled=1")
 
     def _get_time_series_property_name(self, component: Any, ts_key_name: str | None = None) -> str | None:
         """
