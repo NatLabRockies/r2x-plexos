@@ -454,8 +454,6 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             return
 
         logger.info("Adding component properties...")
-
-        # 1) DataFile Filename properties
         datafile_records: list[dict[str, Any]] = []
         for component in self.system.get_components(PLEXOSDatafile):
             relative_path = f"{datafile_prefix}/{component.name}.csv"
@@ -980,21 +978,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         return mapping
 
     def export_time_series(self) -> Result[None, str]:
-        """
-        Export all time series data from the system to CSV files and update property references.
-
-        This method performs the following:
-        1. Finds all components in the system that have associated time series data.
-        2. Groups time series by field name and metadata, generating a unique CSV filename for each group.
-        3. Exports each group of time series data to a CSV file in the output directory.
-        4. Logs the number of exported files and any errors encountered.
-        5. Returns Ok(None) on success, or Err with an error message on failure.
-
-        Returns
-        -------
-        Result[None, str]
-            Ok(None) on success, Err(error_message) on failure.
-        """
+        """Export all time series data from the system to CSV files and update property references."""
         all_components_with_ts = []
         for component_type in self.system.get_component_types():
             components = list(
@@ -1017,10 +1001,17 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
         logger.debug(f"Found {len(ts_metadata)} time series keys total")
 
-        def _grouping_key(item: tuple[Any, Any]) -> tuple[str, tuple[tuple[str, Any], ...]]:
-            """Sort by component_type."""
+        def _grouping_key(item: tuple[Any, Any]) -> tuple:
+            """Group by variable name, initial timestamp, resolution, and features."""
             _, ts_key = item
-            return (ts_key.name, tuple(sorted(ts_key.features.items())))
+            initial_ts = getattr(ts_key, "initial_timestamp", None)
+            resolution = getattr(ts_key, "resolution", None)
+            return (
+                ts_key.name,
+                str(initial_ts),
+                str(resolution),
+                tuple(sorted(ts_key.features.items())),
+            )
 
         ts_metadata_sorted = sorted(ts_metadata, key=_grouping_key)
 
@@ -1028,7 +1019,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         output_dir = get_output_directory(self.config, self.system, output_path=self.output_path)
 
         for group_key, group_items in groupby(ts_metadata_sorted, key=_grouping_key):
-            field_name, features_tuple = group_key
+            field_name, _initial_ts_str, _resolution_str, features_tuple = group_key
             metadata_dict = dict(features_tuple)
             if self.config.model_name is not None:
                 metadata_dict["model_name"] = self.config.model_name
@@ -1047,8 +1038,25 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
             time_series_data: list[tuple[str, Any]] = []
             for component, ts_key in group_list:
-                ts = self.system.get_time_series_by_key(component, ts_key)
+                try:
+                    ts_list = self.system.list_time_series(component, name=ts_key.name, **ts_key.features)
+                    if not ts_list:
+                        logger.warning("No time series found for {}.{}; skipping", component.name, ts_key.name)
+                        continue
+                    initial_ts = getattr(ts_key, "initial_timestamp", None)
+                    if initial_ts is not None and len(ts_list) > 1:
+                        matched = next((t for t in ts_list if t.initial_timestamp == initial_ts), None)
+                        ts = matched if matched is not None else ts_list[0]
+                    else:
+                        ts = ts_list[0]
+                except Exception as e:
+                    logger.error("Failed to get time series for {}.{}: {}", component.name, ts_key.name, e)
+                    continue
                 time_series_data.append((component.name, ts))
+
+            if not time_series_data:
+                logger.debug("No time series data collected for group {}, skipping CSV.", field_name)
+                continue
 
             result = export_time_series_csv(filepath, time_series_data)
 
@@ -1058,7 +1066,6 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 return Err(f"Time series export failed: {result.error}")
 
         logger.info(f"Exported {len(csv_filepaths)} time series files to {output_dir}")
-
         return Ok(None)
 
     def _create_datafile_objects(self) -> None:
