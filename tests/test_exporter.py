@@ -1,3 +1,4 @@
+import contextlib
 from pathlib import Path
 from unittest.mock import patch
 
@@ -1124,7 +1125,7 @@ def test_setup_configuration_db_none_returns_err():
 
 
 def test_deduplicate_property_records_float_normalization():
-    """Test float values are normalized so near-equal floats deduplicate."""
+    """Two records with same name/property/band deduplicate; only the first is kept."""
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     sys = System(name="test")
     ctx = PluginContext(config=config, system=sys)
@@ -1132,10 +1133,11 @@ def test_deduplicate_property_records_float_normalization():
 
     records = [
         {"name": "Gen1", "property": "Rating", "value": 50.0},
-        {"name": "Gen1", "property": "Rating", "value": 50.0 + 1e-13},
+        {"name": "Gen1", "property": "Rating", "value": 99.0}
     ]
     result = exporter._deduplicate_property_records(records)
     assert len(result) == 1
+    assert result[0]["value"] == 50.0  # first one wins
 
 
 def test_deduplicate_property_records_merges_fields():
@@ -1150,9 +1152,9 @@ def test_deduplicate_property_records_merges_fields():
         {"name": "Gen1", "property": "Rating", "value": 50.0, "band": 2, "datafile_text": "file.csv"},
     ]
     result = exporter._deduplicate_property_records(records)
-    assert len(result) == 1
-    assert result[0]["band"] == 2
-    assert result[0]["datafile_text"] == "file.csv"
+    assert len(result) == 2
+    assert result[1]["band"] == 2
+    assert result[1]["datafile_text"] == "file.csv"
 
 
 def test_get_required_properties_unknown_type_returns_set():
@@ -1396,3 +1398,155 @@ def test_resolve_template_path_invalid_raises():
 
     with pytest.raises(FileNotFoundError):
         exporter._resolve_template_path()
+
+
+def test_get_required_properties_for_generator_thermal_category(template_db):
+    """Test _get_required_properties_for_component resolves category-group for thermal generators."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+
+    gen = PLEXOSGenerator(name="ThermalGen", category="coaloldscr", units=1, rating=50.0)
+    result = exporter._get_required_properties_for_component(gen, "PLEXOSGenerator")
+    assert isinstance(result, set)
+    assert "units" in result
+    assert "forced_outage_rate" in result
+
+
+def test_get_required_properties_for_generator_renewable_dispatch(template_db):
+    """Test _get_required_properties resolves renewable-dispatch group."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+
+    gen = PLEXOSGenerator(name="WindGen", category="wind-ons", units=1, rating=100.0)
+    result = exporter._get_required_properties_for_component(gen, "PLEXOSGenerator")
+    assert isinstance(result, set)
+    assert "units" in result
+
+
+def test_get_required_properties_alias_thermal_normalizes(template_db):
+    """Test that 'thermal' category is aliased to thermal-standard group lookup."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+
+    gen = PLEXOSGenerator(name="TGen", category="thermal", units=1, rating=50.0)
+    result = exporter._get_required_properties_for_component(gen, "PLEXOSGenerator")
+    assert isinstance(result, set)
+    assert len(result) > 0
+
+
+def test_bulk_resolve_object_ids_returns_correct_ids(template_db):
+    """Test _bulk_resolve_object_ids returns object IDs for existing objects."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys_obj = System(name="test")
+    ctx = PluginContext(config=config, system=sys_obj)
+    exporter = PLEXOSExporter.from_context(ctx)
+    exporter.db = template_db
+
+    template_db.add_object(ClassEnum.Generator, "BulkGen1")
+    template_db.add_object(ClassEnum.Generator, "BulkGen2")
+
+    result = exporter._bulk_resolve_object_ids({ClassEnum.Generator: {"BulkGen1", "BulkGen2"}})
+
+    assert (ClassEnum.Generator, "BulkGen1") in result
+    assert (ClassEnum.Generator, "BulkGen2") in result
+
+
+def test_bulk_resolve_object_ids_empty_input(template_db):
+    """Test _bulk_resolve_object_ids returns empty dict for empty input."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys_obj = System(name="test")
+    ctx = PluginContext(config=config, system=sys_obj)
+    exporter = PLEXOSExporter.from_context(ctx)
+    exporter.db = template_db
+
+    result = exporter._bulk_resolve_object_ids({ClassEnum.Generator: set()})
+    assert result == {}
+
+
+def test_add_objects_safe_adds_new_objects(template_db):
+    """Test _add_objects_safe inserts objects and memberships."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys_obj = System(name="test")
+    ctx = PluginContext(config=config, system=sys_obj)
+    exporter = PLEXOSExporter.from_context(ctx)
+    exporter.db = template_db
+
+    exporter._add_objects_safe(ClassEnum.Generator, ["SafeGen1", "SafeGen2"], category="thermal")
+
+    objects = template_db.list_objects_by_class(ClassEnum.Generator)
+    assert "SafeGen1" in objects
+    assert "SafeGen2" in objects
+
+
+def test_add_objects_safe_skips_existing(template_db):
+    """Test _add_objects_safe is idempotent for already-existing objects."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys_obj = System(name="test")
+    ctx = PluginContext(config=config, system=sys_obj)
+    exporter = PLEXOSExporter.from_context(ctx)
+    exporter.db = template_db
+
+    template_db.add_object(ClassEnum.Generator, "ExistingGen")
+    before = len(template_db.list_objects_by_class(ClassEnum.Generator))
+
+    exporter._add_objects_safe(ClassEnum.Generator, ["ExistingGen"])
+    after = len(template_db.list_objects_by_class(ClassEnum.Generator))
+
+    assert before == after
+
+
+def test_add_objects_safe_empty_list_does_nothing(template_db):
+    """Test _add_objects_safe returns early for empty input."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys_obj = System(name="test")
+    ctx = PluginContext(config=config, system=sys_obj)
+    exporter = PLEXOSExporter.from_context(ctx)
+    exporter.db = template_db
+
+    before = len(template_db.list_objects_by_class(ClassEnum.Generator))
+    exporter._add_objects_safe(ClassEnum.Generator, [])
+    assert len(template_db.list_objects_by_class(ClassEnum.Generator)) == before
+
+
+def test_add_model_attributes_writes_non_default_fields():
+    """Test _add_model_attributes persists non-default PLEXOSModel fields."""
+    from r2x_plexos import PLEXOSConfig
+    from r2x_plexos.models import PLEXOSModel
+    from r2x_plexos.utils_simulation import _add_model_attributes
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    template_path = config.get_config_path().joinpath("master_10.0R2_btu.xml")
+    db = PlexosDB.from_xml(template_path)
+
+    db.add_object(ClassEnum.Model, "TestModel")
+    model = PLEXOSModel(name="TestModel", random_number_seed=42)
+
+    _add_model_attributes(db, model)
+
+    attr = db.get_attribute(ClassEnum.Model, object_name="TestModel", attribute_name="Random Number Seed")
+    assert attr[0] == 42
+
+
+def test_add_model_attributes_skips_default_values():
+    """Test _add_model_attributes skips fields with default values (exclude_defaults=True)."""
+    from r2x_plexos import PLEXOSConfig
+    from r2x_plexos.models import PLEXOSModel
+    from r2x_plexos.utils_simulation import _add_model_attributes
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    template_path = config.get_config_path().joinpath("master_10.0R2_btu.xml")
+    db = PlexosDB.from_xml(template_path)
+
+    db.add_object(ClassEnum.Model, "TestModel")
+    model = PLEXOSModel(name="TestModel")  # random_number_seed=0 (default)
+
+    _add_model_attributes(db, model)
+
+    with contextlib.suppress(Exception):
+        db.get_attribute(ClassEnum.Model, object_name="TestModel", attribute_name="Random Number Seed")

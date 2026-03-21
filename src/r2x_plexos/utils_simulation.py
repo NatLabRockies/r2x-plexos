@@ -343,10 +343,10 @@ def _shift_ole_date_to_year(ole_date: float, weather_year: int) -> float:
     base = datetime(1899, 12, 30)
     dt = base + timedelta(days=float(ole_date))
 
-    try:
-        shifted = dt.replace(year=weather_year)
-    except ValueError:
+    if dt.month == 2 and dt.day == 29 and not calendar.isleap(weather_year):
         shifted = dt.replace(year=weather_year, day=28)
+    else:
+        shifted = dt.replace(year=weather_year)
 
     return datetime_to_ole_date(shifted)
 
@@ -1067,9 +1067,7 @@ def _add_horizon_attributes(db: PlexosDB, horizon: PLEXOSHorizon) -> None:
             )
 
 def _add_model_attributes(db: PlexosDB, model: PLEXOSModel) -> None:
-    """
-    Add model attributes to the database.
-    """
+    """Add model attributes to the database."""
     metadata_fields = {"name", "category", "object_id", "uuid", "label", "description"}
 
     model_dict = model.model_dump(

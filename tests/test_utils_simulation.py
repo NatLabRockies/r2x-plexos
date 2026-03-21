@@ -789,7 +789,7 @@ def test_build_static_simulation_rewrites_names_for_weather_year():
 def test_ingest_simulation_to_plexosdb_adds_model_attributes(tmp_path):
     """Test that model attributes are written to the DB during simulation ingestion."""
     from r2x_plexos import PLEXOSConfig
-    from r2x_plexos.models import PLEXOSModel, PLEXOSHorizon
+    from r2x_plexos.models import PLEXOSHorizon, PLEXOSModel
     from r2x_plexos.utils_simulation import SimulationConfig
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
@@ -832,3 +832,12 @@ def test_ingest_simulation_to_plexosdb_adds_model_attributes(tmp_path):
 
     assert attr_value is not None
     assert attr_value[0] == 2718.0
+
+
+def test_shift_ole_date_to_year_non_leap_non_feb29_unchanged():
+    """Test normal dates (not Feb 29) shift cleanly without clamping."""
+    from r2x_plexos.utils_simulation import _shift_ole_date_to_year, datetime_to_ole_date
+
+    ole = datetime_to_ole_date(datetime(2012, 6, 15))
+    shifted = _shift_ole_date_to_year(ole, 2023)
+    assert shifted == datetime_to_ole_date(datetime(2023, 6, 15))
