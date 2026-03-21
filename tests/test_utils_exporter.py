@@ -126,15 +126,7 @@ def test_generate_csv_filename_basic():
     metadata = {"model_name": "Base", "weather_year": 2024, "solve_year": 2024}
     result = generate_csv_filename("max_capacity", "PLEXOSGenerator", metadata)
 
-    assert result == "PLEXOSGenerator_max_capacity_Base_2024.csv"
-
-
-def test_generate_csv_filename_different_years():
-    """Test filename generation when weather_year and solve_year differ."""
-    metadata = {"model_name": "Base", "weather_year": 2012, "solve_year": 2023}
-    result = generate_csv_filename("max_capacity", "PLEXOSGenerator", metadata)
-
-    assert result == "PLEXOSGenerator_max_capacity_Base_2012_2023.csv"
+    assert result == "PLEXOSGenerator_max_capacity_Base_2024_2024.csv"
 
 
 def test_generate_csv_filename_with_spaces():

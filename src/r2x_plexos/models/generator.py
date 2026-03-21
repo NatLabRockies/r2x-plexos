@@ -18,7 +18,7 @@ class PLEXOSGenerator(PLEXOSObject):
             description="If the generator is committed at time zero",
             json_schema_extra={"enum": [0, 1]},
         ),
-    ] = 0
+    ] = 1
     expansion_economy_units: Annotated[
         float | int,
         Field(

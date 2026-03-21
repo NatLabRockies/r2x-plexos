@@ -27,10 +27,8 @@ class PLEXOSConfig(PluginConfig):
         Optional subdirectory containing time series files. If passed it must exist.
     horizon_year : int, optional
         Horizon year for the model simulation
-    template : str, optional
-        Can be either:
-        - a file path to an XML template, or
-        - a supported version key (e.g. "PLEXOS9.2")
+    template : FilePath, optional
+        File path to the XML to use as template. If passed it must exist.
     simulation_config : SimulationConfig, optional
         Simulation configuration parameters
 
@@ -49,7 +47,7 @@ class PLEXOSConfig(PluginConfig):
     ...     model_name="MyPLEXOSModel",
     ...     timeseries_dir=Path("./timeseries"),
     ...     horizon_year=2030,
-    ...     template="PLEXOS9.2",
+    ...     template=Path("./template.xml"),
     ...     simulation_config=SimulationConfig(...),
     ... )
 
@@ -70,14 +68,7 @@ class PLEXOSConfig(PluginConfig):
     ]
     horizon_year: Annotated[int | None, Field(description="Horizon year", default=None)]
     template: Annotated[
-        str | None,
-        Field(
-            description=(
-                "Template selector. Can be either an existing XML file path "
-                "or a supported version key such as 'PLEXOS9.2' or 'PLEXOS10.0'."
-            ),
-            default=None,
-        ),
+        FilePath | None, Field(description="File to the XML to use as template. If passed it must exist.")
     ] = None
     simulation_config: Annotated[SimulationConfig | None, Field(description="Simulation configuration")] = (
         None

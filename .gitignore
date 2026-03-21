@@ -13,6 +13,7 @@
 *.sdf
 *.tax2010
 *.vcf
+*.xml
 
 ### Git ###
 # Created by git for backups. To disable backups in Git:
