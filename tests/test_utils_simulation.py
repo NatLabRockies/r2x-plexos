@@ -642,3 +642,87 @@ def test_ingest_simulation_without_configs(tmp_path):
     info = result.unwrap()
     assert "simulation_objects" in info
     assert len(info["simulation_objects"]) == 0
+
+# Non-leap year
+def test_static_horizon_rewrite_non_leap_year():
+    from r2x_plexos.utils_simulation import _rewrite_horizon_attributes_for_weather_year
+
+    attrs = {
+        "Chrono Date From": 40940.0,  # Feb 1, 2012
+        "Date From": 40909.0,
+        "Chrono Step Count": 28.0,
+        "Step Count": 365.0,
+    }
+
+    result = _rewrite_horizon_attributes_for_weather_year(
+        attrs,
+        horizon_name="base_2023_m2",
+        weather_year=2023,
+        is_overlap=False,
+    )
+
+    assert result["Step Count"] == 365.0
+    assert result["Chrono Step Count"] == 28.0
+
+# Leap year
+def test_static_horizon_rewrite_leap_year():
+    from r2x_plexos.utils_simulation import _rewrite_horizon_attributes_for_weather_year
+
+    attrs = {
+        "Chrono Date From": 40940.0,  # Feb 1, 2012
+        "Date From": 40909.0,
+        "Chrono Step Count": 28.0,
+        "Step Count": 365.0,
+    }
+
+    result = _rewrite_horizon_attributes_for_weather_year(
+        attrs,
+        horizon_name="base_2024_m2",
+        weather_year=2024,
+        is_overlap=False,
+    )
+
+    assert result["Step Count"] == 366.0
+    assert result["Chrono Step Count"] == 29.0
+
+# Test full year
+def test_static_full_year_horizon_rewrite_leap_year():
+    from r2x_plexos.utils_simulation import _rewrite_horizon_attributes_for_weather_year
+
+    attrs = {
+        "Chrono Date From": 40909.0,
+        "Date From": 40909.0,
+        "Chrono Step Count": 364.0,
+        "Step Count": 365.0,
+    }
+
+    result = _rewrite_horizon_attributes_for_weather_year(
+        attrs,
+        horizon_name="base_2024",
+        weather_year=2024,
+        is_overlap=False,
+    )
+
+    assert result["Step Count"] == 366.0
+    assert result["Chrono Step Count"] == 365.0
+
+# Test overlap
+def test_static_full_year_overlap_leap():
+    from r2x_plexos.utils_simulation import _rewrite_horizon_attributes_for_weather_year
+
+    attrs = {
+        "Chrono Date From": 40909.0,
+        "Date From": 40909.0,
+        "Chrono Step Count": 362.0,
+        "Step Count": 365.0,
+    }
+
+    result = _rewrite_horizon_attributes_for_weather_year(
+        attrs,
+        horizon_name="base_2024_ov",
+        weather_year=2024,
+        is_overlap=True,
+    )
+
+    assert result["Step Count"] == 366.0
+    assert result["Chrono Step Count"] == 363.0

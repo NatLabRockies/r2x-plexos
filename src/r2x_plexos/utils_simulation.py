@@ -332,44 +332,100 @@ def ingest_simulation_config_to_plexosdb(
         }
     )
 
+def _replace_year_in_name(name: str, weather_year: int | None) -> str:
+    """Replace the hardcoded template year in a static object name."""
+    if weather_year is None:
+        return name
+    return name.replace("2012", str(weather_year))
+
+def _shift_ole_date_to_year(ole_date: float, weather_year: int) -> float:
+    """Shift a date to the same month/day in a target year."""
+    base = datetime(1899, 12, 30)
+    dt = base + timedelta(days=float(ole_date))
+
+    try:
+        shifted = dt.replace(year=weather_year)
+    except ValueError:
+        shifted = dt.replace(year=weather_year, day=28)
+
+    return datetime_to_ole_date(shifted)
+
+def _rewrite_horizon_attributes_for_weather_year(
+    attrs: dict[str, Any],
+    horizon_name: str,
+    weather_year: int | None,
+    is_overlap: bool = False,
+) -> dict[str, Any]:
+    """
+    Rewrite year-sensitive horizon attributes for a target weather year.
+
+    Adjusts OLE date fields and leap year sensitive horizon counts while
+    preserving the remaining static attributes.
+    """
+    if weather_year is None:
+        return dict(attrs)
+
+    updated = dict(attrs)
+    is_leap = calendar.isleap(weather_year)
+
+    # Shift OLE dates to the new weather year
+    for key in ("Chrono Date From", "Date From"):
+        value = updated.get(key)
+        if value is not None:
+            updated[key] = _shift_ole_date_to_year(float(value), weather_year)
+
+    # Step Count typically represents full-year span but adjusted for leap year, if present
+    if "Step Count" in updated:
+        updated["Step Count"] = 366.0 if is_leap else 365.0
+
+    # Adjust Chrono Step Count only where leap year changes the actual chrono span
+    if "Chrono Step Count" in updated:
+        lower_name = horizon_name.lower()
+
+        # Fullyear horizon
+        if lower_name.startswith(f"base_{weather_year}".lower()) and "_m" not in lower_name:
+            if is_overlap:
+                updated["Chrono Step Count"] = 363.0 if is_leap else 362.0
+            else:
+                updated["Chrono Step Count"] = 365.0 if is_leap else 364.0
+
+        # February monthly horizon
+        elif "_m2_" in lower_name or lower_name.endswith("_m2"):
+            if lower_name.endswith("_ov"):
+                updated["Chrono Step Count"] = 32.0 if is_leap else 31.0
+            else:
+                updated["Chrono Step Count"] = 29.0 if is_leap else 28.0
+
+    return updated
 
 def _build_from_static_models(
     defaults: dict[str, Any],
     simulation_config: dict[str, PLEXOSConfiguration | None] | None = None,
+    weather_year: int | None = None,
 ) -> Result[SimulationConfig, str]:
     """
     Build simulation configuration from static models and horizons.
 
-    This function constructs SimulationConfig objects using static model and horizon
-    definitions provided in the defaults dictionary. Each model and horizon is created
-    with its attributes, and memberships are established as specified.
+    Creates model and horizon objects from the static definitions in the defaults
+    dictionary and rewrites year-dependent names and horizon attributes when a
+    weather_year is provided. Memberships between models and their child objects
+    are rebuilt using the rewritten names.
 
     Parameters
     ----------
     defaults : dict[str, Any]
-        Dictionary containing "static_models", "static_models_overlap", and "static_horizons".
-        Each entry should include attributes and memberships for models and horizons.
+        Dictionary containing static model definitions and related defaults.
     simulation_config : dict[str, PLEXOSConfiguration | None], optional
-        Optional simulation configuration objects to include in the result.
+        Optional simulation configuration objects to attach to the result.
+    weather_year : int | None, optional
+        Year used to rewrite static model names, horizon names, memberships,
+        and year-sensitive horizon attributes.
 
     Returns
     -------
     Result[SimulationConfig, str]
-        Ok with SimulationConfig containing lists of models, horizons, memberships,
-        and simulation_configs, or Err with error message.
-
-    Examples
-    --------
-    >>> defaults = {
-    ...     "static_models": {"ModelA": {"attributes": {...}}},
-    ...     "static_horizons": {"HorizonA": {"attributes": {...}}}
-    ... }
-    >>> result = _build_from_static_models(defaults)
-    >>> build_result = result.unwrap()
-    >>> len(build_result.models)
-    1
-    >>> len(build_result.horizons)
-    1
+        Ok with SimulationConfig containing models, horizons, memberships,
+        and optional simulation configuration objects.
     """
     from r2x_plexos.plugin_config import PLEXOSConfig
 
@@ -387,21 +443,42 @@ def _build_from_static_models(
     horizons = []
     memberships = []
 
-    for horizon_name, horizon_data in static_horizons.items():
-        horizons.append(PLEXOSHorizon(name=horizon_name, **horizon_data["attributes"]))
-    for horizon_name, horizon_data in static_horizons_overlap.items():
-        horizons.append(PLEXOSHorizon(name=horizon_name, **horizon_data["attributes"]))
+    for raw_horizon_name, horizon_data in static_horizons.items():
+        horizon_name = _replace_year_in_name(raw_horizon_name, weather_year)
+        attrs = _rewrite_horizon_attributes_for_weather_year(
+            horizon_data["attributes"],
+            horizon_name=horizon_name,
+            weather_year=weather_year,
+            is_overlap=False,
+        )
+        horizons.append(PLEXOSHorizon(name=horizon_name, **attrs))
 
-    for model_name, model_data in static_models.items():
+    for raw_horizon_name, horizon_data in static_horizons_overlap.items():
+        horizon_name = _replace_year_in_name(raw_horizon_name, weather_year)
+        attrs = _rewrite_horizon_attributes_for_weather_year(
+            horizon_data["attributes"],
+            horizon_name=horizon_name,
+            weather_year=weather_year,
+            is_overlap=True,
+        )
+        horizons.append(PLEXOSHorizon(name=horizon_name, **attrs))
+
+    for raw_model_name, model_data in static_models.items():
+        model_name = _replace_year_in_name(raw_model_name, weather_year)
+        model_category = _replace_year_in_name(model_data.get("category", None), weather_year) \
+            if model_data.get("category", None) is not None else None
+
         model = PLEXOSModel(
             name=model_name,
-            category=model_data.get("category", None),
+            category=model_category,
             **model_data.get("attributes", {})
         )
         models.append(model)
+
         if "memberships" in model_data:
             for membership_type, child_name in model_data["memberships"].items():
-                memberships.append((model_name, child_name, membership_type))
+                rewritten_child_name = _replace_year_in_name(child_name, weather_year)
+                memberships.append((model_name, rewritten_child_name, membership_type))
 
     return Ok(
         SimulationConfig(
@@ -501,7 +578,11 @@ def build_plexos_simulation(
     # Route to appropriate builder based on config
     result: Result[SimulationConfig, str]
     if "static_models" in defaults and "static_horizons" in defaults:
-        return _build_from_static_models(defaults, simulation_config)
+        return _build_from_static_models(
+            defaults,
+            simulation_config,
+            weather_year=config.get("horizon_year"),
+        )
 
     if "models" in config:
         # Fully custom configuration
