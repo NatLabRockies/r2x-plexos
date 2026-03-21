@@ -374,6 +374,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         return Ok(None)
 
     def _deduplicate_property_records(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Remove duplicate property records before bulk insert."""
         if not records:
             return records
 
