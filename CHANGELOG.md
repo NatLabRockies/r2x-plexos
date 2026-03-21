@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.1.4](https://github.com/NatLabRockies/r2x-plexos/compare/v0.1.3...v0.1.4) (2026-03-21)
+
+
+### 🐛 Bug Fixes
+
+* fix parser ts horizon handling in h5, and add name mapping for ts parsing ([#39](https://github.com/NatLabRockies/r2x-plexos/issues/39)) ([e445fbc](https://github.com/NatLabRockies/r2x-plexos/commit/e445fbc046dc5a3a25337cc20b500bfc9ab9c5b7))
+* improve logic for filtering object properties ([#42](https://github.com/NatLabRockies/r2x-plexos/issues/42)) ([1836659](https://github.com/NatLabRockies/r2x-plexos/commit/1836659dd19347834d875baaf47e664cda7cd92c))
+* update exporter function and format file ([#38](https://github.com/NatLabRockies/r2x-plexos/issues/38)) ([f330cc3](https://github.com/NatLabRockies/r2x-plexos/commit/f330cc31a73ea33e90d893771e0baa5b3e3f19b6))
+* update parser logic and add new data format for time series ([#35](https://github.com/NatLabRockies/r2x-plexos/issues/35)) ([b65a9c9](https://github.com/NatLabRockies/r2x-plexos/commit/b65a9c92f82c9a00648d8a4c36f8b70de8ae09c5))
+
+
+### 🧹 Refactoring
+
+* update scripts to match latest changes of r2x-core ([#37](https://github.com/NatLabRockies/r2x-plexos/issues/37)) ([e7f2d75](https://github.com/NatLabRockies/r2x-plexos/commit/e7f2d750b680aa0c8eb78516b180a7a71c7503fd))
+
 ## [0.1.3](https://github.com/NREL/r2x-plexos/compare/v0.1.2...v0.1.3) (2026-01-07)
 
 
