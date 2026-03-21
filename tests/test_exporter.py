@@ -367,8 +367,9 @@ def test_export_time_series_csv_error(mocker):
     ts_key = mocker.Mock()
     ts_key.name = "ts_key"
     ts_key.features = {}
+    ts_key.initial_timestamp = None
     sys.list_time_series_keys.return_value = [ts_key]
-    sys.get_time_series_by_key.return_value = [1, 2, 3]
+    sys.list_time_series.return_value = [mocker.Mock()]
     mocker.patch("r2x_plexos.exporter.export_time_series_csv", return_value=Err("fail"))
 
     ctx = PluginContext(config=config, system=sys)
