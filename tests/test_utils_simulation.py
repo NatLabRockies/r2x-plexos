@@ -785,3 +785,50 @@ def test_build_static_simulation_rewrites_names_for_weather_year():
     assert "model_2012" not in model_names
     assert "base_2012" not in horizon_names
 
+
+def test_ingest_simulation_to_plexosdb_adds_model_attributes(tmp_path):
+    """Test that model attributes are written to the DB during simulation ingestion."""
+    from r2x_plexos import PLEXOSConfig
+    from r2x_plexos.models import PLEXOSModel, PLEXOSHorizon
+    from r2x_plexos.utils_simulation import SimulationConfig
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    template_path = config.get_config_path().joinpath(FILE_NAME)
+    db = PlexosDB.from_xml(template_path)
+
+    model = PLEXOSModel(
+        name="Model_2012",
+        category="model_2012",
+        **{"Random Number Seed": "2718"},
+    )
+
+    horizon = PLEXOSHorizon(
+        name="Horizon_2012",
+        chrono_date_from=40909.0,
+        date_from=40909.0,
+        chrono_step_count=366,
+        chrono_step_type=2,
+        step_count=1,
+        periods_per_day=24,
+    )
+
+    simulation = SimulationConfig(
+        models=[model],
+        horizons=[horizon],
+        memberships=[("Model_2012", "Horizon_2012", "Horizon")],
+        simulation_configs=None,
+    )
+
+    result = ingest_simulation_to_plexosdb(db, simulation)
+
+    assert result.is_ok()
+    assert db.check_object_exists(ClassEnum.Model, "Model_2012")
+
+    attr_value = db.get_attribute(
+        ClassEnum.Model,
+        object_name="Model_2012",
+        attribute_name="Random Number Seed",
+    )
+
+    assert attr_value is not None
+    assert attr_value[0] == 2718.0
