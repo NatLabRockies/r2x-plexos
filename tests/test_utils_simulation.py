@@ -642,3 +642,193 @@ def test_ingest_simulation_without_configs(tmp_path):
     info = result.unwrap()
     assert "simulation_objects" in info
     assert len(info["simulation_objects"]) == 0
+
+# Non-leap year
+def test_static_horizon_rewrite_non_leap_year():
+    from r2x_plexos.utils_simulation import _rewrite_horizon_attributes_for_weather_year
+
+    attrs = {
+        "Chrono Date From": 40940.0,  # Feb 1, 2012
+        "Date From": 40909.0,
+        "Chrono Step Count": 28.0,
+        "Step Count": 365.0,
+    }
+
+    result = _rewrite_horizon_attributes_for_weather_year(
+        attrs,
+        horizon_name="base_2023_m2",
+        weather_year=2023,
+        is_overlap=False,
+    )
+
+    assert result["Step Count"] == 365.0
+    assert result["Chrono Step Count"] == 28.0
+
+# Leap year
+def test_static_horizon_rewrite_leap_year():
+    from r2x_plexos.utils_simulation import _rewrite_horizon_attributes_for_weather_year
+
+    attrs = {
+        "Chrono Date From": 40940.0,  # Feb 1, 2012
+        "Date From": 40909.0,
+        "Chrono Step Count": 28.0,
+        "Step Count": 365.0,
+    }
+
+    result = _rewrite_horizon_attributes_for_weather_year(
+        attrs,
+        horizon_name="base_2024_m2",
+        weather_year=2024,
+        is_overlap=False,
+    )
+
+    assert result["Step Count"] == 366.0
+    assert result["Chrono Step Count"] == 29.0
+
+# Test full year
+def test_static_full_year_horizon_rewrite_leap_year():
+    from r2x_plexos.utils_simulation import _rewrite_horizon_attributes_for_weather_year
+
+    attrs = {
+        "Chrono Date From": 40909.0,
+        "Date From": 40909.0,
+        "Chrono Step Count": 364.0,
+        "Step Count": 365.0,
+    }
+
+    result = _rewrite_horizon_attributes_for_weather_year(
+        attrs,
+        horizon_name="base_2024",
+        weather_year=2024,
+        is_overlap=False,
+    )
+
+    assert result["Step Count"] == 366.0
+    assert result["Chrono Step Count"] == 365.0
+
+# Test overlap
+def test_static_full_year_overlap_leap():
+    from r2x_plexos.utils_simulation import _rewrite_horizon_attributes_for_weather_year
+
+    attrs = {
+        "Chrono Date From": 40909.0,
+        "Date From": 40909.0,
+        "Chrono Step Count": 362.0,
+        "Step Count": 365.0,
+    }
+
+    result = _rewrite_horizon_attributes_for_weather_year(
+        attrs,
+        horizon_name="base_2024_ov",
+        weather_year=2024,
+        is_overlap=True,
+    )
+
+    assert result["Step Count"] == 366.0
+    assert result["Chrono Step Count"] == 363.0
+
+def test_replace_year_in_name_rewrites_template_year():
+    from r2x_plexos.utils_simulation import _replace_year_in_name
+
+    assert _replace_year_in_name("model_2012", 2024) == "model_2024"
+    assert _replace_year_in_name("base_2012_m2", 2024) == "base_2024_m2"
+
+def test_replace_year_in_name_none_weather_year():
+    from r2x_plexos.utils_simulation import _replace_year_in_name
+
+    assert _replace_year_in_name("model_2012", None) == "model_2012"
+
+def test_shift_ole_date_to_year_preserves_month_day():
+    from datetime import datetime
+
+    from r2x_plexos.utils_simulation import _shift_ole_date_to_year, datetime_to_ole_date
+
+    ole = datetime_to_ole_date(datetime(2012, 2, 1))
+    shifted = _shift_ole_date_to_year(ole, 2024)
+
+    assert shifted == datetime_to_ole_date(datetime(2024, 2, 1))
+
+def test_shift_ole_date_to_year_handles_feb_29_to_non_leap():
+    from datetime import datetime
+
+    from r2x_plexos.utils_simulation import _shift_ole_date_to_year, datetime_to_ole_date
+
+    ole = datetime_to_ole_date(datetime(2012, 2, 29))
+    shifted = _shift_ole_date_to_year(ole, 2023)
+
+    assert shifted == datetime_to_ole_date(datetime(2023, 2, 28))
+
+def test_build_static_simulation_rewrites_names_for_weather_year():
+    from r2x_plexos import PLEXOSConfig
+
+    static_model_defaults = PLEXOSConfig.load_static_models()
+    static_horizon_defaults = PLEXOSConfig.load_static_horizons()
+    defaults = {**static_model_defaults, **static_horizon_defaults}
+
+    result = build_plexos_simulation(
+        {"horizon_year": 2024},
+        defaults=defaults,
+    )
+
+    assert result.is_ok()
+    build_result = result.unwrap()
+
+    model_names = {m.name for m in build_result.models}
+    horizon_names = {h.name for h in build_result.horizons}
+    memberships = set(build_result.memberships)
+
+    assert "model_2024" in model_names
+    assert "base_2024" in horizon_names
+
+    assert ("model_2024", "base_2024", "Horizon") in memberships
+
+    assert "model_2012" not in model_names
+    assert "base_2012" not in horizon_names
+
+
+def test_ingest_simulation_to_plexosdb_adds_model_attributes(tmp_path):
+    """Test that model attributes are written to the DB during simulation ingestion."""
+    from r2x_plexos import PLEXOSConfig
+    from r2x_plexos.models import PLEXOSModel, PLEXOSHorizon
+    from r2x_plexos.utils_simulation import SimulationConfig
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    template_path = config.get_config_path().joinpath(FILE_NAME)
+    db = PlexosDB.from_xml(template_path)
+
+    model = PLEXOSModel(
+        name="Model_2012",
+        category="model_2012",
+        **{"Random Number Seed": "2718"},
+    )
+
+    horizon = PLEXOSHorizon(
+        name="Horizon_2012",
+        chrono_date_from=40909.0,
+        date_from=40909.0,
+        chrono_step_count=366,
+        chrono_step_type=2,
+        step_count=1,
+        periods_per_day=24,
+    )
+
+    simulation = SimulationConfig(
+        models=[model],
+        horizons=[horizon],
+        memberships=[("Model_2012", "Horizon_2012", "Horizon")],
+        simulation_configs=None,
+    )
+
+    result = ingest_simulation_to_plexosdb(db, simulation)
+
+    assert result.is_ok()
+    assert db.check_object_exists(ClassEnum.Model, "Model_2012")
+
+    attr_value = db.get_attribute(
+        ClassEnum.Model,
+        object_name="Model_2012",
+        attribute_name="Random Number Seed",
+    )
+
+    assert attr_value is not None
+    assert attr_value[0] == 2718.0

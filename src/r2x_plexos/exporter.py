@@ -44,6 +44,10 @@ from .utils_simulation import (
 
 NESTED_ATTRIBUTES = {"ext", "bus", "services"}
 DEFAULT_XML_TEMPLATE = "master_10.0R2_btu.xml"
+XML_TEMPLATE_MAP = {
+    "PLEXOS9.2": "master_9.2R6_btu.xml",
+    "PLEXOS10.0": "master_10.0R2_btu.xml",
+}
 BATCH_SIZE = 500
 
 
@@ -89,11 +93,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             self.plexos_scenario = self.plexos_scenario or self.config.model_name
 
             if self.db is None:
-                xml_fname = self.config.template
-                if not xml_fname:
-                    xml_fname = self.config.get_config_path().joinpath(DEFAULT_XML_TEMPLATE)
-                    logger.debug("Using default XML template")
-
+                xml_fname = self._resolve_template_path()
                 self.db = PlexosDB.from_xml(xml_path=xml_fname)
 
             if not self.db.check_object_exists(ClassEnum.Scenario, self.plexos_scenario):
@@ -1140,3 +1140,37 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             report_object["parent_class"] = get_enum_from_string(report_object["parent_class"], ClassEnum)
             report_object["child_class"] = get_enum_from_string(report_object["child_class"], ClassEnum)
             self.db.add_report(**report_object)
+
+    def _resolve_template_path(self) -> Path:
+        """Resolve template from config.template as either a version key or a file path."""
+        template_value = self.config.template
+
+        if not template_value:
+            resolved = self.config.get_config_path().joinpath(DEFAULT_XML_TEMPLATE)
+            logger.debug(f"Using default XML template: {resolved}")
+            return resolved
+
+        # Treat known version keys as packaged template names
+        if template_value in XML_TEMPLATE_MAP:
+            resolved = self.config.get_config_path().joinpath(XML_TEMPLATE_MAP[template_value])
+            logger.debug(f"Using XML template mapping for {template_value}: {resolved}")
+            return resolved
+
+        # Treat as a filesystem path
+        template_path = Path(template_value).expanduser()
+
+        if template_path.exists():
+            resolved = template_path.resolve()
+            logger.debug(f"Using XML template path from config: {resolved}")
+            return resolved
+
+        # Also allow bare filename in package config dir
+        packaged_template = self.config.get_config_path().joinpath(template_value)
+        if packaged_template.exists():
+            logger.debug(f"Using packaged XML template by filename: {packaged_template}")
+            return packaged_template
+
+        raise FileNotFoundError(
+            f"Template '{template_value}' is neither a known template key "
+            f"nor an existing file path."
+        )

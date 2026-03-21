@@ -1360,3 +1360,39 @@ def test_add_component_properties_skips_ts_property(template_db, mocker):
     prop_names = [p.get("property") for p in props]
     # "Load" should NOT appear as a plain static value
     assert "Load" not in prop_names
+
+def test_resolve_template_path_default():
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+
+    resolved = exporter._resolve_template_path()
+
+    expected = config.get_config_path().joinpath(DEFAULT_XML_TEMPLATE)
+    assert resolved == expected
+
+
+def test_resolve_template_path_version_key_plexos92():
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024, template="PLEXOS9.2")
+    sys = System(name="test")
+
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+
+    resolved = exporter._resolve_template_path()
+
+    expected = config.get_config_path().joinpath("master_9.2R6_btu.xml")
+    assert resolved == expected
+
+
+def test_resolve_template_path_invalid_raises():
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024, template="non_correct_template")
+    sys = System(name="test")
+
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+
+    with pytest.raises(FileNotFoundError):
+        exporter._resolve_template_path()
