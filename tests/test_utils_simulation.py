@@ -726,3 +726,62 @@ def test_static_full_year_overlap_leap():
 
     assert result["Step Count"] == 366.0
     assert result["Chrono Step Count"] == 363.0
+
+def test_replace_year_in_name_rewrites_template_year():
+    from r2x_plexos.utils_simulation import _replace_year_in_name
+
+    assert _replace_year_in_name("model_2012", 2024) == "model_2024"
+    assert _replace_year_in_name("base_2012_m2", 2024) == "base_2024_m2"
+
+def test_replace_year_in_name_none_weather_year():
+    from r2x_plexos.utils_simulation import _replace_year_in_name
+
+    assert _replace_year_in_name("model_2012", None) == "model_2012"
+
+def test_shift_ole_date_to_year_preserves_month_day():
+    from datetime import datetime
+
+    from r2x_plexos.utils_simulation import _shift_ole_date_to_year, datetime_to_ole_date
+
+    ole = datetime_to_ole_date(datetime(2012, 2, 1))
+    shifted = _shift_ole_date_to_year(ole, 2024)
+
+    assert shifted == datetime_to_ole_date(datetime(2024, 2, 1))
+
+def test_shift_ole_date_to_year_handles_feb_29_to_non_leap():
+    from datetime import datetime
+
+    from r2x_plexos.utils_simulation import _shift_ole_date_to_year, datetime_to_ole_date
+
+    ole = datetime_to_ole_date(datetime(2012, 2, 29))
+    shifted = _shift_ole_date_to_year(ole, 2023)
+
+    assert shifted == datetime_to_ole_date(datetime(2023, 2, 28))
+
+def test_build_static_simulation_rewrites_names_for_weather_year():
+    from r2x_plexos import PLEXOSConfig
+
+    static_model_defaults = PLEXOSConfig.load_static_models()
+    static_horizon_defaults = PLEXOSConfig.load_static_horizons()
+    defaults = {**static_model_defaults, **static_horizon_defaults}
+
+    result = build_plexos_simulation(
+        {"horizon_year": 2024},
+        defaults=defaults,
+    )
+
+    assert result.is_ok()
+    build_result = result.unwrap()
+
+    model_names = {m.name for m in build_result.models}
+    horizon_names = {h.name for h in build_result.horizons}
+    memberships = set(build_result.memberships)
+
+    assert "model_2024" in model_names
+    assert "base_2024" in horizon_names
+
+    assert ("model_2024", "base_2024", "Horizon") in memberships
+
+    assert "model_2012" not in model_names
+    assert "base_2012" not in horizon_names
+
