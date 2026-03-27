@@ -34,6 +34,8 @@ from .utils_mappings import (
     GENERATOR_TO_STORAGE_TS_PROPERTY_MAP,
     GENERATOR_TS_PROPERTY_MAP,
     PLEXOS_TYPE_MAP_INVERTED,
+    STORAGE_TO_GENERATOR_TS_PROPERTY_MAP,
+    STORAGE_TS_PROPERTY_MAP,
 )
 from .utils_simulation import (
     build_plexos_simulation,
@@ -499,15 +501,30 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 if fixed_ts_prop is not None:
                     comp_ts_props[_comp.name] = {fixed_ts_prop}
                 elif isinstance(_comp, PLEXOSGenerator):
+                    sienna_type = (getattr(_comp, "ext", None) or {}).get("sienna_type", "")
                     _props: set[str] = set()
                     for ts_key in self.system.list_time_series_keys(_comp):
                         key = ts_key.name.strip().lower().replace(" ", "_")
                         if key == "max_active_power":
-                            _props.update(["Rating", "Load Subtracter"])
+                            if sienna_type == "HydroDispatch":
+                                _props.add("Load")
+                            else:
+                                _props.update(["Rating", "Load Subtracter"])
+                        elif key in GENERATOR_TO_STORAGE_TS_PROPERTY_MAP:
+                            pass
                         else:
                             mapped = GENERATOR_TS_PROPERTY_MAP.get(key)
                             if mapped:
                                 _props.add(mapped)
+                    if _props:
+                        comp_ts_props[_comp.name] = _props
+                elif isinstance(_comp, PLEXOSStorage):
+                    _props = set()
+                    for ts_key in self.system.list_time_series_keys(_comp):
+                        key = ts_key.name.strip().lower().replace(" ", "_")
+                        mapped = STORAGE_TS_PROPERTY_MAP.get(key)
+                        if mapped:
+                            _props.add(mapped)
                     if _props:
                         comp_ts_props[_comp.name] = _props
 
@@ -535,7 +552,6 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 for prop_name, raw in aliased_dict.items():
                     if prop_name in metadata_fields or raw is None:
                         continue
-                    # Skip static value when this property is driven by a time series datafile.
                     if prop_name in ts_property_names:
                         continue
 
@@ -550,7 +566,6 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                         )
                         continue
 
-                    # Serialized PLEXOSPropertyValue often appears as list[dict]
                     if isinstance(raw, list):
                         for rec in raw:
                             if not isinstance(rec, dict):
@@ -777,15 +792,6 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         component property to reference the correct DataFile object. The linkage is made
         via the `datafile_text` field and, if applicable, the t_tag table in the database.
 
-        Steps performed:
-        1. Iterates over all component types and finds those with time series.
-        2. For each time series key, matches the exported CSV file using a naming pattern.
-        3. Looks up the corresponding PLEXOSDatafile object and ensures it has a valid object_id.
-        4. Determines the correct property name(s) for the time series (handling special cases).
-        5. Adds a property to the database linking the component property to the DataFile.
-        6. Marks all DataFile-linked properties as is_dynamic=1 so PLEXOS accepts them.
-        7. Logs all linkages and any errors encountered.
-
         This ensures that all time series properties in the exported XML reference the correct
         DataFile objects, enabling PLEXOS to locate and use the time series CSVs.
         """
@@ -799,11 +805,14 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
         output_dir = get_output_directory(self.config, self.system, output_path=self.output_path)
 
-        # Build once: hydro turbine generator -> storage reservoir
+        # Build bidirectional maps between generators and their linked storage reservoirs
         generator_to_storage = self._build_generator_to_storage_map()
+        storage_to_generator: dict[str, str] = {
+            storage.name: gen_name
+            for gen_name, storage in generator_to_storage.items()
+        }
 
-        # Prevent duplicate links for same target/property/csv
-        seen_links: set[tuple[str, str, str]] = set()  # (object_name, property_name, csv_relative_path)
+        seen_links: set[tuple[str, str, str]] = set()
 
         try:
             dir_files = os.listdir(output_dir)
@@ -852,23 +861,46 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                     target_class_enum = class_enum
                     property_names: list[str] = []
 
-                    redirected_storage_property = GENERATOR_TO_STORAGE_TS_PROPERTY_MAP.get(key)
-                    if isinstance(component, PLEXOSGenerator) and redirected_storage_property:
+                    # PLEXOSGenerator: natural_inflow/inflow redirect to linked PLEXOSStorage
+                    if isinstance(component, PLEXOSGenerator) and key in GENERATOR_TO_STORAGE_TS_PROPERTY_MAP:
                         storage = generator_to_storage.get(component.name)
                         if storage:
-                            storage_class = PLEXOS_TYPE_MAP_INVERTED.get(type(storage))
+                            storage_class = PLEXOS_TYPE_MAP_INVERTED.get(PLEXOSStorage)
                             if storage_class:
                                 target_component = storage
                                 target_class_enum = storage_class
-                                property_names = [redirected_storage_property]
+                                property_names = [GENERATOR_TO_STORAGE_TS_PROPERTY_MAP[key]]
                         else:
                             logger.warning(
-                                f"No storage counterpart found for generator {component.name} "
-                                f"with key {key}; skipping TS link."
+                                "No storage counterpart found for generator {} with key {}; skipping TS link.",
+                                component.name, key,
                             )
+
+                    # PLEXOSStorage: hydro_budget redirects to linked PLEXOSGenerator
+                    elif isinstance(component, PLEXOSStorage) and key in STORAGE_TO_GENERATOR_TS_PROPERTY_MAP:
+                        gen_name = storage_to_generator.get(component.name)
+                        if gen_name:
+                            generator = self.system.get_component(PLEXOSGenerator, name=gen_name)
+                            gen_class = PLEXOS_TYPE_MAP_INVERTED.get(PLEXOSGenerator)
+                            if generator and gen_class:
+                                target_component = generator
+                                target_class_enum = gen_class
+                                property_names = [STORAGE_TO_GENERATOR_TS_PROPERTY_MAP[key]]
+                        else:
+                            logger.warning(
+                                "No generator counterpart found for storage {} with key {}; skipping TS link.",
+                                component.name, key,
+                            )
+
+                    # General case
                     else:
                         if isinstance(component, PLEXOSGenerator) and key == "max_active_power":
-                            property_names = ["Rating", "Load Subtracter"]
+                            sienna_type = (getattr(component, "ext", None) or {}).get("sienna_type", "")
+                            if sienna_type == "HydroDispatch":
+                                # Must-dispatch available flow; attach to "Load" not "Rating"
+                                property_names = ["Load"]
+                            else:
+                                property_names = ["Rating", "Load Subtracter"]
                         else:
                             property_name = self._get_time_series_property_name(
                                 component, ts_key_name=ts_key.name
@@ -942,15 +974,16 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
         fixed_property_by_type: dict[type[Any], str] = {
             PLEXOSReserve: "Min Provision",
-            PLEXOSRegion: "Load",
-            PLEXOSStorage: "Natural Inflow",
+            PLEXOSRegion: "Load"
         }
 
         fixed = fixed_property_by_type.get(type(component))
         if fixed is not None:
             return fixed
 
-        # Generator mapping is key-dependent and already defined in utils_mappings
+        if isinstance(component, PLEXOSStorage):
+            return STORAGE_TS_PROPERTY_MAP.get(key)
+
         if isinstance(component, PLEXOSGenerator):
             return GENERATOR_TS_PROPERTY_MAP.get(key)
 
