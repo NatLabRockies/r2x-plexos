@@ -1,7 +1,7 @@
 """Utility functions for PLEXOS exporter."""
 
 import csv
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -88,3 +88,30 @@ def export_time_series_csv(
             writer.writerow(row)
 
     return Ok(None)
+
+
+def get_hydro_budget_property_name(resolution: timedelta) -> str:
+    """Return the PLEXOS Max Energy property name matching the given time series resolution.
+
+    Parameters
+    ----------
+    resolution : timedelta
+        The resolution of the hydro_budget time series.
+
+    Returns
+    -------
+    str
+        One of "Max Energy Hour", "Max Energy Day", "Max Energy Week",
+        "Max Energy Month", or "Max Energy Year".
+    """
+    total_seconds = resolution.total_seconds()
+    if total_seconds <= 3600:
+        return "Max Energy Hour"
+    elif total_seconds <= 86400:
+        return "Max Energy Day"
+    elif total_seconds <= 7 * 86400:
+        return "Max Energy Week"
+    elif total_seconds <= 31 * 86400:
+        return "Max Energy Month"
+    else:
+        return "Max Energy Year"

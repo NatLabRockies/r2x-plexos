@@ -27,6 +27,7 @@ from .plugin_config import PLEXOSConfig
 from .utils_exporter import (
     export_time_series_csv,
     generate_csv_filename,
+    get_hydro_budget_property_name,
     get_output_directory,
 )
 from .utils_mappings import (
@@ -480,6 +481,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         skip_types = {PLEXOSModel, PLEXOSHorizon, PLEXOSDatafile, PLEXOSMembership}
         metadata_fields = {"name", "category", "uuid", "label", "description", "object_id"}
 
+        # Build once for the generator → storage redirect logic below
+        gen_to_storage = self._build_generator_to_storage_map()
+
         for component_type in self.system.get_component_types():
             if component_type in skip_types:
                 continue
@@ -510,6 +514,8 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                                 _props.add("Load")
                             else:
                                 _props.update(["Rating", "Load Subtracter"])
+                        elif key == "hydro_budget":
+                            _props.add(get_hydro_budget_property_name(ts_key.resolution))
                         elif key in GENERATOR_TO_STORAGE_TS_PROPERTY_MAP:
                             pass
                         else:
@@ -527,6 +533,18 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                             _props.add(mapped)
                     if _props:
                         comp_ts_props[_comp.name] = _props
+
+            if issubclass(component_type, PLEXOSGenerator):
+                for _gen in all_comps:
+                    linked_storage = gen_to_storage.get(_gen.name)
+                    if not linked_storage or not self.system.has_time_series(linked_storage):
+                        continue
+                    for ts_key in self.system.list_time_series_keys(linked_storage):
+                        skey = ts_key.name.strip().lower().replace(" ", "_")
+                        if skey == "hydro_budget":
+                            comp_ts_props.setdefault(_gen.name, set()).add(
+                                get_hydro_budget_property_name(ts_key.resolution)
+                            )
 
             records: list[dict[str, Any]] = []
 
@@ -885,7 +903,10 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                             if generator and gen_class:
                                 target_component = generator
                                 target_class_enum = gen_class
-                                property_names = [STORAGE_TO_GENERATOR_TS_PROPERTY_MAP[key]]
+                                if key == "hydro_budget":
+                                    property_names = [get_hydro_budget_property_name(ts_key.resolution)]
+                                else:
+                                    property_names = [STORAGE_TO_GENERATOR_TS_PROPERTY_MAP[key]]
                         else:
                             logger.warning(
                                 "No generator counterpart found for storage {} with key {}; skipping TS link.",
@@ -901,6 +922,8 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                                 property_names = ["Load"]
                             else:
                                 property_names = ["Rating", "Load Subtracter"]
+                        elif isinstance(component, PLEXOSGenerator) and key == "hydro_budget":
+                            property_names = [get_hydro_budget_property_name(ts_key.resolution)]
                         else:
                             property_name = self._get_time_series_property_name(
                                 component, ts_key_name=ts_key.name
