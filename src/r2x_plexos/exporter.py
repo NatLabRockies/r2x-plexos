@@ -550,6 +550,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
             for comp in all_comps:
                 ts_property_names = comp_ts_props.get(comp.name, set())
+                ts_max_energy_props = {
+                    name for name in ts_property_names if isinstance(name, str) and name.startswith("Max Energy ")
+                }
 
                 aliased_dict = comp.model_dump(by_alias=True, exclude_defaults=self.exclude_defaults)
                 explicit_dict = comp.model_dump(by_alias=True, exclude_unset=True, exclude_defaults=False)
@@ -570,6 +573,17 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 for prop_name, raw in aliased_dict.items():
                     if prop_name in metadata_fields or raw is None:
                         continue
+
+                    # If interval-specific Max Energy time series are present,
+                    # keep only the matching interval property and drop other static intervals.
+                    if (
+                        isinstance(prop_name, str)
+                        and prop_name.startswith("Max Energy ")
+                        and ts_max_energy_props
+                        and prop_name not in ts_max_energy_props
+                    ):
+                        continue
+
                     if prop_name in ts_property_names:
                         continue
 
