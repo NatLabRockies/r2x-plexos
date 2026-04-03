@@ -524,7 +524,7 @@ def test_parser_build_without_db(tmp_path):
 
     result = parser.on_build()
     assert result.is_err()
-    assert "'xml_file' not present in store" in str(result.error)
+    assert "Could not find PLEXOS XML file" in str(result.error)
 
 
 def test_parser_with_missing_xml_file(tmp_path):

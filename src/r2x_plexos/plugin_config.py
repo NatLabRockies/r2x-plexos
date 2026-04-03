@@ -21,6 +21,8 @@ class PLEXOSConfig(PluginConfig):
 
     Parameters
     ----------
+    fpath : str, optional
+        Path to the PLEXOS run directory or XML file. If not provided, the parser will attempt to locate the model using default paths or configuration.
     model_name : str, optional
         Name of the PLEXOS model. Defaults to "default".
     timeseries_dir : DirectoryPath, optional
@@ -64,6 +66,7 @@ class PLEXOSConfig(PluginConfig):
     load_defaults : Class method to load default constants from JSON
     """
 
+    fpath: Annotated[str | None, Field(description="Path to the PLEXOS run directory or XML file", default=None)]
     model_name: Annotated[
         str,
         Field(description="Name of the PLEXOS model.", default="default"),
