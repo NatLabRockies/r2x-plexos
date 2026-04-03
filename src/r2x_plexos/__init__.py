@@ -7,6 +7,7 @@ from importlib.metadata import version
 
 from loguru import logger
 
+from .exporter import PLEXOSExporter
 from .models import (
     PLEXOSObject,
     PLEXOSProperty,
@@ -33,6 +34,7 @@ logger.disable("r2x_plexos")
 
 __all__ = [
     "PLEXOSConfig",
+    "PLEXOSExporter",
     "PLEXOSObject",
     "PLEXOSParser",
     "PLEXOSProperty",
