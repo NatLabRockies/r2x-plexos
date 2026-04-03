@@ -189,14 +189,35 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         """
         if self.db is None:
             try:
-                data_file = self.store["xml_file"]
-                if data_file.fpath is None:
-                    self.store.add_data([data_file], overwrite=True)
-                fpath = data_file.fpath
-                if not fpath:
-                    return Err(f"Could not resolve XML file path from data_file: {data_file.name}")
+                xml_fpath: Path | None = None
+                try:
+                    store = self.store
+                    if "xml_file" in store:
+                        data_file = store["xml_file"]
+                        xml_fpath = data_file.fpath
+                except Exception:
+                    pass
 
-                self.db = PlexosDB.from_xml(fpath)
+                if xml_fpath is None:
+                    config_fpath = getattr(self.config, "fpath", None)
+                    if config_fpath:
+                        candidate = Path(config_fpath)
+                        if candidate.is_dir():
+                            xml_files = sorted(candidate.glob("*.xml"))
+                            if xml_files:
+                                xml_fpath = xml_files[0]
+                                logger.info("Resolved XML from config.fpath directory: {}", xml_fpath)
+                        elif candidate.is_file():
+                            xml_fpath = candidate
+
+                if not xml_fpath:
+                    return Err(
+                        "Could not find PLEXOS XML file. "
+                        "Provide 'fpath' pointing to the PLEXOS run directory or XML file in the parser config, "
+                        "or ensure the DataStore contains an 'xml_file' entry."
+                    )
+
+                self.db = PlexosDB.from_xml(xml_fpath)
                 if not self.db:
                     return Err("Failed to create database from XML file. Check XML file format.")
             except Exception as e:
@@ -864,7 +885,16 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
             raise ValueError("No datafile path provided")
 
         normalized_path = datafile_path.replace("\\", "/")
-        base_path = Path(self.store.folder)
+        try:
+            base_path = Path(self.store.folder)
+        except Exception:
+            config_fpath = getattr(self.config, "fpath", None)
+            if not config_fpath:
+                raise ValueError(
+                    "No DataStore in context and 'fpath' not set in config. "
+                    "Provide 'fpath' pointing to the PLEXOS run directory."
+                ) from None
+            base_path = Path(config_fpath)
         if self.config.timeseries_dir:
             base_path = base_path / self.config.timeseries_dir
         return base_path / normalized_path
@@ -958,6 +988,30 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         Extraction uses horizon start year if available, otherwise reference_year.
         Float returns indicate constant-value files (single row/column with one value).
         """
+        def normalize_key(value: str) -> str:
+            return " ".join(value.strip().lower().replace("_", " ").split())
+
+        def resolve_component_key(component_map: ParsedFileData, requested_name: str) -> str | None:
+            if requested_name in component_map:
+                return requested_name
+
+            normalized_requested = normalize_key(requested_name)
+            normalized_map: dict[str, list[str]] = defaultdict(list)
+            for existing_key in component_map:
+                normalized_map[normalize_key(existing_key)].append(existing_key)
+
+            candidates = normalized_map.get(normalized_requested)
+            if candidates:
+                if len(candidates) == 1:
+                    return candidates[0]
+                # Prefer an exact case-insensitive match when normalization is ambiguous.
+                for candidate in candidates:
+                    if candidate.strip().lower() == requested_name.strip().lower():
+                        return candidate
+                return candidates[0]
+
+            return None
+
         if file_path in self._parsed_files_cache:
             logger.debug(f"Using cached file parse: {file_path}")
             component_map = self._parsed_files_cache[file_path]
@@ -968,8 +1022,16 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
                 raise ValueError(f"File {file_path} contains no data for the requested year")
 
             ts: Any
-            if component_name in component_map:
-                ts = component_map[component_name]
+            resolved_key = resolve_component_key(component_map, component_name)
+            if resolved_key is not None:
+                ts = component_map[resolved_key]
+                if resolved_key != component_name:
+                    logger.debug(
+                        "Matched component '{}' to '{}' in cached file {}",
+                        component_name,
+                        resolved_key,
+                        file_path,
+                    )
             elif len(component_map) == 1:
                 logger.debug(f"Using single entry fallback for component '{component_name}'")
                 ts = next(iter(component_map.values()))
@@ -1001,7 +1063,8 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         self._parsed_files_cache[file_path] = ts_map
         logger.trace(f"Cached file with {len(ts_map)} time series: {file_path}")
 
-        if component_name not in ts_map:
+        resolved_key = resolve_component_key(ts_map, component_name)
+        if resolved_key is None:
             if len(ts_map) == 1:
                 logger.debug(f"Using single entry fallback for component '{component_name}' in parsed file")
                 ts = next(iter(ts_map.values()))
@@ -1012,7 +1075,14 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
                     f"Available components (first 10): {available}"
                 )
         else:
-            ts = ts_map[component_name]
+            ts = ts_map[resolved_key]
+            if resolved_key != component_name:
+                logger.debug(
+                    "Matched component '{}' to '{}' in parsed file {}",
+                    component_name,
+                    resolved_key,
+                    file_path,
+                )
 
         # Apply horizon trimming if needed (only for time series, not floats)
         if horizon_datetime and isinstance(ts, SingleTimeSeries):
