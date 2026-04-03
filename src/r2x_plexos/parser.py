@@ -989,9 +989,11 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         Float returns indicate constant-value files (single row/column with one value).
         """
         def normalize_key(value: str) -> str:
+            """Normalize keys for flexible matching: lowercase, replace underscores with spaces, and collapse whitespace."""
             return " ".join(value.strip().lower().replace("_", " ").split())
 
         def resolve_component_key(component_map: ParsedFileData, requested_name: str) -> str | None:
+            """Resolve the best matching key in component_map for the requested_name."""
             if requested_name in component_map:
                 return requested_name
 
