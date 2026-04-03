@@ -151,6 +151,7 @@ class PLEXOSPropertyValue:
         from pydantic_core import core_schema
 
         def validate(value: Any) -> "PLEXOSPropertyValue":
+            """Validate and convert input to PLEXOSPropertyValue."""
             if isinstance(value, cls):
                 return value
             if isinstance(value, list):
@@ -166,6 +167,7 @@ class PLEXOSPropertyValue:
             raise ValueError(f"Cannot create PLEXOSPropertyValue from {type(value).__name__}")
 
         def serialize(value: "PLEXOSPropertyValue") -> list[dict[str, Any]]:
+            """Serialize PLEXOSPropertyValue to a list of record dicts."""
             return [
                 {
                     "value": row.value,
