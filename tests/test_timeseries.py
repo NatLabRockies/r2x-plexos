@@ -6,30 +6,36 @@ from uuid import UUID
 
 import pytest
 
-from r2x_core import DataFile, DataStore
+from r2x_core import DataFile, DataStore, PluginContext
 from r2x_plexos import PLEXOSParser
-from r2x_plexos.config import PLEXOSConfig
 from r2x_plexos.parser import TimeSeriesReference, TimeSeriesSourceType
+from r2x_plexos.plugin_config import PLEXOSConfig
 
 
 @pytest.fixture(scope="module")
 def parser_basic(data_folder) -> PLEXOSParser:
     """Create a basic parser instance for testing (read-only tests)."""
-    config = PLEXOSConfig(model_name="Base", timeseries_dir=None, reference_year=2023)
+    config = PLEXOSConfig(model_name="Base", timeseries_dir=None, horizon_year=2023)
     data_file = DataFile(name="xml_file", glob="*.xml")
     store = DataStore(path=data_folder)
-    store.add_data(data_file)
-    return PLEXOSParser(config, store)
+    store.add_data([data_file])
+
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    return parser
 
 
 @pytest.fixture
 def parser_basic_mutable(data_folder) -> PLEXOSParser:
     """Create a basic parser instance for tests that modify the parser state."""
-    config = PLEXOSConfig(model_name="Base", timeseries_dir=None, reference_year=2023)
+    config = PLEXOSConfig(model_name="Base", timeseries_dir=None, horizon_year=2023)
     data_file = DataFile(name="xml_file", glob="*.xml")
     store = DataStore(path=data_folder)
-    store.add_data(data_file)
-    return PLEXOSParser(config, store)
+    store.add_data([data_file])
+
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    return parser
 
 
 @pytest.fixture(scope="module")
@@ -37,11 +43,14 @@ def parser_with_timeseries_dir(data_folder) -> PLEXOSParser:
     timeseries_path = data_folder / "timeseries"
     timeseries_path.mkdir(exist_ok=True)
 
-    config = PLEXOSConfig(model_name="Base", timeseries_dir=str(timeseries_path), reference_year=2023)
+    config = PLEXOSConfig(model_name="Base", timeseries_dir=timeseries_path, horizon_year=2023)
     data_file = DataFile(name="xml_file", glob="*.xml")
     store = DataStore(path=data_folder)
-    store.add_data(data_file)
-    return PLEXOSParser(config, store)
+    store.add_data([data_file])
+
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    return parser
 
 
 @pytest.mark.slow
@@ -150,6 +159,12 @@ def test_attach_direct_datafile_timeseries_component_not_found_in_system(
     """Test error when component not in system."""
     from unittest.mock import patch
 
+    from r2x_core import System
+
+    # Initialize system in context
+    system = System(name="test_system")
+    parser_basic._ctx.system = system
+
     csv_path = data_folder / "test.csv"
     csv_path.write_text("Name,Value\nGen1,100.0")
 
@@ -178,6 +193,12 @@ def test_attach_direct_datafile_timeseries_already_attached(
     """Test that already attached time series are skipped."""
     from unittest.mock import patch
 
+    from r2x_core import System
+
+    # Initialize system in context
+    system = System(name="test_system")
+    parser_basic_mutable._ctx.system = system
+
     test_uuid = UUID("12345678-1234-5678-1234-567812345678")
 
     parser_basic_mutable._attached_timeseries[(test_uuid, "capacity")] = True
@@ -205,6 +226,12 @@ def test_attach_direct_datafile_timeseries_file_not_found(
     """Test handling of missing datafile."""
     from unittest.mock import patch
 
+    from r2x_core import System
+
+    # Initialize system in context
+    system = System(name="test_system")
+    parser_basic_mutable._ctx.system = system
+
     mock_component = MagicMock()
     test_uuid = UUID("12345678-1234-5678-1234-567812345678")
     mock_component.uuid = test_uuid
@@ -230,6 +257,12 @@ def test_attach_direct_datafile_timeseries_file_not_found(
 def test_build_time_series_integration(parser_basic_mutable: PLEXOSParser, data_folder: Path) -> None:
     """Test the full build_time_series workflow."""
     from unittest.mock import patch
+
+    from r2x_core import System
+
+    # Initialize system in context
+    system = System(name="test_system")
+    parser_basic_mutable._ctx.system = system
 
     gen_csv = data_folder / "generators.csv"
     gen_csv.write_text("Name,Value\nGen1,500.0\nGen2,750.0\nGen3,1000.0")

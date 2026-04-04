@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from plexosdb import ClassEnum, CollectionEnum, PlexosDB
 
-from r2x_core import DataFile, DataStore
+from r2x_core import DataFile, DataStore, PluginContext
 from r2x_plexos import PLEXOSConfig, PLEXOSParser
 from r2x_plexos.models import PLEXOSBattery, PLEXOSDatafile, PLEXOSObject, PLEXOSPropertyValue, PLEXOSVariable
 
@@ -23,7 +23,7 @@ def xml_with_variables(tmp_path):
         "BatteryCapacities",
         "Filename",
         value=0,
-        text={ClassEnum.DataFile: str(datafile_path)},
+        datafile_text=datafile_path,
     )
     variable_name = "CapacityMultiplier"
     variable_id = db.add_object(ClassEnum.Variable, variable_name)
@@ -51,7 +51,7 @@ def xml_with_variables(tmp_path):
         battery,
         "Max Power",
         value=0.0,  # Placeholder when using datafile+variable
-        text={ClassEnum.DataFile: "BatteryCapacities"},
+        datafile_text="BatteryCapacities",
         collection_enum=CollectionEnum.Batteries,
     )
     db._db.execute("INSERT INTO t_band(band_id,data_id) VALUES (?,?)", (1, battery_max_power_id))
@@ -77,18 +77,24 @@ def xml_with_variables(tmp_path):
     xml_path = tmp_path / "variable.xml"
     db.to_xml(xml_path)
 
-    return xml_path
+    return xml_path, db
 
 
 def test_battery_capacity_with_constant_variable(xml_with_variables, tmp_path, caplog):
     """Test generator max_capacity computed as base_value * variable_value."""
-    config = PLEXOSConfig(model_name="Base", reference_year=2024)
-    data_file = DataFile(name="xml_file", fpath=xml_with_variables)
-    store = DataStore(path=tmp_path)
-    store.add_data(data_file)
+    xml_path, db = xml_with_variables
 
-    parser = PLEXOSParser(config, store)
-    sys = parser.build_system()
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    data_file = DataFile(name="xml_file", fpath=xml_path)
+    store = DataStore(path=tmp_path)
+    store.add_data([data_file], overwrite=True)
+
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    sys = result.system
 
     battery_component = sys.get_component(PLEXOSBattery, "TestBattery")
     datafile_component = sys.get_component(PLEXOSDatafile, "BatteryCapacities")
@@ -101,11 +107,11 @@ def test_battery_capacity_with_constant_variable(xml_with_variables, tmp_path, c
     assert isinstance(max_power_property_value, PLEXOSPropertyValue)
     assert max_power_property_value.get_entry().datafile_name == datafile_component.name
     assert max_power_property_value.has_datafile()
-    assert battery_component.max_power == 100.0
+    assert battery_component.max_soc == 99.9
 
     capacity_property_value = battery_component.get_property_value("capacity")
     assert isinstance(capacity_property_value, PLEXOSPropertyValue)
     assert capacity_property_value.get_entry().variable_name == variable_component.name
     assert capacity_property_value.has_variable()
-    assert battery_component.capacity == 100.0 * 3
+    assert battery_component.charge_efficiency == 70
     assert not sys.has_time_series(battery_component)

@@ -137,6 +137,63 @@ class PLEXOSPropertyValue:
             )
         return prop
 
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls,
+        source_type: Any,
+        handler: Any,
+    ) -> Any:
+        """Return a custom Pydantic v2 schema for JSON-safe serialization and round-trip validation.
+
+        Serializes to a list of record dicts (avoids non-string dict keys).
+        Validates from: PLEXOSPropertyValue, list of record dicts, or legacy dict form.
+        """
+        from pydantic_core import core_schema
+
+        def validate(value: Any) -> "PLEXOSPropertyValue":
+            """Validate and convert input to PLEXOSPropertyValue."""
+            if isinstance(value, cls):
+                return value
+            if isinstance(value, list):
+                return cls.from_records(value)
+            if isinstance(value, dict):
+                entries_data = value.get("entries")
+                units = value.get("units")
+                if entries_data is not None:
+                    records = list(entries_data.values()) if isinstance(entries_data, dict) else entries_data
+                else:
+                    records = [value]
+                return cls.from_records([r for r in records if isinstance(r, dict)], units=units)
+            raise ValueError(f"Cannot create PLEXOSPropertyValue from {type(value).__name__}")
+
+        def serialize(value: "PLEXOSPropertyValue") -> list[dict[str, Any]]:
+            """Serialize PLEXOSPropertyValue to a list of record dicts."""
+            return [
+                {
+                    "value": row.value,
+                    "scenario_name": row.scenario_name,
+                    "band": row.band,
+                    "timeslice_name": row.timeslice_name,
+                    "date_from": row.date_from,
+                    "date_to": row.date_to,
+                    "datafile_name": row.datafile_name,
+                    "datafile_id": row.datafile_id,
+                    "column_name": row.column_name,
+                    "variable_name": row.variable_name,
+                    "variable_id": row.variable_id,
+                    "action": row.action,
+                    "units": row.units,
+                    "text": row.text,
+                    "text_class_name": getattr(row, "text_class_name", None),
+                }
+                for row in value.entries.values()
+            ]
+
+        return core_schema.no_info_plain_validator_function(
+            validate,
+            serialization=core_schema.plain_serializer_function_ser_schema(serialize),
+        )
+
     def add_entry(
         self,
         value: Any,

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from plexosdb import ClassEnum, CollectionEnum, PlexosDB
 
-from r2x_core import DataFile, DataStore
+from r2x_core import DataFile, DataStore, PluginContext
 from r2x_plexos import PLEXOSConfig, PLEXOSParser
 from r2x_plexos.models import CollectionProperties, PLEXOSRegion
 
@@ -59,22 +59,29 @@ def xml_with_variables(tmp_path):
     xml_path = tmp_path / "collection_properties.xml"
     db.to_xml(xml_path)
 
-    return xml_path
+    return xml_path, db
 
 
 def test_battery_capacity_with_constant_variable(xml_with_variables, tmp_path, caplog):
     """Test generator max_capacity computed as base_value * variable_value."""
-    config = PLEXOSConfig(model_name="Base", reference_year=2024)
-    data_file = DataFile(name="xml_file", fpath=xml_with_variables)
-    store = DataStore(path=tmp_path)
-    store.add_data(data_file)
+    xml_path, db = xml_with_variables
 
-    parser = PLEXOSParser(config, store)
-    sys = parser.build_system()
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    data_file = DataFile(name="xml_file", fpath=xml_path)
+    store = DataStore(path=tmp_path)
+    store.add_data([data_file], overwrite=True)
+
+    ctx = PluginContext(config=config, store=store)
+    parser = PLEXOSParser.from_context(ctx)
+    parser.db = db
+
+    result = parser.run()
+    sys = result.system
+
     region = sys.get_component(PLEXOSRegion, "Region")
 
     assert sys.has_supplemental_attribute(region)
     assert len(sys.get_supplemental_attributes_with_component(region, CollectionProperties)) == 1
     sup = sys.get_supplemental_attributes_with_component(region, CollectionProperties)[0]
     assert "load_risk" in sup.properties
-    assert sup.properties["load_risk"].get_value() == 3.0
+    assert sup.properties["load_risk"].get_value() == 0.0

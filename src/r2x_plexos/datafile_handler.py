@@ -831,6 +831,7 @@ def parse_datetime_string(date_str: str) -> datetime | None:
         "%m/%d/%Y %H:%M",  # 1/1/2023 00:00
         "%m/%d/%Y %H:%M:%S",  # 1/1/2023 00:00:00
         "%Y-%m-%d %H:%M:%S",  # 2023-01-01 00:00:00
+        "%Y-%m-%dT%H:%M",  # 2023-01-01T00:00
         "%Y-%m-%dT%H:%M:%S",  # 2023-01-01T00:00:00
     ]
 

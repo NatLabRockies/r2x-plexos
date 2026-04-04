@@ -1,6 +1,7 @@
 """PLEXOS parser implementation for r2x-core framework."""
 
 import itertools
+import typing
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
@@ -9,7 +10,7 @@ from importlib.metadata import version
 from importlib.resources import files
 from operator import itemgetter
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 from uuid import UUID
 
 from infrasys import Component
@@ -17,10 +18,8 @@ from infrasys.time_series_models import SingleTimeSeries
 from loguru import logger
 from plexosdb import ClassEnum, PlexosDB
 
-from r2x_core import BaseParser, DataStore, Err, Ok, ParserError, Result
-from r2x_core.datafile_utils import get_fpath
+from r2x_core import Err, Ok, Plugin, Result, System
 
-from .config import PLEXOSConfig
 from .datafile_handler import ParsedFileData, extract_file_data, extract_one_time_series
 from .models import (
     PLEXOSDatafile,
@@ -35,6 +34,7 @@ from .models.collection_property import CollectionProperties
 from .models.timeslice import PLEXOSTimeslice
 from .models.utils import get_field_name_by_alias
 from .models.variable import PLEXOSVariable
+from .plugin_config import PLEXOSConfig
 from .utils_mappings import PLEXOS_TYPE_MAP
 from .utils_parser import (
     apply_action,
@@ -52,6 +52,14 @@ from .utils_plexosdb import (
 __version__ = version("r2x_plexos")
 
 SCENARIO_ORDER = files("r2x_plexos.sql").joinpath("scenario_read_order.sql").read_text(encoding="utf-8-sig")
+HYDRO_TS_NAME_MAP: dict[str, str] = {
+    "fixed_load": "max_active_power",
+    "max_energy_day": "hydro_budget",
+    "min_provision": "requirement",
+    "load_subtracter": "max_active_power",
+    "rating": "max_active_power",
+    "load": "max_active_power",
+}
 
 
 class TimeSeriesSourceType(str, Enum):
@@ -116,7 +124,7 @@ class TimeSeriesReference:
     membership_id: int | None = None
 
 
-class PLEXOSParser(BaseParser):
+class PLEXOSParser(Plugin[PLEXOSConfig]):
     """Parse PLEXOS XML models into r2x-core system representation.
 
     Implements a three-phase parsing strategy:
@@ -138,37 +146,14 @@ class PLEXOSParser(BaseParser):
     @property
     def config(self) -> PLEXOSConfig:
         """Return the PLEXOSConfig instance."""
-        return cast(PLEXOSConfig, super().config)
+        return super().config
 
-    def __init__(
-        self,
-        config: PLEXOSConfig,
-        data_store: DataStore,
-        *,
-        name: str | None = None,
-        auto_add_composed_components: bool = True,
-        skip_validation: bool = False,
-        db: PlexosDB | None = None,
-    ) -> None:
-        """Initialize PLEXOSParser with configuration and caching infrastructure.
-
-        Parameters
-        ----------
-        config : PLEXOSConfig
-            Parser configuration including model name and horizon settings
-        data_store : DataStore
-            Data file accessor from r2x-core
-        name : str, optional
-            Parser instance name
-        auto_add_composed_components : bool, default True
-            Whether to automatically add composed components to system
-        skip_validation : bool, default False
-            Skip validation checks during parsing
-        db : PlexosDB, optional
-            Pre-initialized PLEXOS database; if None, created from XML in data_store
+    def __init__(self) -> None:
+        """Initialize PLEXOSParser with internal state only.
 
         Notes
         -----
+        Actual initialization happens in on_build() after context is set.
         Initializes multiple caches (python dictionaries):
         - _component_cache: object_id -> PLEXOSObject mapping
         - _parsed_files_cache: file_path -> parsed data mapping
@@ -177,14 +162,10 @@ class PLEXOSParser(BaseParser):
         - _collection_properties_cache: object_id -> property records mapping
         - _attached_timeseries: (uuid, field_name) -> bool attachment tracker
         """
-        super().__init__(
-            config,
-            data_store=data_store,
-            system_name=name or "system",
-            auto_add_composed_components=auto_add_composed_components,
-            skip_validation=skip_validation,
-        )
-        self.model_name = config.model_name
+        super().__init__()
+
+        self.model_name: str = ""
+        self.db: PlexosDB | None = None
         self.time_series_references: list[TimeSeriesReference] = []
         self._component_cache: dict[int, PLEXOSObject] = {}
         self._valid_scenarios: list[str] = []
@@ -194,25 +175,81 @@ class PLEXOSParser(BaseParser):
         self._attached_timeseries: dict[tuple[UUID, str], bool] = {}
         self._failed_references: list[tuple[TimeSeriesReference, str]] = []
         self._membership_cache: dict[int, PLEXOSMembership] = {}
-        # PropertyRecord from plexosdb.iterate_properties(), stored as dict for flexibility
         self._collection_properties_cache: dict[int, list[dict[str, Any]]] = {}
+        self._horizon_start: datetime | None = None
+        self._horizon_end: datetime | None = None
 
-        self.db = db
-        if not db:
-            # NOTE: We should change either plexosdb db to take xmltree or an
-            # easier way to get the fpath of resolved globs.
-            data_file = data_store["xml_file"]
-            file_path_result = get_fpath(data_file, data_store.folder, info=data_file.info)
-            if file_path_result.is_err():
-                raise ValueError(f"Could not resolve XML file path: {file_path_result.err()}")
-            fpath = file_path_result.unwrap()
-            self.db = PlexosDB.from_xml(fpath)
-        assert self.db, "Database not created correctly. Check XML file."
+    def on_build(self) -> Result[System, str]:
+        """Build the System from PLEXOS XML data.
 
-    def validate_inputs(self) -> Result[None, ParserError]:
+        Returns
+        -------
+        Result[System, str]
+            Ok(system) on success, Err() with error message on failure
+        """
+        if self.db is None:
+            try:
+                xml_fpath: Path | None = None
+                try:
+                    store = self.store
+                    if "xml_file" in store:
+                        data_file = store["xml_file"]
+                        xml_fpath = data_file.fpath
+                except Exception:
+                    pass
+
+                if xml_fpath is None:
+                    config_fpath = getattr(self.config, "fpath", None)
+                    if config_fpath:
+                        candidate = Path(config_fpath)
+                        if candidate.is_dir():
+                            xml_files = sorted(candidate.glob("*.xml"))
+                            if xml_files:
+                                xml_fpath = xml_files[0]
+                                logger.info("Resolved XML from config.fpath directory: {}", xml_fpath)
+                        elif candidate.is_file():
+                            xml_fpath = candidate
+
+                if not xml_fpath:
+                    return Err(
+                        "Could not find PLEXOS XML file. "
+                        "Provide 'fpath' pointing to the PLEXOS run directory or XML file in the parser config, "
+                        "or ensure the DataStore contains an 'xml_file' entry."
+                    )
+
+                self.db = PlexosDB.from_xml(xml_fpath)
+                if not self.db:
+                    return Err("Failed to create database from XML file. Check XML file format.")
+            except Exception as e:
+                return Err(f"Failed to initialize database: {e}")
+
+        self.model_name = self.config.model_name
+
+        system = System(name="PLEXOS")
+        self._ctx.system = system
+
+        validation_result = self.validate_inputs()
+        if validation_result.is_err():
+            return Err(validation_result.err())
+
+        build_result = self.build_system_components()
+        if build_result.is_err():
+            return Err(build_result.err())
+
+        ts_result = self.build_time_series()
+        if ts_result.is_err():
+            return Err(ts_result.err())
+
+        postprocess_result = self.postprocess_system()
+        if postprocess_result.is_err():
+            return Err(postprocess_result.err())
+
+        return Ok(system)
+
+    def validate_inputs(self) -> Result[None, str]:
         """Validate input data before parsing."""
         if self.db is None:
-            return Err(ParserError("Database not initialized"))
+            return Err("Database not initialized")
 
         try:
             logger.info("Selecting model={}", self.model_name)
@@ -249,14 +286,14 @@ class PLEXOSParser(BaseParser):
                         int((self._horizon_end - self._horizon_start).total_seconds() / 3600),
                     )
         except Exception as exc:  # pragma: no cover - unexpected validation error
-            return Err(ParserError(str(exc)))
+            return Err(str(exc))
 
         return Ok(None)
 
-    def build_system_components(self) -> Result[None, ParserError]:
+    def build_system_components(self) -> Result[None, str]:
         """Create PLEXOS components and establish relationships."""
         if self.db is None:
-            return Err(ParserError("Database not initialized"))
+            return Err("Database not initialized")
 
         try:
             logger.info("Building PLEXOS system components...")
@@ -295,11 +332,11 @@ class PLEXOSParser(BaseParser):
             self._add_memberships()
             self._add_collection_properties()
         except Exception as exc:  # pragma: no cover - unexpected component error
-            return Err(ParserError(str(exc)))
+            return Err(str(exc))
 
         return Ok(None)
 
-    def build_time_series(self) -> Result[None, ParserError]:
+    def build_time_series(self) -> Result[None, str]:
         """Attach time series data using three-stage processing."""
         logger.info("Building time series data...")
 
@@ -307,8 +344,8 @@ class PLEXOSParser(BaseParser):
         horizon = get_horizon()
 
         # Get horizon datetime objects if available
-        horizon_datetime = None
-        if hasattr(self, "_horizon_start") and hasattr(self, "_horizon_end"):
+        horizon_datetime: tuple[datetime, datetime] | None = None
+        if self._horizon_start is not None and self._horizon_end is not None:
             horizon_datetime = (self._horizon_start, self._horizon_end)
 
         try:
@@ -372,11 +409,11 @@ class PLEXOSParser(BaseParser):
                 failed_names = [ref.component_name for ref, _ in self._failed_references[:5]]
                 logger.warning(f"Failed references (first 5): {failed_names}")
         except Exception as exc:  # pragma: no cover - unexpected time series failure
-            return Err(ParserError(str(exc)))
+            return Err(str(exc))
 
         return Ok(None)
 
-    def postprocess_system(self) -> Result[None, ParserError]:
+    def postprocess_system(self) -> Result[None, str]:
         """Set system metadata and log summary statistics."""
         logger.info("Post-processing PLEXOS system...")
 
@@ -389,7 +426,7 @@ class PLEXOSParser(BaseParser):
             logger.info("Total components: {}", total_components)
             logger.info("Post-processing complete")
         except Exception as exc:  # pragma: no cover - logging/setup failure
-            return Err(ParserError(str(exc)))
+            return Err(str(exc))
 
         return Ok(None)
 
@@ -561,6 +598,11 @@ class PLEXOSParser(BaseParser):
         membership_id : int
             Parent-child relationship identifier
         """
+        if self._is_duplicate_ts_reference(component, field_name):
+            logger.debug(
+                f"Skipping {field_name} for {component.name} - duplicate target already registered"
+            )
+            return
         if property.has_datafile():
             for row in property.entries.values():
                 name = row.datafile_name or (
@@ -698,16 +740,49 @@ class PLEXOSParser(BaseParser):
 
             prop_records = list(rows)
             property_value = PLEXOSPropertyValue.from_records(prop_records)
-            setattr(component, field_name, property_value)
 
-            # Skip time series registration for DataFile, Variable, and Timeslice components
-            # Variables should always use their constant property values
-            # Timeslices are configuration metadata defining time periods, not data components
-            if not isinstance(component, (PLEXOSDatafile, PLEXOSVariable, PLEXOSTimeslice)) and (
-                property_value.has_datafile() or property_value.has_variable()
-            ):
-                self._register_time_series_reference(component, field_name, property_value)
+            # Always keep PLEXOSPropertyValue if it has datafile or variable references
+            # This is required for time series attachment logic to work correctly
+            if property_value.has_datafile() or property_value.has_variable() or property_value.has_bands():
+                setattr(component, field_name, property_value)
+
+                # Skip time series registration for DataFile, Variable, and Timeslice components
+                # Variables should always use their constant property values
+                # Timeslices are configuration metadata defining time periods, not data components
+                if not isinstance(component, (PLEXOSDatafile, PLEXOSVariable, PLEXOSTimeslice)):
+                    self._register_time_series_reference(component, field_name, property_value)
+            else:
+                # Only extract numeric value for properties without external data references
+                expected_type = typing.get_type_hints(type(component)).get(field_name)
+                if expected_type is not None and (
+                    expected_type in (int, float)
+                    or (
+                        getattr(expected_type, "__origin__", None) in [int, float]
+                        or getattr(expected_type, "__args__", [None])[0] in [int, float]
+                    )
+                ):
+                    value = property_value.get_value()
+                    setattr(component, field_name, value)
+                else:
+                    setattr(component, field_name, property_value)
         return
+
+    def _is_duplicate_ts_reference(self, component: PLEXOSObject, field_name: str) -> bool:
+        """Check if a time series reference would be a duplicate mapping.
+
+        Returns True if field_name maps to the same target as an already
+        registered reference for this component (e.g. load_subtracter and
+        rating both map to max_active_power).
+        """
+        target_name = HYDRO_TS_NAME_MAP.get(field_name)
+        if target_name is None:
+            return False
+
+        return any(
+            ref.component_uuid == component.uuid
+            and HYDRO_TS_NAME_MAP.get(ref.field_name) == target_name
+            for ref in self.time_series_references
+        )
 
     def _register_time_series_reference(
         self, component: PLEXOSObject, field_name: str, property: PLEXOSPropertyValue
@@ -734,6 +809,11 @@ class PLEXOSParser(BaseParser):
         scenarios have multiple entries, but attachment logic handles this
         during build_time_series phase.
         """
+        if self._is_duplicate_ts_reference(component, field_name):
+            logger.debug(
+                f"Skipping {field_name} for {component.name} - duplicate target already registered"
+            )
+            return
         if property.has_datafile():
             for row in property.entries.values():
                 name = row.datafile_name or (
@@ -805,7 +885,16 @@ class PLEXOSParser(BaseParser):
             raise ValueError("No datafile path provided")
 
         normalized_path = datafile_path.replace("\\", "/")
-        base_path = Path(self.store.folder)
+        try:
+            base_path = Path(self.store.folder)
+        except Exception:
+            config_fpath = getattr(self.config, "fpath", None)
+            if not config_fpath:
+                raise ValueError(
+                    "No DataStore in context and 'fpath' not set in config. "
+                    "Provide 'fpath' pointing to the PLEXOS run directory."
+                ) from None
+            base_path = Path(config_fpath)
         if self.config.timeseries_dir:
             base_path = base_path / self.config.timeseries_dir
         return base_path / normalized_path
@@ -899,6 +988,32 @@ class PLEXOSParser(BaseParser):
         Extraction uses horizon start year if available, otherwise reference_year.
         Float returns indicate constant-value files (single row/column with one value).
         """
+        def normalize_key(value: str) -> str:
+            """Normalize keys for flexible matching: lowercase, replace underscores with spaces, and collapse whitespace."""
+            return " ".join(value.strip().lower().replace("_", " ").split())
+
+        def resolve_component_key(component_map: ParsedFileData, requested_name: str) -> str | None:
+            """Resolve the best matching key in component_map for the requested_name."""
+            if requested_name in component_map:
+                return requested_name
+
+            normalized_requested = normalize_key(requested_name)
+            normalized_map: dict[str, list[str]] = defaultdict(list)
+            for existing_key in component_map:
+                normalized_map[normalize_key(existing_key)].append(existing_key)
+
+            candidates = normalized_map.get(normalized_requested)
+            if candidates:
+                if len(candidates) == 1:
+                    return candidates[0]
+                # Prefer an exact case-insensitive match when normalization is ambiguous.
+                for candidate in candidates:
+                    if candidate.strip().lower() == requested_name.strip().lower():
+                        return candidate
+                return candidates[0]
+
+            return None
+
         if file_path in self._parsed_files_cache:
             logger.debug(f"Using cached file parse: {file_path}")
             component_map = self._parsed_files_cache[file_path]
@@ -909,8 +1024,16 @@ class PLEXOSParser(BaseParser):
                 raise ValueError(f"File {file_path} contains no data for the requested year")
 
             ts: Any
-            if component_name in component_map:
-                ts = component_map[component_name]
+            resolved_key = resolve_component_key(component_map, component_name)
+            if resolved_key is not None:
+                ts = component_map[resolved_key]
+                if resolved_key != component_name:
+                    logger.debug(
+                        "Matched component '{}' to '{}' in cached file {}",
+                        component_name,
+                        resolved_key,
+                        file_path,
+                    )
             elif len(component_map) == 1:
                 logger.debug(f"Using single entry fallback for component '{component_name}'")
                 ts = next(iter(component_map.values()))
@@ -942,7 +1065,8 @@ class PLEXOSParser(BaseParser):
         self._parsed_files_cache[file_path] = ts_map
         logger.trace(f"Cached file with {len(ts_map)} time series: {file_path}")
 
-        if component_name not in ts_map:
+        resolved_key = resolve_component_key(ts_map, component_name)
+        if resolved_key is None:
             if len(ts_map) == 1:
                 logger.debug(f"Using single entry fallback for component '{component_name}' in parsed file")
                 ts = next(iter(ts_map.values()))
@@ -953,7 +1077,14 @@ class PLEXOSParser(BaseParser):
                     f"Available components (first 10): {available}"
                 )
         else:
-            ts = ts_map[component_name]
+            ts = ts_map[resolved_key]
+            if resolved_key != component_name:
+                logger.debug(
+                    "Matched component '{}' to '{}' in parsed file {}",
+                    component_name,
+                    resolved_key,
+                    file_path,
+                )
 
         # Apply horizon trimming if needed (only for time series, not floats)
         if horizon_datetime and isinstance(ts, SingleTimeSeries):
@@ -1120,13 +1251,14 @@ class PLEXOSParser(BaseParser):
                     for key, entry in list(prop_value.entries.items()):
                         prop_value.entries[key] = create_plexos_row(single_value, entry)
         else:
+            ts_name = HYDRO_TS_NAME_MAP.get(ref.field_name, ref.field_name)
             field_ts = SingleTimeSeries.from_array(
                 data=ts.data,
-                name=ref.field_name,
+                name=ts_name,
                 initial_timestamp=ts.initial_timestamp,
                 resolution=ts.resolution,
             )
-            features = {"horizon": horizon} if horizon else {}
+            features = {"horizon": datetime.fromisoformat(horizon[0]).year} if horizon else {}
             logger.trace(f"Attaching time series to {ref.component_name}.{ref.field_name}")
             self.system.add_time_series(field_ts, component, context=None, **features)
 
@@ -1174,17 +1306,17 @@ class PLEXOSParser(BaseParser):
             logger.debug(
                 f"Updating constant collection property value for {ref.component_name}.{ref.field_name}: {single_value}"
             )
-
             for key, entry in list(property_value.entries.items()):
                 property_value.entries[key] = create_plexos_row(single_value, entry)
         else:
+            ts_name = HYDRO_TS_NAME_MAP.get(ref.field_name, ref.field_name)
             field_ts = SingleTimeSeries.from_array(
                 data=ts.data,
-                name=ref.field_name,
+                name=ts_name,
                 initial_timestamp=ts.initial_timestamp,
                 resolution=ts.resolution,
             )
-            features = {"horizon": horizon} if horizon else {}
+            features = {"horizon": datetime.fromisoformat(horizon[0]).year} if horizon else {}
             logger.trace(
                 f"Attaching time series to collection property {ref.component_name}.{ref.field_name}"
             )
@@ -1203,16 +1335,17 @@ class PLEXOSParser(BaseParser):
         horizon: tuple[str, str] | None,
     ) -> float:
         """Attach a single band time series to component and return max value."""
+        ts_name = HYDRO_TS_NAME_MAP.get(ref.field_name, ref.field_name)
         field_ts = SingleTimeSeries.from_array(
             data=ts.data,
-            name=ref.field_name,
+            name=ts_name,
             initial_timestamp=ts.initial_timestamp,
             resolution=ts.resolution,
         )
 
         features: dict[str, Any] = {"band": band_num}
         if horizon:
-            features["horizon"] = horizon
+            features["horizon"] = datetime.fromisoformat(horizon[0]).year
 
         logger.debug(f"Attaching band {band_num} time series to {ref.component_name}.{ref.field_name}")
         self.system.add_time_series(field_ts, component, **features)

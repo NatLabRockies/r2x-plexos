@@ -5,6 +5,7 @@ from typing import Annotated
 from pydantic import Field
 
 from .component import PLEXOSObject
+from .property import PLEXOSPropertyValue
 from .property_specification import PLEXOSProperty
 
 
@@ -111,6 +112,7 @@ class PLEXOSReserve(PLEXOSObject):
     ] = 1e30
     min_provision: Annotated[
         float | int,
+        PLEXOSProperty(units="MW"),
         Field(
             alias="Min Provision",
             description="Minimum required reserve",
@@ -179,7 +181,7 @@ class PLEXOSReserve(PLEXOSObject):
         ),
     ] = 0
     static_risk: Annotated[
-        float | int,
+        float | int | PLEXOSPropertyValue,
         Field(
             alias="Static Risk",
             description="Additional static risk over and above dynamic risk",

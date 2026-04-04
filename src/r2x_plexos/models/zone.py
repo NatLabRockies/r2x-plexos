@@ -542,9 +542,10 @@ class PLEXOSZone(PLEXOSTopology):
     ] = 100
     units: Annotated[
         int,
+        PLEXOSProperty(is_enum=True),
         Field(
             alias="Units",
-            description="Flag if the Zone is in service",
+            description="Flag if the zone is in service (0,1)",
             json_schema_extra={"enum": [0, 1]},
         ),
     ] = 1

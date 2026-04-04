@@ -19,7 +19,7 @@ class PLEXOSBattery(PLEXOSObject):
             description="Initial state of charge of the battery",
             ge=0,
         ),
-    ] = 0
+    ] = 49.9
     charge_efficiency: Annotated[
         float | int,
         PLEXOSProperty(units="%"),
@@ -799,7 +799,7 @@ class PLEXOSBattery(PLEXOSObject):
             description="Allowable maximum State of Charge",
             ge=0,
         ),
-    ] = 100
+    ] = 99.9
     max_time_to_repair: Annotated[
         float | int,
         PLEXOSProperty(units="h"),
@@ -1037,7 +1037,7 @@ class PLEXOSBattery(PLEXOSObject):
             description="Allowable minimum state of charge",
             ge=0,
         ),
-    ] = 0
+    ] = 0.1
     min_time_to_repair: Annotated[
         float | int,
         PLEXOSProperty(units="h"),
@@ -1407,10 +1407,6 @@ class PLEXOSBattery(PLEXOSObject):
         """Create an example PLEXOSBattery."""
         return PLEXOSBattery(
             name="ExampleBattery",
-            initial_soc=100,
-            charge_efficiency=95,
-            discharge_efficiency=95,
             capacity=4,  # 4 hour duration
             max_power=1,  # 1MW Battery
-            units=1,
         )

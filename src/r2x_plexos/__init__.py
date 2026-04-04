@@ -7,7 +7,7 @@ from importlib.metadata import version
 
 from loguru import logger
 
-from .config import PLEXOSConfig
+from .exporter import PLEXOSExporter
 from .models import (
     PLEXOSObject,
     PLEXOSProperty,
@@ -22,6 +22,7 @@ from .models import (
     set_scenario_priority,
 )
 from .parser import PLEXOSParser
+from .plugin_config import PLEXOSConfig
 
 __version__ = version("r2x_plexos")
 
@@ -33,6 +34,7 @@ logger.disable("r2x_plexos")
 
 __all__ = [
     "PLEXOSConfig",
+    "PLEXOSExporter",
     "PLEXOSObject",
     "PLEXOSParser",
     "PLEXOSProperty",

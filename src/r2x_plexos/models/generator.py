@@ -11,6 +11,14 @@ from .property_specification import PLEXOSProperty
 class PLEXOSGenerator(PLEXOSObject):
     """Class that holds attributes about PLEXOS generators."""
 
+    commit: Annotated[
+        int,
+        Field(
+            alias="Commit",
+            description="If the generator is committed at time zero",
+            json_schema_extra={"enum": [0, 1]},
+        ),
+    ] = 0
     expansion_economy_units: Annotated[
         float | int,
         Field(
@@ -2466,7 +2474,7 @@ class PLEXOSGenerator(PLEXOSObject):
             description="Number of installed units",
             ge=0,
         ),
-    ] = 0
+    ] = 1
     units_out: Annotated[
         float | int,
         PLEXOSProperty,

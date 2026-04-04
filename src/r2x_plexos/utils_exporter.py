@@ -1,7 +1,7 @@
 """Utility functions for PLEXOS exporter."""
 
 import csv
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -9,8 +9,8 @@ from infrasys import System
 from infrasys.time_series_models import SingleTimeSeries
 
 from r2x_core import Ok, Result
-from r2x_plexos.config import PLEXOSConfig
 from r2x_plexos.models.component import PLEXOSObject
+from r2x_plexos.plugin_config import PLEXOSConfig
 
 
 def get_component_category(component: PLEXOSObject) -> str | None:
@@ -18,26 +18,43 @@ def get_component_category(component: PLEXOSObject) -> str | None:
     return component.category if hasattr(component, "category") else "-"
 
 
-def get_output_directory(config: PLEXOSConfig, system: System) -> Path:
+def get_output_directory(
+    config: PLEXOSConfig,
+    system: System,
+    output_path: str | None = None,
+) -> Path:
     """Get the output directory for time series CSV files."""
-    base_folder = Path(config.timeseries_dir) if config.timeseries_dir else Path.cwd()
-    datafiles_dir = base_folder / "datafiles"
+    if output_path:
+        base_folder = Path(output_path)
+        if not base_folder.exists():
+            base_folder.mkdir(parents=True, exist_ok=True)
+    else:
+        base_folder = Path(config.timeseries_dir) if config.timeseries_dir else Path.cwd()
+    datafiles_dir = base_folder / "Data"
     datafiles_dir.mkdir(parents=True, exist_ok=True)
     return datafiles_dir
+
+
+def build_metadata_suffix(
+    metadata: dict[str, Any],
+    ordered_keys: tuple[str, ...] = ("model_name", "weather_year", "horizon_year"),
+) -> str:
+    """Build a deterministic suffix from metadata values using key priority order."""
+    parts: list[str] = []
+    seen: set[str] = set()
+    for key in ordered_keys:
+        value = str(metadata[key]) if key in metadata else None
+        if value and value not in seen:
+            parts.append(value)
+            seen.add(value)
+    return "_".join(parts) if parts else "default"
 
 
 def generate_csv_filename(field_name: str, component_class: str, metadata: dict[str, Any]) -> str:
     """Generate a CSV filename for time series export."""
     safe_field = field_name.replace(" ", "_").replace("/", "_")
 
-    metadata_parts = []
-    for key in sorted(metadata.keys()):
-        value = metadata[key]
-        if value is not None:
-            safe_value = str(value).replace(" ", "_").replace("/", "_")
-            metadata_parts.append(f"{key}{safe_value}")
-
-    metadata_suffix = "_".join(metadata_parts) if metadata_parts else "default"
+    metadata_suffix = build_metadata_suffix(metadata)
 
     return f"{component_class}_{safe_field}_{metadata_suffix}.csv"
 
@@ -55,7 +72,7 @@ def export_time_series_csv(
     if not time_series_data:
         raise ValueError("No time series data provided")
 
-    _first_name, first_ts = time_series_data[0]
+    _, first_ts = time_series_data[0]
     initial_timestamp = first_ts.initial_timestamp
     resolution = first_ts.resolution
     data_length = len(first_ts.data)
@@ -78,3 +95,30 @@ def export_time_series_csv(
             writer.writerow(row)
 
     return Ok(None)
+
+
+def get_hydro_budget_property_name(resolution: timedelta) -> str:
+    """Return the PLEXOS Max Energy property name matching the given time series resolution.
+
+    Parameters
+    ----------
+    resolution : timedelta
+        The resolution of the hydro_budget time series.
+
+    Returns
+    -------
+    str
+        One of "Max Energy Hour", "Max Energy Day", "Max Energy Week",
+        "Max Energy Month", or "Max Energy Year".
+    """
+    total_seconds = resolution.total_seconds()
+    if total_seconds <= 3600:
+        return "Max Energy Hour"
+    elif total_seconds <= 86400:
+        return "Max Energy Day"
+    elif total_seconds <= 7 * 86400:
+        return "Max Energy Week"
+    elif total_seconds <= 31 * 86400:
+        return "Max Energy Month"
+    else:
+        return "Max Energy Year"

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/NREL/r2x-plexos/compare/v0.1.2...v0.1.3) (2026-01-07)
+
+
+### 🧹 Refactoring
+
+* update mappings and logger debug/info for exceptions ([#30](https://github.com/NREL/r2x-plexos/issues/30)) ([8b9ca6e](https://github.com/NREL/r2x-plexos/commit/8b9ca6e301494c38741e638cf67e7202d65066a7))
+
 ## [0.1.2](https://github.com/NREL/r2x-plexos/compare/v0.1.1...v0.1.2) (2025-12-13)
 
 
