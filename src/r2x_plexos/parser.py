@@ -599,9 +599,7 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
             Parent-child relationship identifier
         """
         if self._is_duplicate_ts_reference(component, field_name):
-            logger.debug(
-                f"Skipping {field_name} for {component.name} - duplicate target already registered"
-            )
+            logger.debug(f"Skipping {field_name} for {component.name} - duplicate target already registered")
             return
         if property.has_datafile():
             for row in property.entries.values():
@@ -779,8 +777,7 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
             return False
 
         return any(
-            ref.component_uuid == component.uuid
-            and HYDRO_TS_NAME_MAP.get(ref.field_name) == target_name
+            ref.component_uuid == component.uuid and HYDRO_TS_NAME_MAP.get(ref.field_name) == target_name
             for ref in self.time_series_references
         )
 
@@ -810,9 +807,7 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         during build_time_series phase.
         """
         if self._is_duplicate_ts_reference(component, field_name):
-            logger.debug(
-                f"Skipping {field_name} for {component.name} - duplicate target already registered"
-            )
+            logger.debug(f"Skipping {field_name} for {component.name} - duplicate target already registered")
             return
         if property.has_datafile():
             for row in property.entries.values():
@@ -988,6 +983,7 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         Extraction uses horizon start year if available, otherwise reference_year.
         Float returns indicate constant-value files (single row/column with one value).
         """
+
         def normalize_key(value: str) -> str:
             """Normalize keys for flexible matching: lowercase, replace underscores with spaces, and collapse whitespace."""
             return " ".join(value.strip().lower().replace("_", " ").split())

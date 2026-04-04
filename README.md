@@ -30,7 +30,10 @@ from r2x_core import DataFile, DataStore
 from r2x_plexos import PLEXOSParser, PLEXOSConfig
 
 # Parse PLEXOS XML
-config = PLEXOSConfig(model_name="Base", reference_year=2024)
+config = PLEXOSConfig(
+    model_name="Base",
+    horizon_year=2024
+)
 store = DataStore(path=Path("data"))
 store.add_data(DataFile(name="xml_file", glob="*.xml"))
 

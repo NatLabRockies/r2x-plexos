@@ -332,11 +332,13 @@ def ingest_simulation_config_to_plexosdb(
         }
     )
 
+
 def _replace_year_in_name(name: str, weather_year: int | None) -> str:
     """Replace the hardcoded template year in a static object name."""
     if weather_year is None:
         return name
     return name.replace("2012", str(weather_year))
+
 
 def _shift_ole_date_to_year(ole_date: float, weather_year: int) -> float:
     """Shift a date to the same month/day in a target year."""
@@ -349,6 +351,7 @@ def _shift_ole_date_to_year(ole_date: float, weather_year: int) -> float:
         shifted = dt.replace(year=weather_year)
 
     return datetime_to_ole_date(shifted)
+
 
 def _rewrite_horizon_attributes_for_weather_year(
     attrs: dict[str, Any],
@@ -397,6 +400,7 @@ def _rewrite_horizon_attributes_for_weather_year(
                 updated["Chrono Step Count"] = 29.0 if is_leap else 28.0
 
     return updated
+
 
 def _build_from_static_models(
     defaults: dict[str, Any],
@@ -465,14 +469,13 @@ def _build_from_static_models(
 
     for raw_model_name, model_data in static_models.items():
         model_name = _replace_year_in_name(raw_model_name, weather_year)
-        model_category = _replace_year_in_name(model_data.get("category", None), weather_year) \
-            if model_data.get("category", None) is not None else None
-
-        model = PLEXOSModel(
-            name=model_name,
-            category=model_category,
-            **model_data.get("attributes", {})
+        model_category = (
+            _replace_year_in_name(model_data.get("category", None), weather_year)
+            if model_data.get("category", None) is not None
+            else None
         )
+
+        model = PLEXOSModel(name=model_name, category=model_category, **model_data.get("attributes", {}))
         models.append(model)
 
         if "memberships" in model_data:
@@ -625,9 +628,7 @@ def _build_simple_simulation(
 
     for model_name, model_data in static_models.items():
         model = PLEXOSModel(
-            name=model_name,
-            category=model_data.get("category", None),
-            **model_data.get("attributes", {})
+            name=model_name, category=model_data.get("category", None), **model_data.get("attributes", {})
         )
         models.append(model)
         if "memberships" in model_data:
@@ -1066,6 +1067,7 @@ def _add_horizon_attributes(db: PlexosDB, horizon: PLEXOSHorizon) -> None:
                 attribute_value=attr_value,
             )
 
+
 def _add_model_attributes(db: PlexosDB, model: PLEXOSModel) -> None:
     """Add model attributes to the database."""
     metadata_fields = {"name", "category", "object_id", "uuid", "label", "description"}
@@ -1089,10 +1091,7 @@ def _add_model_attributes(db: PlexosDB, model: PLEXOSModel) -> None:
 
 
 def ingest_simulation_to_plexosdb(
-    db: PlexosDB,
-    result: SimulationConfig,
-    validate: bool = True,
-    scenario_name: str = "default"
+    db: PlexosDB, result: SimulationConfig, validate: bool = True, scenario_name: str = "default"
 ) -> Result[dict[str, Any], str]:
     """
     Write simulation configuration to plexosdb.
@@ -1154,7 +1153,9 @@ def ingest_simulation_to_plexosdb(
         except Exception as e:
             logger.warning(f"Failed to link scenario '{scenario_name}' to model '{model_name}': {e}")
 
-    referenced_objects = {(child_name, membership_type) for _, child_name, membership_type in result.memberships}
+    referenced_objects = {
+        (child_name, membership_type) for _, child_name, membership_type in result.memberships
+    }
     already_created = set(horizon_ids) | set(model_ids)
     for obj_name, membership_type in referenced_objects:
         if obj_name not in already_created:
@@ -1175,7 +1176,9 @@ def ingest_simulation_to_plexosdb(
                 child_name,
                 collection_enum,
             )
-            logger.debug(f"Membership {membership_id} already exists: {model_name} → {child_name} ({membership_type})")
+            logger.debug(
+                f"Membership {membership_id} already exists: {model_name} → {child_name} ({membership_type})"
+            )
             continue
         except AssertionError:
             pass

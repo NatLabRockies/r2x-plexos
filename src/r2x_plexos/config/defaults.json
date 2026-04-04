@@ -83,7 +83,7 @@
     ],
     "PLEXOSGenerator.hydro-pump-storage": [
       "units",
-      "commit", 
+      "commit",
       "vom_charge",
       "max_capacity",
       "forced_outage_rate",

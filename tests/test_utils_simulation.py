@@ -52,7 +52,7 @@ def test_build_simple_daily_simulation():
                     "chrono_step_count": 366,
                 },
             }
-        ]
+        ],
     }
     result = build_plexos_simulation(config)
 
@@ -512,7 +512,7 @@ def test_ingest_simulation_to_plexosdb_success(tmp_path):
                     "chrono_step_count": 366,
                 },
             }
-        ]
+        ],
     }
     build_result = build_plexos_simulation(sim_config)
 
@@ -643,6 +643,7 @@ def test_ingest_simulation_without_configs(tmp_path):
     assert "simulation_objects" in info
     assert len(info["simulation_objects"]) == 0
 
+
 # Non-leap year
 def test_static_horizon_rewrite_non_leap_year():
     from r2x_plexos.utils_simulation import _rewrite_horizon_attributes_for_weather_year
@@ -663,6 +664,7 @@ def test_static_horizon_rewrite_non_leap_year():
 
     assert result["Step Count"] == 365.0
     assert result["Chrono Step Count"] == 28.0
+
 
 # Leap year
 def test_static_horizon_rewrite_leap_year():
@@ -685,6 +687,7 @@ def test_static_horizon_rewrite_leap_year():
     assert result["Step Count"] == 366.0
     assert result["Chrono Step Count"] == 29.0
 
+
 # Test full year
 def test_static_full_year_horizon_rewrite_leap_year():
     from r2x_plexos.utils_simulation import _rewrite_horizon_attributes_for_weather_year
@@ -705,6 +708,7 @@ def test_static_full_year_horizon_rewrite_leap_year():
 
     assert result["Step Count"] == 366.0
     assert result["Chrono Step Count"] == 365.0
+
 
 # Test overlap
 def test_static_full_year_overlap_leap():
@@ -727,16 +731,19 @@ def test_static_full_year_overlap_leap():
     assert result["Step Count"] == 366.0
     assert result["Chrono Step Count"] == 363.0
 
+
 def test_replace_year_in_name_rewrites_template_year():
     from r2x_plexos.utils_simulation import _replace_year_in_name
 
     assert _replace_year_in_name("model_2012", 2024) == "model_2024"
     assert _replace_year_in_name("base_2012_m2", 2024) == "base_2024_m2"
 
+
 def test_replace_year_in_name_none_weather_year():
     from r2x_plexos.utils_simulation import _replace_year_in_name
 
     assert _replace_year_in_name("model_2012", None) == "model_2012"
+
 
 def test_shift_ole_date_to_year_preserves_month_day():
     from datetime import datetime
@@ -748,6 +755,7 @@ def test_shift_ole_date_to_year_preserves_month_day():
 
     assert shifted == datetime_to_ole_date(datetime(2024, 2, 1))
 
+
 def test_shift_ole_date_to_year_handles_feb_29_to_non_leap():
     from datetime import datetime
 
@@ -757,6 +765,7 @@ def test_shift_ole_date_to_year_handles_feb_29_to_non_leap():
     shifted = _shift_ole_date_to_year(ole, 2023)
 
     assert shifted == datetime_to_ole_date(datetime(2023, 2, 28))
+
 
 def test_build_static_simulation_rewrites_names_for_weather_year():
     from r2x_plexos import PLEXOSConfig
