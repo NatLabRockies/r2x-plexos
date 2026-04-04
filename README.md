@@ -26,19 +26,37 @@ uv add r2x-plexos
 
 ```python
 from pathlib import Path
-from r2x_core import DataFile, DataStore
+from r2x_core import (
+    DataFile,
+    DataStore,
+    PluginContext,
+    Rule,
+    System,
+    apply_rules_to_context,
+)
 from r2x_plexos import PLEXOSParser, PLEXOSConfig
 
-# Parse PLEXOS XML
-config = PLEXOSConfig(
-    model_name="Base",
-    horizon_year=2024
-)
-store = DataStore(path=Path("data"))
-store.add_data(DataFile(name="xml_file", glob="*.xml"))
+xml_path = /path/to/xml
+db = PlexosDB.from_xml(xml_path)
+model_names = db.list_objects_by_class(ClassEnum.Model)
+model_name = model_names[1] if model_names else "Base"
 
-parser = PLEXOSParser(config, store)
-system = parser.build_system()
+plexos_config = PLEXOSConfig(
+    model_name=model_name,
+    horizon_year=2012,
+    models=("r2x_plexos.models", "r2x_sienna.models"),)
+data_file = DataFile(name="xml_file", fpath=xml_path)
+store = DataStore(path=folder_path)
+store.add_data([data_file])
+
+context = PluginContext(
+    config=plexos_config,
+    store=store
+)
+parser = PLEXOSParser.from_context(context)
+plexos_sys_result = parser.run()
+plexos_sys = plexos_sys_result.system
+context.source_system = plexos_sys
 ```
 
 ## Documentation Sections
