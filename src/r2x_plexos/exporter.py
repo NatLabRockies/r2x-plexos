@@ -195,7 +195,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             f"{len(build_result.memberships)} membership(s)"
         )
 
-        ingest_result = ingest_simulation_to_plexosdb(self.db, build_result, validate=False, scenario_name=self.plexos_scenario)
+        ingest_result = ingest_simulation_to_plexosdb(
+            self.db, build_result, validate=False, scenario_name=self.plexos_scenario
+        )
         if ingest_result.is_err():
             assert isinstance(ingest_result, Err)
             return Err(f"Failed to ingest simulation: {ingest_result.error}")
@@ -270,7 +272,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
     def _chunked(self, items: list[str], size: int = 900) -> list[list[str]]:
         """Yield successive chunks of items of given size."""
-        return [items[i:i + size] for i in range(0, len(items), size)]
+        return [items[i : i + size] for i in range(0, len(items), size)]
 
     def prepare_export(self) -> Result[None, str]:
         """Add component objects to the database.
@@ -324,9 +326,13 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                     continue
 
                 if len(new_names) < len(names):
-                    logger.debug(f"Skipping {len(names) - len(new_names)} existing {class_enum.name} objects.")
+                    logger.debug(
+                        f"Skipping {len(names) - len(new_names)} existing {class_enum.name} objects."
+                    )
 
-                logger.debug(f"Adding {len(new_names)} objects for category='{category}' class={class_enum.name}")
+                logger.debug(
+                    f"Adding {len(new_names)} objects for category='{category}' class={class_enum.name}"
+                )
 
                 try:
                     self._add_objects_safe(class_enum, new_names, category=category or None)
@@ -452,7 +458,6 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             return set(required_properties.get("PLEXOSRegion", []))
         return set(required_properties.get(type_name, []))
 
-
     def _add_component_properties(self, datafile_prefix: str = "Data") -> None:
         """
         Add properties for all components in the system to the database.
@@ -517,7 +522,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 elif isinstance(_comp, PLEXOSGenerator):
                     sienna_type = (getattr(_comp, "ext", None) or {}).get("sienna_type", "")
                     _props: set[str] = set()
-                    for ts_key in self._filter_ts_keys_by_weather_year(self.system.list_time_series_keys(_comp)):
+                    for ts_key in self._filter_ts_keys_by_weather_year(
+                        self.system.list_time_series_keys(_comp)
+                    ):
                         key = ts_key.name.strip().lower().replace(" ", "_")
                         if key == "max_active_power":
                             if sienna_type == "HydroDispatch":
@@ -536,7 +543,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                         comp_ts_props[_comp.name] = _props
                 elif isinstance(_comp, PLEXOSStorage):
                     _props = set()
-                    for ts_key in self._filter_ts_keys_by_weather_year(self.system.list_time_series_keys(_comp)):
+                    for ts_key in self._filter_ts_keys_by_weather_year(
+                        self.system.list_time_series_keys(_comp)
+                    ):
                         key = ts_key.name.strip().lower().replace(" ", "_")
                         mapped = STORAGE_TS_PROPERTY_MAP.get(key)
                         if mapped:
@@ -549,7 +558,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                     linked_storage = gen_to_storage.get(_gen.name)
                     if not linked_storage or not self.system.has_time_series(linked_storage):
                         continue
-                    for ts_key in self._filter_ts_keys_by_weather_year(self.system.list_time_series_keys(linked_storage)):
+                    for ts_key in self._filter_ts_keys_by_weather_year(
+                        self.system.list_time_series_keys(linked_storage)
+                    ):
                         skey = ts_key.name.strip().lower().replace(" ", "_")
                         if skey == "hydro_budget":
                             comp_ts_props.setdefault(_gen.name, set()).add(
@@ -561,7 +572,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             for comp in all_comps:
                 ts_property_names = comp_ts_props.get(comp.name, set())
                 ts_max_energy_props = {
-                    name for name in ts_property_names if isinstance(name, str) and name.startswith("Max Energy ")
+                    name
+                    for name in ts_property_names
+                    if isinstance(name, str) and name.startswith("Max Energy ")
                 }
 
                 aliased_dict = comp.model_dump(by_alias=True, exclude_defaults=self.exclude_defaults)
@@ -728,7 +741,10 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             child_class = PLEXOS_TYPE_MAP_INVERTED.get(type(m.child_object))
             if not parent_class or not child_class:
                 continue
-            if parent_class in (ClassEnum.Model, ClassEnum.Horizon) or child_class in (ClassEnum.Model, ClassEnum.Horizon):
+            if parent_class in (ClassEnum.Model, ClassEnum.Horizon) or child_class in (
+                ClassEnum.Model,
+                ClassEnum.Horizon,
+            ):
                 continue
 
             parent_name = m.parent_object.name
@@ -758,7 +774,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         records: list[dict[str, int]] = []
         seen: set[tuple[int, int, int]] = set()
 
-        for idx, (parent_class, parent_name, child_class, child_name, collection) in enumerate(filtered, start=1):
+        for idx, (parent_class, parent_name, child_class, child_name, collection) in enumerate(
+            filtered, start=1
+        ):
             parent_id = object_id_map.get((parent_class, parent_name))
             child_id = object_id_map.get((child_class, child_name))
             if parent_id is None or child_id is None:
@@ -850,8 +868,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         # Build bidirectional maps between generators and their linked storage reservoirs
         generator_to_storage = self._build_generator_to_storage_map()
         storage_to_generator: dict[str, str] = {
-            storage.name: gen_name
-            for gen_name, storage in generator_to_storage.items()
+            storage.name: gen_name for gen_name, storage in generator_to_storage.items()
         }
 
         seen_links: set[tuple[str, str, str]] = set()
@@ -915,7 +932,8 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                         else:
                             logger.warning(
                                 "No storage counterpart found for generator {} with key {}; skipping TS link.",
-                                component.name, key,
+                                component.name,
+                                key,
                             )
 
                     # PLEXOSStorage: hydro_budget redirects to linked PLEXOSGenerator
@@ -934,7 +952,8 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                         else:
                             logger.warning(
                                 "No generator counterpart found for storage {} with key {}; skipping TS link.",
-                                component.name, key,
+                                component.name,
+                                key,
                             )
 
                     # General case
@@ -1047,7 +1066,8 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         if self.weather_year is None:
             return ts_keys
         return [
-            k for k in ts_keys
+            k
+            for k in ts_keys
             if k.features.get("horizon") is None or k.features.get("horizon") == self.weather_year
         ]
 
@@ -1133,7 +1153,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 try:
                     ts_list = self.system.list_time_series(component, name=ts_key.name, **ts_key.features)
                     if not ts_list:
-                        logger.warning("No time series found for {}.{}; skipping", component.name, ts_key.name)
+                        logger.warning(
+                            "No time series found for {}.{}; skipping", component.name, ts_key.name
+                        )
                         continue
                     initial_ts = getattr(ts_key, "initial_timestamp", None)
                     if initial_ts is not None and len(ts_list) > 1:
@@ -1224,7 +1246,6 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         except ET.ParseError:
             return False
 
-
     def _add_reports(self) -> None:
         """Add report definitions from plexos_reports.json to the PlexosDB."""
         report_objects = PLEXOSConfig.load_reports()
@@ -1264,6 +1285,5 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             return packaged_template
 
         raise FileNotFoundError(
-            f"Template '{template_value}' is neither a known template key "
-            f"nor an existing file path."
+            f"Template '{template_value}' is neither a known template key nor an existing file path."
         )

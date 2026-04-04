@@ -1133,7 +1133,7 @@ def test_deduplicate_property_records_float_normalization():
 
     records = [
         {"name": "Gen1", "property": "Rating", "value": 50.0},
-        {"name": "Gen1", "property": "Rating", "value": 99.0}
+        {"name": "Gen1", "property": "Rating", "value": 99.0},
     ]
     result = exporter._deduplicate_property_records(records)
     assert len(result) == 1
@@ -1362,6 +1362,7 @@ def test_add_component_properties_skips_ts_property(template_db, mocker):
     prop_names = [p.get("property") for p in props]
     # "Load" should NOT appear as a plain static value
     assert "Load" not in prop_names
+
 
 def test_resolve_template_path_default():
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
