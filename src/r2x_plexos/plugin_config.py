@@ -5,7 +5,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any
 
-from pydantic import DirectoryPath, Field, FilePath
+from pydantic import DirectoryPath, Field
 
 from r2x_core.plugin_config import PluginConfig
 from r2x_plexos.utils_simulation import SimulationConfig
@@ -21,12 +21,18 @@ class PLEXOSConfig(PluginConfig):
 
     Parameters
     ----------
-    model_name : str
-        Name of the PLEXOS model
+    fpath : str, optional
+        Path to the PLEXOS run directory or XML file. If not provided, the parser will attempt to locate the model using default paths or configuration.
+    model_name : str, optional
+        Name of the PLEXOS model. Defaults to "default".
     timeseries_dir : DirectoryPath, optional
         Optional subdirectory containing time series files. If passed it must exist.
     horizon_year : int, optional
         Horizon year for the model simulation
+    solve_year : int, optional
+        Solve year for simulation configuration. If not provided, it will be set to the same value
+    output_path : str, optional
+        Alias for output directory. If provided, it will override `timeseries_dir` for time
     template : str, optional
         Can be either:
         - a file path to an XML template, or
@@ -60,7 +66,11 @@ class PLEXOSConfig(PluginConfig):
     load_defaults : Class method to load default constants from JSON
     """
 
-    model_name: Annotated[str, Field(description="Name of the PLEXOS model.")]
+    fpath: Annotated[str | None, Field(description="Path to the PLEXOS run directory or XML file", default=None)]
+    model_name: Annotated[
+        str,
+        Field(description="Name of the PLEXOS model.", default="default"),
+    ]
     timeseries_dir: Annotated[
         DirectoryPath | None,
         Field(
@@ -69,6 +79,8 @@ class PLEXOSConfig(PluginConfig):
         ),
     ]
     horizon_year: Annotated[int | None, Field(description="Horizon year", default=None)]
+    weather_year: Annotated[int | None, Field(description="Weather year", default=None)]
+    output_path: Annotated[str | None, Field(description="Alias for output directory", default=None)]
     template: Annotated[
         str | None,
         Field(

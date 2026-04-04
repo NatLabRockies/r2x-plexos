@@ -25,8 +25,10 @@ from .models import (
 from .models.property import PLEXOSPropertyValue
 from .plugin_config import PLEXOSConfig
 from .utils_exporter import (
+    build_metadata_suffix,
     export_time_series_csv,
     generate_csv_filename,
+    get_hydro_budget_property_name,
     get_output_directory,
 )
 from .utils_mappings import (
@@ -34,6 +36,8 @@ from .utils_mappings import (
     GENERATOR_TO_STORAGE_TS_PROPERTY_MAP,
     GENERATOR_TS_PROPERTY_MAP,
     PLEXOS_TYPE_MAP_INVERTED,
+    STORAGE_TO_GENERATOR_TS_PROPERTY_MAP,
+    STORAGE_TS_PROPERTY_MAP,
 )
 from .utils_simulation import (
     build_plexos_simulation,
@@ -90,6 +94,8 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 )
                 return Err(msg)
 
+            self._sync_runtime_options_from_config()
+
             self.plexos_scenario = self.plexos_scenario or self.config.model_name
 
             if self.db is None:
@@ -116,6 +122,23 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             return Ok(None)
         except Exception as e:
             return Err(f"Export failed: {e}")
+
+    def _sync_runtime_options_from_config(self) -> None:
+        """Sync runtime attributes used internally by exporter methods."""
+        configured_output = getattr(self.config, "output_path", None)
+        if configured_output:
+            self.output_path = str(configured_output)
+
+        self.weather_year = getattr(self.config, "weather_year", None)
+
+    def _build_xml_filename(self) -> str:
+        """Build XML filename from model, horizon year, and weather year."""
+        metadata = {
+            "model_name": self.config.model_name,
+            "horizon_year": getattr(self.config, "horizon_year", None),
+            "weather_year": getattr(self.config, "weather_year", None),
+        }
+        return f"{build_metadata_suffix(metadata)}.xml"
 
     def setup_configuration(self) -> Result[None, str]:
         """
@@ -145,14 +168,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             logger.debug("Using default simulation configuration")
             simulation_config_dict = get_default_simulation_config()
 
-        horizon_year = getattr(self.config, "horizon_year", None) or getattr(
-            self.config, "solve_year", None
-        )
+        horizon_year = getattr(self.config, "horizon_year", None)
         if horizon_year is None:
-            return Err(
-                "New database requires 'horizon_year' (or 'reference_year') in config "
-                "to create simulation configuration"
-            )
+            return Err("New database requires 'horizon_year' in config to create simulation configuration")
 
         sim_config = {
             "horizon_year": horizon_year,
@@ -354,12 +372,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         self._add_component_properties(datafile_prefix=datafile_prefix)
         self._add_component_memberships()
 
-        suffix = (
-            f"_{self.weather_year}_{self.solve_year}"
-            if self.weather_year is not None and self.solve_year is not None
-            else ""
-        )
-        xml_filename = f"{self.config.model_name}{suffix}.xml"
+        xml_filename = self._build_xml_filename()
         xml_path = base_folder / xml_filename
 
         logger.info(f"Exporting XML to {xml_path}")
@@ -478,6 +491,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         skip_types = {PLEXOSModel, PLEXOSHorizon, PLEXOSDatafile, PLEXOSMembership}
         metadata_fields = {"name", "category", "uuid", "label", "description", "object_id"}
 
+        # Build once for the generator → storage redirect logic below
+        gen_to_storage = self._build_generator_to_storage_map()
+
         for component_type in self.system.get_component_types():
             if component_type in skip_types:
                 continue
@@ -499,22 +515,54 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 if fixed_ts_prop is not None:
                     comp_ts_props[_comp.name] = {fixed_ts_prop}
                 elif isinstance(_comp, PLEXOSGenerator):
+                    sienna_type = (getattr(_comp, "ext", None) or {}).get("sienna_type", "")
                     _props: set[str] = set()
-                    for ts_key in self.system.list_time_series_keys(_comp):
+                    for ts_key in self._filter_ts_keys_by_weather_year(self.system.list_time_series_keys(_comp)):
                         key = ts_key.name.strip().lower().replace(" ", "_")
                         if key == "max_active_power":
-                            _props.update(["Rating", "Load Subtracter"])
+                            if sienna_type == "HydroDispatch":
+                                _props.add("Load")
+                            else:
+                                _props.update(["Rating", "Load Subtracter"])
+                        elif key == "hydro_budget":
+                            _props.add(get_hydro_budget_property_name(ts_key.resolution))
+                        elif key in GENERATOR_TO_STORAGE_TS_PROPERTY_MAP:
+                            pass
                         else:
                             mapped = GENERATOR_TS_PROPERTY_MAP.get(key)
                             if mapped:
                                 _props.add(mapped)
                     if _props:
                         comp_ts_props[_comp.name] = _props
+                elif isinstance(_comp, PLEXOSStorage):
+                    _props = set()
+                    for ts_key in self._filter_ts_keys_by_weather_year(self.system.list_time_series_keys(_comp)):
+                        key = ts_key.name.strip().lower().replace(" ", "_")
+                        mapped = STORAGE_TS_PROPERTY_MAP.get(key)
+                        if mapped:
+                            _props.add(mapped)
+                    if _props:
+                        comp_ts_props[_comp.name] = _props
+
+            if issubclass(component_type, PLEXOSGenerator):
+                for _gen in all_comps:
+                    linked_storage = gen_to_storage.get(_gen.name)
+                    if not linked_storage or not self.system.has_time_series(linked_storage):
+                        continue
+                    for ts_key in self._filter_ts_keys_by_weather_year(self.system.list_time_series_keys(linked_storage)):
+                        skey = ts_key.name.strip().lower().replace(" ", "_")
+                        if skey == "hydro_budget":
+                            comp_ts_props.setdefault(_gen.name, set()).add(
+                                get_hydro_budget_property_name(ts_key.resolution)
+                            )
 
             records: list[dict[str, Any]] = []
 
             for comp in all_comps:
                 ts_property_names = comp_ts_props.get(comp.name, set())
+                ts_max_energy_props = {
+                    name for name in ts_property_names if isinstance(name, str) and name.startswith("Max Energy ")
+                }
 
                 aliased_dict = comp.model_dump(by_alias=True, exclude_defaults=self.exclude_defaults)
                 explicit_dict = comp.model_dump(by_alias=True, exclude_unset=True, exclude_defaults=False)
@@ -535,7 +583,17 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 for prop_name, raw in aliased_dict.items():
                     if prop_name in metadata_fields or raw is None:
                         continue
-                    # Skip static value when this property is driven by a time series datafile.
+
+                    # If interval-specific Max Energy time series are present,
+                    # keep only the matching interval property and drop other static intervals.
+                    if (
+                        isinstance(prop_name, str)
+                        and prop_name.startswith("Max Energy ")
+                        and ts_max_energy_props
+                        and prop_name not in ts_max_energy_props
+                    ):
+                        continue
+
                     if prop_name in ts_property_names:
                         continue
 
@@ -550,7 +608,6 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                         )
                         continue
 
-                    # Serialized PLEXOSPropertyValue often appears as list[dict]
                     if isinstance(raw, list):
                         for rec in raw:
                             if not isinstance(rec, dict):
@@ -777,15 +834,6 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         component property to reference the correct DataFile object. The linkage is made
         via the `datafile_text` field and, if applicable, the t_tag table in the database.
 
-        Steps performed:
-        1. Iterates over all component types and finds those with time series.
-        2. For each time series key, matches the exported CSV file using a naming pattern.
-        3. Looks up the corresponding PLEXOSDatafile object and ensures it has a valid object_id.
-        4. Determines the correct property name(s) for the time series (handling special cases).
-        5. Adds a property to the database linking the component property to the DataFile.
-        6. Marks all DataFile-linked properties as is_dynamic=1 so PLEXOS accepts them.
-        7. Logs all linkages and any errors encountered.
-
         This ensures that all time series properties in the exported XML reference the correct
         DataFile objects, enabling PLEXOS to locate and use the time series CSVs.
         """
@@ -799,11 +847,14 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
         output_dir = get_output_directory(self.config, self.system, output_path=self.output_path)
 
-        # Build once: hydro turbine generator -> storage reservoir
+        # Build bidirectional maps between generators and their linked storage reservoirs
         generator_to_storage = self._build_generator_to_storage_map()
+        storage_to_generator: dict[str, str] = {
+            storage.name: gen_name
+            for gen_name, storage in generator_to_storage.items()
+        }
 
-        # Prevent duplicate links for same target/property/csv
-        seen_links: set[tuple[str, str, str]] = set()  # (object_name, property_name, csv_relative_path)
+        seen_links: set[tuple[str, str, str]] = set()
 
         try:
             dir_files = os.listdir(output_dir)
@@ -819,7 +870,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 continue
 
             for component in components_with_ts:
-                ts_keys = self.system.list_time_series_keys(component)
+                ts_keys = self._filter_ts_keys_by_weather_year(self.system.list_time_series_keys(component))
                 if not ts_keys:
                     continue
 
@@ -852,23 +903,51 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                     target_class_enum = class_enum
                     property_names: list[str] = []
 
-                    redirected_storage_property = GENERATOR_TO_STORAGE_TS_PROPERTY_MAP.get(key)
-                    if isinstance(component, PLEXOSGenerator) and redirected_storage_property:
+                    # PLEXOSGenerator: natural_inflow/inflow redirect to linked PLEXOSStorage
+                    if isinstance(component, PLEXOSGenerator) and key in GENERATOR_TO_STORAGE_TS_PROPERTY_MAP:
                         storage = generator_to_storage.get(component.name)
                         if storage:
-                            storage_class = PLEXOS_TYPE_MAP_INVERTED.get(type(storage))
+                            storage_class = PLEXOS_TYPE_MAP_INVERTED.get(PLEXOSStorage)
                             if storage_class:
                                 target_component = storage
                                 target_class_enum = storage_class
-                                property_names = [redirected_storage_property]
+                                property_names = [GENERATOR_TO_STORAGE_TS_PROPERTY_MAP[key]]
                         else:
                             logger.warning(
-                                f"No storage counterpart found for generator {component.name} "
-                                f"with key {key}; skipping TS link."
+                                "No storage counterpart found for generator {} with key {}; skipping TS link.",
+                                component.name, key,
                             )
+
+                    # PLEXOSStorage: hydro_budget redirects to linked PLEXOSGenerator
+                    elif isinstance(component, PLEXOSStorage) and key in STORAGE_TO_GENERATOR_TS_PROPERTY_MAP:
+                        gen_name = storage_to_generator.get(component.name)
+                        if gen_name:
+                            generator = self.system.get_component(PLEXOSGenerator, name=gen_name)
+                            gen_class = PLEXOS_TYPE_MAP_INVERTED.get(PLEXOSGenerator)
+                            if generator and gen_class:
+                                target_component = generator
+                                target_class_enum = gen_class
+                                if key == "hydro_budget":
+                                    property_names = [get_hydro_budget_property_name(ts_key.resolution)]
+                                else:
+                                    property_names = [STORAGE_TO_GENERATOR_TS_PROPERTY_MAP[key]]
+                        else:
+                            logger.warning(
+                                "No generator counterpart found for storage {} with key {}; skipping TS link.",
+                                component.name, key,
+                            )
+
+                    # General case
                     else:
                         if isinstance(component, PLEXOSGenerator) and key == "max_active_power":
-                            property_names = ["Rating", "Load Subtracter"]
+                            sienna_type = (getattr(component, "ext", None) or {}).get("sienna_type", "")
+                            if sienna_type == "HydroDispatch":
+                                # Must-dispatch available flow; attach to "Load" not "Rating"
+                                property_names = ["Load"]
+                            else:
+                                property_names = ["Rating", "Load Subtracter"]
+                        elif isinstance(component, PLEXOSGenerator) and key == "hydro_budget":
+                            property_names = [get_hydro_budget_property_name(ts_key.resolution)]
                         else:
                             property_name = self._get_time_series_property_name(
                                 component, ts_key_name=ts_key.name
@@ -950,11 +1029,27 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         if fixed is not None:
             return fixed
 
-        # Generator mapping is key-dependent and already defined in utils_mappings
+        if isinstance(component, PLEXOSStorage):
+            return STORAGE_TS_PROPERTY_MAP.get(key)
+
         if isinstance(component, PLEXOSGenerator):
             return GENERATOR_TS_PROPERTY_MAP.get(key)
 
         return None
+
+    def _filter_ts_keys_by_weather_year(self, ts_keys: list[Any]) -> list[Any]:
+        """Filter time series keys to those matching the configured weather_year.
+
+        Keys that carry no ``horizon`` feature are always kept (they are not
+        year-specific).  When ``weather_year`` is *None* the list is returned
+        unchanged.
+        """
+        if self.weather_year is None:
+            return ts_keys
+        return [
+            k for k in ts_keys
+            if k.features.get("horizon") is None or k.features.get("horizon") == self.weather_year
+        ]
 
     def _build_generator_to_storage_map(self) -> dict[str, PLEXOSStorage]:
         """Build a mapping from generator name to its associated storage component, if any."""
@@ -993,7 +1088,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
         ts_metadata: list[tuple[Any, Any]] = []
         for component in all_components_with_ts:
-            ts_keys = self.system.list_time_series_keys(component)
+            ts_keys = self._filter_ts_keys_by_weather_year(self.system.list_time_series_keys(component))
             ts_metadata.extend((component, ts_key) for ts_key in ts_keys)
 
         logger.debug(f"Found {len(ts_metadata)} time series keys total")
@@ -1020,10 +1115,10 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             metadata_dict = dict(features_tuple)
             if self.config.model_name is not None:
                 metadata_dict["model_name"] = self.config.model_name
+            if getattr(self.config, "horizon_year", None) is not None:
+                metadata_dict["horizon_year"] = self.config.horizon_year
             if self.weather_year is not None:
                 metadata_dict["weather_year"] = self.weather_year
-            if self.solve_year is not None:
-                metadata_dict["solve_year"] = self.solve_year
             group_list = list(group_items)
 
             first_component = group_list[0][0]

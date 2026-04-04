@@ -594,6 +594,28 @@ def test_parse_monthly_file(monthly_dataframe: pl.LazyFrame) -> None:
             assert ts.data[hour] == expected_value
 
 
+def test_parse_monthly_file_lowercase_name_column() -> None:
+    df = pl.LazyFrame(
+        {
+            "name": ["Generator1"],
+            "M01": [100.0],
+            "M02": [110.0],
+            "M03": [120.0],
+            "M04": [130.0],
+            "M05": [140.0],
+            "M06": [150.0],
+            "M07": [160.0],
+            "M08": [170.0],
+            "M09": [180.0],
+            "M10": [190.0],
+            "M11": [200.0],
+            "M12": [210.0],
+        }
+    )
+    result = parse_file(MonthlyFile(), df, datetime(2023, 1, 1), 2023)
+    assert result == {}
+
+
 def test_parse_monthly_file_no_year(monthly_dataframe: pl.LazyFrame) -> None:
     file_type = MonthlyFile()
     with pytest.raises(ValueError, match="Year must be provided for monthly data files"):
@@ -841,6 +863,13 @@ def test_yearly_file_handles_wide_year_columns() -> None:
     assert "Alpha" in result
 
 
+def test_yearly_file_wide_columns_missing_name_raises() -> None:
+    df = pl.LazyFrame({"YR-2024": [123.0]})
+
+    with pytest.raises(pl.exceptions.SchemaFieldNotFoundError, match="Name"):
+        parse_file(YearlyFile(), df, datetime(2024, 1, 1), 2024)
+
+
 def test_hourly_daily_requires_year() -> None:
     df = pl.LazyFrame({"Year": [2024], "Month": [1], "Day": [1]})
     file_type = HourlyDailyFile()
@@ -888,6 +917,14 @@ def test_timeslice_file_requires_year(mock_timeslices: list[MockTimeslice]) -> N
 def test_timeslice_file_skips_rows_without_name(mock_timeslices: list[MockTimeslice]) -> None:
     file_type = TimesliceFile(cast(list["PlexosTimeSlice"], mock_timeslices))
     df = pl.LazyFrame({"Summer": [1.0], "Winter": [2.0]})
+
+    result = parse_file(file_type, df, datetime(2024, 1, 1), 2024)
+    assert result == {}
+
+
+def test_timeslice_file_lowercase_name_column(mock_timeslices: list[MockTimeslice]) -> None:
+    file_type = TimesliceFile(cast(list["PlexosTimeSlice"], mock_timeslices))
+    df = pl.LazyFrame({"name": ["Gen"], "Summer": [1.0], "Winter": [2.0]})
 
     result = parse_file(file_type, df, datetime(2024, 1, 1), 2024)
     assert result == {}

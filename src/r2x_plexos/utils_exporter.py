@@ -1,7 +1,7 @@
 """Utility functions for PLEXOS exporter."""
 
 import csv
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -35,19 +35,26 @@ def get_output_directory(
     return datafiles_dir
 
 
-def generate_csv_filename(field_name: str, component_class: str, metadata: dict[str, Any]) -> str:
-    """Generate a CSV filename for time series export."""
-    safe_field = field_name.replace(" ", "_").replace("/", "_")
-
-    parts = []
-    seen = set()
-    for key in ("model_name", "weather_year", "solve_year"):
+def build_metadata_suffix(
+    metadata: dict[str, Any],
+    ordered_keys: tuple[str, ...] = ("model_name", "weather_year", "horizon_year"),
+) -> str:
+    """Build a deterministic suffix from metadata values using key priority order."""
+    parts: list[str] = []
+    seen: set[str] = set()
+    for key in ordered_keys:
         value = str(metadata[key]) if key in metadata else None
         if value and value not in seen:
             parts.append(value)
             seen.add(value)
+    return "_".join(parts) if parts else "default"
 
-    metadata_suffix = "_".join(parts) if parts else "default"
+
+def generate_csv_filename(field_name: str, component_class: str, metadata: dict[str, Any]) -> str:
+    """Generate a CSV filename for time series export."""
+    safe_field = field_name.replace(" ", "_").replace("/", "_")
+
+    metadata_suffix = build_metadata_suffix(metadata)
 
     return f"{component_class}_{safe_field}_{metadata_suffix}.csv"
 
@@ -88,3 +95,30 @@ def export_time_series_csv(
             writer.writerow(row)
 
     return Ok(None)
+
+
+def get_hydro_budget_property_name(resolution: timedelta) -> str:
+    """Return the PLEXOS Max Energy property name matching the given time series resolution.
+
+    Parameters
+    ----------
+    resolution : timedelta
+        The resolution of the hydro_budget time series.
+
+    Returns
+    -------
+    str
+        One of "Max Energy Hour", "Max Energy Day", "Max Energy Week",
+        "Max Energy Month", or "Max Energy Year".
+    """
+    total_seconds = resolution.total_seconds()
+    if total_seconds <= 3600:
+        return "Max Energy Hour"
+    elif total_seconds <= 86400:
+        return "Max Energy Day"
+    elif total_seconds <= 7 * 86400:
+        return "Max Energy Week"
+    elif total_seconds <= 31 * 86400:
+        return "Max Energy Month"
+    else:
+        return "Max Energy Year"
