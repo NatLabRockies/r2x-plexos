@@ -578,9 +578,6 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 }
 
                 aliased_dict = comp.model_dump(by_alias=True, exclude_defaults=self.exclude_defaults)
-                explicit_dict = comp.model_dump(by_alias=True, exclude_unset=True, exclude_defaults=False)
-                for key, value in explicit_dict.items():
-                    aliased_dict.setdefault(key, value)
 
                 if self.exclude_defaults:
                     for prop_name in self._get_required_properties_for_component(comp, type_name):
