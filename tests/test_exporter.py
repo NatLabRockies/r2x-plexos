@@ -869,6 +869,37 @@ def test_add_component_properties_skips_none_values(template_db):
     assert "Mean Time to Repair" in prop_names
 
 
+def test_add_component_properties_does_not_export_explicit_default_values(template_db):
+    """Regression: explicit default-valued fields should not be exported with exclude_defaults=True."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+
+    # Expansion Economy Units defaults to 0 and is not required for thermal generators.
+    # Setting it explicitly should not force export when exclude_defaults=True.
+    gen = PLEXOSGenerator(
+        name="TestGen",
+        category="thermal",
+        units=1,
+        rating=50.0,
+        expansion_economy_units=0,
+    )
+    sys.add_component(gen)
+
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+    exporter.db = template_db
+    exporter.exclude_defaults = True
+
+    template_db.add_object(ClassEnum.Generator, "TestGen", category="thermal")
+
+    exporter._add_component_properties()
+
+    props = template_db.get_object_properties(ClassEnum.Generator, "TestGen")
+    prop_names = [p.get("property") for p in props]
+
+    assert "Expansion Economy Units" not in prop_names
+
+
 def test_add_component_memberships_db_none_logs_error(caplog):
     """Test _add_component_memberships handles db None - lines 429-440."""
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
