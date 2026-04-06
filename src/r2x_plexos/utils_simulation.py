@@ -1167,29 +1167,33 @@ def ingest_simulation_to_plexosdb(
                 continue
 
     logger.info(f"Creating {len(result.memberships)} model memberships...")
+    seen_memberships: set[tuple[str, str, Any]] = set()
     for model_name, child_name, membership_type in result.memberships:
         child_class_enum, collection_enum = MEMBERSHIP_TYPE_MAP[membership_type]
-        # Check if membership exists
+        key = (model_name, child_name, collection_enum)
+        if key in seen_memberships:
+            continue
+        seen_memberships.add(key)
+
         try:
-            membership_id = db.get_membership_id(
+            db.add_membership(
+                ClassEnum.Model,
+                child_class_enum,
                 model_name,
                 child_name,
                 collection_enum,
             )
-            logger.debug(
-                f"Membership {membership_id} already exists: {model_name} → {child_name} ({membership_type})"
-            )
-            continue
-        except AssertionError:
-            pass
-        db.add_membership(
-            ClassEnum.Model,
-            child_class_enum,
-            model_name,
-            child_name,
-            collection_enum,
-        )
-        logger.debug(f"Linked model '{model_name}' → '{child_name}' ({membership_type})")
+            logger.debug(f"Linked model '{model_name}' → '{child_name}' ({membership_type})")
+        except Exception as exc:
+            # Duplicate memberships can happen on retries/re-runs; skip them cheaply
+            # instead of pre-checking existence with a database query per row.
+            msg = str(exc).lower()
+            if any(token in msg for token in ("unique", "duplicate", "already exists")):
+                logger.debug(
+                    f"Membership already exists: {model_name} → {child_name} ({membership_type})"
+                )
+                continue
+            raise
 
     simulation_objects_added: list[dict[str, Any]] = []
     if not result.simulation_configs:

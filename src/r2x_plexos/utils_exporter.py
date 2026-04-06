@@ -43,7 +43,10 @@ def build_metadata_suffix(
     parts: list[str] = []
     seen: set[str] = set()
     for key in ordered_keys:
-        value = str(metadata[key]) if key in metadata else None
+        raw_value = metadata.get(key)
+        if raw_value is None:
+            continue
+        value = str(raw_value)
         if value and value not in seen:
             parts.append(value)
             seen.add(value)
