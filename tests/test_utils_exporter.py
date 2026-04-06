@@ -10,6 +10,7 @@ from infrasys.time_series_models import SingleTimeSeries
 from r2x_plexos.models.generator import PLEXOSGenerator
 from r2x_plexos.plugin_config import PLEXOSConfig
 from r2x_plexos.utils_exporter import (
+    build_metadata_suffix,
     export_time_series_csv,
     format_datetime,
     generate_csv_filename,
@@ -185,6 +186,21 @@ def test_generate_csv_filename_partial_metadata():
     result = generate_csv_filename("load", "PLEXOSDemand", metadata)
 
     assert result == "PLEXOSDemand_load_Base_2024.csv"
+
+
+def test_generate_csv_filename_ignores_none_weather_year():
+    """None-valued metadata keys should not appear in the filename suffix."""
+    metadata = {"model_name": "Base", "weather_year": None, "horizon_year": 2023}
+    result = generate_csv_filename("load", "PLEXOSDemand", metadata)
+
+    assert result == "PLEXOSDemand_load_Base_2023.csv"
+
+
+def test_build_metadata_suffix_skips_none_values():
+    """Suffix helper should skip None values even if key is present."""
+    suffix = build_metadata_suffix({"model_name": "EI_PCM_2023", "weather_year": None, "horizon_year": 2023})
+
+    assert suffix == "EI_PCM_2023_2023"
 
 
 def test_format_datetime():

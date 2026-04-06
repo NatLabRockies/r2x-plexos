@@ -1432,6 +1432,35 @@ def test_resolve_template_path_invalid_raises():
         exporter._resolve_template_path()
 
 
+def test_sync_runtime_options_does_not_override_runtime_weather_year():
+    """Runtime weather_year should take precedence over config value."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024, weather_year=None)
+    sys = System(name="test")
+
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+    exporter.weather_year = 2012
+
+    exporter._sync_runtime_options_from_config()
+
+    assert exporter.weather_year == 2012
+
+
+def test_build_xml_filename_uses_runtime_year_overrides():
+    """XML naming should honor solve_year/weather_year runtime overrides."""
+    config = PLEXOSConfig(model_name="EI_PCM_2023", horizon_year=2023, weather_year=None)
+    sys = System(name="test")
+
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+    exporter.solve_year = 2023
+    exporter.weather_year = 2012
+
+    xml_name = exporter._build_xml_filename()
+
+    assert xml_name == "EI_PCM_2023_2012_2023.xml"
+
+
 def test_get_required_properties_for_generator_thermal_category(template_db):
     """Test _get_required_properties_for_component resolves category-group for thermal generators."""
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)

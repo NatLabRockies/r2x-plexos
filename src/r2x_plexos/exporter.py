@@ -129,14 +129,21 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         if configured_output:
             self.output_path = str(configured_output)
 
-        self.weather_year = getattr(self.config, "weather_year", None)
+        # Keep explicit runtime overrides (e.g., exporter.weather_year=...) and
+        # only hydrate from config when runtime value was not set.
+        if self.weather_year is None:
+            self.weather_year = getattr(self.config, "weather_year", None)
 
     def _build_xml_filename(self) -> str:
         """Build XML filename from model, horizon year, and weather year."""
+        horizon_year = self.solve_year if self.solve_year is not None else getattr(self.config, "horizon_year", None)
+        weather_year = (
+            self.weather_year if self.weather_year is not None else getattr(self.config, "weather_year", None)
+        )
         metadata = {
             "model_name": self.config.model_name,
-            "horizon_year": getattr(self.config, "horizon_year", None),
-            "weather_year": getattr(self.config, "weather_year", None),
+            "horizon_year": horizon_year,
+            "weather_year": weather_year,
         }
         return f"{build_metadata_suffix(metadata)}.xml"
 
@@ -1132,7 +1139,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             metadata_dict = dict(features_tuple)
             if self.config.model_name is not None:
                 metadata_dict["model_name"] = self.config.model_name
-            if getattr(self.config, "horizon_year", None) is not None:
+            if self.solve_year is not None:
+                metadata_dict["horizon_year"] = self.solve_year
+            elif getattr(self.config, "horizon_year", None) is not None:
                 metadata_dict["horizon_year"] = self.config.horizon_year
             if self.weather_year is not None:
                 metadata_dict["weather_year"] = self.weather_year
