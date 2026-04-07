@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/NatLabRockies/r2x-plexos/compare/v0.1.4...v0.1.5) (2026-04-07)
+
+
+### 🐛 Bug Fixes
+
+* update current ci and release yaml files ([#51](https://github.com/NatLabRockies/r2x-plexos/issues/51)) ([fdf6a5d](https://github.com/NatLabRockies/r2x-plexos/commit/fdf6a5d17d0ecd8d84b20a51122cfb27a5e1d78e))
+
 ## [0.1.4](https://github.com/NatLabRockies/r2x-plexos/compare/v0.1.3...v0.1.4) (2026-04-04)
 
 
