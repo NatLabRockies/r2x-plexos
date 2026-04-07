@@ -102,9 +102,9 @@ def test_resolve_datafile_path_empty(parser_basic: PLEXOSParser) -> None:
 
 
 @pytest.mark.slow
-def test_get_or_parse_timeseries_value_file(parser_basic: PLEXOSParser, data_folder: Path) -> None:
+def test_get_or_parse_timeseries_value_file(parser_basic: PLEXOSParser, tmp_path: Path) -> None:
     """Test parsing a simple value file."""
-    csv_path = data_folder / "test_value.csv"
+    csv_path = tmp_path / "test_value.csv"
     csv_path.write_text("Name,Value\nGenerator1,150.0\nGenerator2,250.0")
 
     result = parser_basic._get_or_parse_timeseries(
@@ -118,9 +118,9 @@ def test_get_or_parse_timeseries_value_file(parser_basic: PLEXOSParser, data_fol
 
 
 @pytest.mark.slow
-def test_get_or_parse_timeseries_caching(parser_basic: PLEXOSParser, data_folder: Path) -> None:
+def test_get_or_parse_timeseries_caching(parser_basic: PLEXOSParser, tmp_path: Path) -> None:
     """Test that parsed files are cached."""
-    csv_path = data_folder / "test_cache.csv"
+    csv_path = tmp_path / "test_cache.csv"
     csv_path.write_text("Name,Value\nGen1,100.0\nGen2,200.0")
 
     _ = parser_basic._get_or_parse_timeseries(
@@ -138,9 +138,9 @@ def test_get_or_parse_timeseries_caching(parser_basic: PLEXOSParser, data_folder
 
 
 @pytest.mark.slow
-def test_get_or_parse_timeseries_component_not_found(parser_basic: PLEXOSParser, data_folder: Path) -> None:
+def test_get_or_parse_timeseries_component_not_found(parser_basic: PLEXOSParser, tmp_path: Path) -> None:
     """Test fallback to single time series when component not found but only one exists."""
-    csv_path = data_folder / "test_missing.csv"
+    csv_path = tmp_path / "test_missing.csv"
     csv_path.write_text("Name,Value\nGenerator1,150.0")
 
     result = parser_basic._get_or_parse_timeseries(
@@ -154,7 +154,7 @@ def test_get_or_parse_timeseries_component_not_found(parser_basic: PLEXOSParser,
 
 @pytest.mark.slow
 def test_attach_direct_datafile_timeseries_component_not_found_in_system(
-    parser_basic: PLEXOSParser, data_folder: Path
+    parser_basic: PLEXOSParser, tmp_path: Path
 ) -> None:
     """Test error when component not in system."""
     from unittest.mock import patch
@@ -165,7 +165,9 @@ def test_attach_direct_datafile_timeseries_component_not_found_in_system(
     system = System(name="test_system")
     parser_basic._ctx.system = system
 
-    csv_path = data_folder / "test.csv"
+    parser_basic.config.timeseries_dir = tmp_path
+
+    csv_path = tmp_path / "test.csv"
     csv_path.write_text("Name,Value\nGen1,100.0")
 
     test_uuid = UUID("12345678-1234-5678-1234-567812345678")
@@ -254,7 +256,7 @@ def test_attach_direct_datafile_timeseries_file_not_found(
 
 
 @pytest.mark.slow
-def test_build_time_series_integration(parser_basic_mutable: PLEXOSParser, data_folder: Path) -> None:
+def test_build_time_series_integration(parser_basic_mutable: PLEXOSParser, tmp_path: Path) -> None:
     """Test the full build_time_series workflow."""
     from unittest.mock import patch
 
@@ -264,10 +266,12 @@ def test_build_time_series_integration(parser_basic_mutable: PLEXOSParser, data_
     system = System(name="test_system")
     parser_basic_mutable._ctx.system = system
 
-    gen_csv = data_folder / "generators.csv"
+    parser_basic_mutable.config.timeseries_dir = tmp_path
+
+    gen_csv = tmp_path / "generators.csv"
     gen_csv.write_text("Name,Value\nGen1,500.0\nGen2,750.0\nGen3,1000.0")
 
-    load_csv = data_folder / "loads.csv"
+    load_csv = tmp_path / "loads.csv"
     load_csv.write_text("Name,Value\nLoad1,200.0\nLoad2,300.0")
 
     gen1 = MagicMock()

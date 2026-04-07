@@ -279,6 +279,7 @@ htmlcov/
 .coverage.*
 nosetests.xml
 coverage.xml
+coverage.json
 *.cover
 *.py,cover
 .hypothesis/
@@ -444,3 +445,9 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://www.toptal.com/developers/gitignore/api/python,jupyternotebooks,data,macos,windows,linux,visualstudiocode,git,node
+
+# Local generated artifacts from exports/tests
+/Base_*.xml
+/default.xml
+/Data/**/*.csv
+/Data/**/*.xml
