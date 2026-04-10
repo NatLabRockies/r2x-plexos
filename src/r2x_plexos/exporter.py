@@ -136,7 +136,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
     def _build_xml_filename(self) -> str:
         """Build XML filename from model, horizon year, and weather year."""
-        horizon_year = self.solve_year if self.solve_year is not None else getattr(self.config, "horizon_year", None)
+        horizon_year = (
+            self.solve_year if self.solve_year is not None else getattr(self.config, "horizon_year", None)
+        )
         weather_year = (
             self.weather_year if self.weather_year is not None else getattr(self.config, "weather_year", None)
         )
@@ -427,6 +429,56 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             logger.debug("Dropped {} duplicate property rows before bulk insert", dropped)
         return deduped
 
+    def _split_collision_prone_records(
+        self, records: list[dict[str, Any]]
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Split records into bulk-safe rows and rows that must be inserted one-by-one.
+
+        plexosdb bulk insertion currently keys inserted rows by
+        ``(membership_id, property_id, value)``. Distinct records that share the same
+        object/property/value but differ by metadata (e.g., band/date/timeslice) can
+        collide in that path and later cause duplicate scenario-tag inserts.
+        """
+        grouped: dict[tuple[Any, Any, Any], list[dict[str, Any]]] = {}
+        for rec in records:
+            key = (rec.get("name"), rec.get("property"), rec.get("value"))
+            grouped.setdefault(key, []).append(rec)
+
+        bulk_safe: list[dict[str, Any]] = []
+        row_by_row: list[dict[str, Any]] = []
+        for group in grouped.values():
+            if len(group) > 1:
+                row_by_row.extend(group)
+            else:
+                bulk_safe.extend(group)
+
+        return bulk_safe, row_by_row
+
+    def _insert_property_records_row_by_row(
+        self,
+        records: list[dict[str, Any]],
+        *,
+        object_class: ClassEnum,
+        collection: CollectionEnum,
+    ) -> None:
+        """Insert records one-by-one to avoid bulk insertion key collisions."""
+        assert self.db is not None
+        for rec in records:
+            self.db.add_property(
+                object_class,
+                object_name=rec["name"],
+                name=rec["property"],
+                value=rec.get("value", 0),
+                parent_class_enum=ClassEnum.System,
+                collection_enum=collection,
+                scenario=self.plexos_scenario,
+                band=rec.get("band"),
+                date_from=rec.get("date_from"),
+                date_to=rec.get("date_to"),
+                datafile_text=rec.get("datafile_text"),
+                timeslice=rec.get("timeslice"),
+            )
+
     def _get_required_properties_for_component(self, comp: Any, type_name: str) -> set[str]:
         """Resolve required properties for a component using category-group aware lookup."""
         required_properties = self.defaults.get("required-properties", {})
@@ -674,19 +726,36 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             if not records:
                 continue
 
+            bulk_records, collision_records = self._split_collision_prone_records(records)
+            if collision_records:
+                logger.debug(
+                    "Falling back to row-by-row inserts for {} {} records with duplicate "
+                    "(name, property, value) keys",
+                    len(collision_records),
+                    component_type.__name__,
+                )
+
             logger.debug(
                 "Adding properties for {} {} components ({} property rows)",
                 len({r["name"] for r in records}),
                 component_type.__name__,
                 len(records),
             )
-            self.db.add_properties_from_records(
-                records,
-                object_class=class_enum,
-                parent_class=ClassEnum.System,
-                collection=collection,
-                scenario=self.plexos_scenario,
-            )
+            if bulk_records:
+                self.db.add_properties_from_records(
+                    bulk_records,
+                    object_class=class_enum,
+                    parent_class=ClassEnum.System,
+                    collection=collection,
+                    scenario=self.plexos_scenario,
+                )
+
+            if collision_records:
+                self._insert_property_records_row_by_row(
+                    collision_records,
+                    object_class=class_enum,
+                    collection=collection,
+                )
 
     def _bulk_resolve_object_ids(
         self, class_to_names: dict[ClassEnum, set[str]]

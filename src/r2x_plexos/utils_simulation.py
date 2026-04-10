@@ -1189,9 +1189,7 @@ def ingest_simulation_to_plexosdb(
             # instead of pre-checking existence with a database query per row.
             msg = str(exc).lower()
             if any(token in msg for token in ("unique", "duplicate", "already exists")):
-                logger.debug(
-                    f"Membership already exists: {model_name} → {child_name} ({membership_type})"
-                )
+                logger.debug(f"Membership already exists: {model_name} → {child_name} ({membership_type})")
                 continue
             raise
 

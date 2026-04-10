@@ -1188,6 +1188,27 @@ def test_deduplicate_property_records_merges_fields():
     assert result[1]["datafile_text"] == "file.csv"
 
 
+def test_split_collision_prone_records_separates_duplicate_name_property_value():
+    """Rows that only differ by metadata should be routed to row-by-row insertion."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+
+    records = [
+        {"name": "Gen1", "property": "Rating", "value": 10.0, "band": 1},
+        {"name": "Gen1", "property": "Rating", "value": 10.0, "band": 2},
+        {"name": "Gen1", "property": "Units", "value": 1, "band": 1},
+    ]
+
+    bulk_safe, row_by_row = exporter._split_collision_prone_records(records)
+
+    assert len(row_by_row) == 2
+    assert all(r["property"] == "Rating" for r in row_by_row)
+    assert len(bulk_safe) == 1
+    assert bulk_safe[0]["property"] == "Units"
+
+
 def test_get_required_properties_unknown_type_returns_set():
     """Test _get_required_properties_for_component returns set for unknown type."""
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
