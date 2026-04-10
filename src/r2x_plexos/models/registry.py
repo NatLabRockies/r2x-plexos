@@ -7,6 +7,7 @@ from plexosdb.enums import ClassEnum, CollectionEnum
 
 from .generator import PLEXOSGenerator
 from .node import PLEXOSNode
+from .purchaser import PLEXOSPurchaser
 
 
 class PLEXOSComponentRegistry:
@@ -16,6 +17,7 @@ class PLEXOSComponentRegistry:
     _class_registry: ClassVar[dict[type[Component], ClassEnum]] = {
         PLEXOSGenerator: ClassEnum.Generator,
         PLEXOSNode: ClassEnum.Node,
+        PLEXOSPurchaser: ClassEnum.Purchaser,
     }
 
     # Collection registry mapping (parent_class_enum, child_class_enum) to CollectionEnum
@@ -94,6 +96,7 @@ for child_enum in [
     ClassEnum.Region,
     ClassEnum.Zone,
     ClassEnum.Node,
+    ClassEnum.Purchaser,
     ClassEnum.Line,
     ClassEnum.Transformer,
     ClassEnum.Interface,
