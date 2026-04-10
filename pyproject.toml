@@ -173,6 +173,3 @@ fail_under = 90
 
 [tool.coverage.html]
 directory = "htmlcov"
-
-[tool.uv.sources]
-plexosdb = { path = "../plexosdb", editable = true }
