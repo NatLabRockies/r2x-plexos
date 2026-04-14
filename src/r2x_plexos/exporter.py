@@ -53,7 +53,7 @@ XML_TEMPLATE_MAP = {
     "PLEXOS10.0": "master_10.0R2_btu.xml",
 }
 BATCH_SIZE = 500
-FLOW_CLIP_MEMO_TEXT = "Seting value to +-99999 to flows larger/less than +-100000"
+FLOW_CLIP_MEMO_TEXT = "Setting fixed value of ±99999 to flows greater/less than ±100000"
 
 
 class PLEXOSExporter(Plugin[PLEXOSConfig]):
