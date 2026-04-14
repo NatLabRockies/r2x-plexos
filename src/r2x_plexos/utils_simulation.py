@@ -48,6 +48,16 @@ TRANSMISSION_DEFAULT_ATTRIBUTE_CANDIDATES: dict[tuple[str, ...], int] = {
     ("Losses Enabled", "Model Losses"): -1,
 }
 
+PERFORMANCE_DEFAULT_ATTRIBUTES: dict[str, float] = {
+    # 1% relative MIP gap (template class default is 0.0001 = 0.01%).
+    "MIP Relative Gap": 0.01,
+}
+
+PRODUCTION_DEFAULT_ATTRIBUTES: dict[str, int] = {
+    # Integer unit commitment optimality.
+    "Unit Commitment Optimality": 2,
+}
+
 
 @dataclass
 class SimulationConfig:
@@ -1205,6 +1215,92 @@ def _ensure_transmission_defaults(db: PlexosDB, transmission_object_names: set[s
                 )
 
 
+def _ensure_performance_defaults(db: PlexosDB, performance_object_names: set[str]) -> None:
+    """Force default Performance options for selected objects."""
+    if not performance_object_names:
+        return
+
+    for object_name in performance_object_names:
+        if not db.check_object_exists(ClassEnum.Performance, object_name):
+            continue
+
+        for attr_name, attr_value in PERFORMANCE_DEFAULT_ATTRIBUTES.items():
+            if validate_simulation_attribute(db, ClassEnum.Performance, attr_name).is_err():
+                logger.debug("Skipping unsupported Performance attribute '{}'.", attr_name)
+                continue
+
+            try:
+                object_id = db.get_object_id(ClassEnum.Performance, object_name)
+                attribute_id = db.get_attribute_id(ClassEnum.Performance, name=attr_name)
+                updated = db._db.execute(
+                    """
+                    UPDATE t_attribute_data
+                    SET value = ?
+                    WHERE object_id = ? AND attribute_id = ?
+                    """,
+                    (attr_value, object_id, attribute_id),
+                )
+
+                # If no existing row was updated, insert it.
+                if getattr(updated, "rowcount", 0) == 0:
+                    db.add_attribute(
+                        ClassEnum.Performance,
+                        object_name,
+                        attribute_name=attr_name,
+                        attribute_value=attr_value,
+                    )
+            except Exception as exc:
+                logger.debug(
+                    "Could not set default Performance attribute '{}' on '{}': {}",
+                    attr_name,
+                    object_name,
+                    exc,
+                )
+
+
+def _ensure_production_defaults(db: PlexosDB, production_object_names: set[str]) -> None:
+    """Force default Production options for selected objects."""
+    if not production_object_names:
+        return
+
+    for object_name in production_object_names:
+        if not db.check_object_exists(ClassEnum.Production, object_name):
+            continue
+
+        for attr_name, attr_value in PRODUCTION_DEFAULT_ATTRIBUTES.items():
+            if validate_simulation_attribute(db, ClassEnum.Production, attr_name).is_err():
+                logger.debug("Skipping unsupported Production attribute '{}'.", attr_name)
+                continue
+
+            try:
+                object_id = db.get_object_id(ClassEnum.Production, object_name)
+                attribute_id = db.get_attribute_id(ClassEnum.Production, name=attr_name)
+                updated = db._db.execute(
+                    """
+                    UPDATE t_attribute_data
+                    SET value = ?
+                    WHERE object_id = ? AND attribute_id = ?
+                    """,
+                    (attr_value, object_id, attribute_id),
+                )
+
+                # If no existing row was updated, insert it.
+                if getattr(updated, "rowcount", 0) == 0:
+                    db.add_attribute(
+                        ClassEnum.Production,
+                        object_name,
+                        attribute_name=attr_name,
+                        attribute_value=attr_value,
+                    )
+            except Exception as exc:
+                logger.debug(
+                    "Could not set default Production attribute '{}' on '{}': {}",
+                    attr_name,
+                    object_name,
+                    exc,
+                )
+
+
 def ingest_simulation_to_plexosdb(
     db: PlexosDB, result: SimulationConfig, validate: bool = True, scenario_name: str = "default"
 ) -> Result[dict[str, Any], str]:
@@ -1290,6 +1386,19 @@ def ingest_simulation_to_plexosdb(
     }
     _ensure_transmission_defaults(db, transmission_object_names)
 
+    performance_object_names = {
+        child_name
+        for _, child_name, membership_type in result.memberships
+        if membership_type == "Performance"
+    }
+    _ensure_performance_defaults(db, performance_object_names)
+
+    production_object_names = {
+        child_name
+        for _, child_name, membership_type in result.memberships
+        if membership_type == "Production"
+    }
+
     logger.info(f"Creating {len(result.memberships)} model memberships...")
     seen_memberships: set[tuple[str, str, Any]] = set()
     for model_name, child_name, membership_type in result.memberships:
@@ -1348,6 +1457,15 @@ def ingest_simulation_to_plexosdb(
 
         success_count = len(simulation_objects_added)
         logger.info(f"Successfully ingested {success_count}/{total_configs} simulation configuration objects")
+
+    # Include simulation-config Production objects (e.g., Production_Example)
+    # in addition to membership-linked Production objects (e.g., base MIP).
+    if result.simulation_configs:
+        production_config = result.simulation_configs.get("production")
+        if production_config is not None and production_config.name:
+            production_object_names.add(production_config.name)
+
+    _ensure_production_defaults(db, production_object_names)
 
     logger.info("Simulation configuration successfully ingested into PlexosDB")
 

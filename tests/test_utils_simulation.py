@@ -937,3 +937,164 @@ def test_ingest_static_simulation_sets_base_transmission_defaults(tmp_path):
         )
         assert values is not None
         assert values[0] == expected
+
+
+def test_ingest_static_simulation_sets_base_performance_mip_gap_to_one_percent(tmp_path):
+    """Ensure base_performance uses 1% MIP relative gap by default."""
+    from r2x_plexos import PLEXOSConfig
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    template_path = config.get_config_path().joinpath(FILE_NAME)
+    db = PlexosDB.from_xml(template_path)
+
+    static_model_defaults = PLEXOSConfig.load_static_models()
+    static_horizon_defaults = PLEXOSConfig.load_static_horizons()
+    defaults = {**static_model_defaults, **static_horizon_defaults}
+
+    build_result = build_plexos_simulation({"horizon_year": 2024}, defaults=defaults)
+    assert build_result.is_ok()
+
+    ingest_result = ingest_simulation_to_plexosdb(db, build_result.unwrap())
+    assert ingest_result.is_ok()
+
+    assert db.check_object_exists(ClassEnum.Performance, "base_performance")
+    values = db.get_attribute(
+        ClassEnum.Performance,
+        object_name="base_performance",
+        attribute_name="MIP Relative Gap",
+    )
+    assert values is not None
+    assert values[0] == 0.01
+
+
+def test_ingest_static_simulation_overwrites_existing_performance_mip_gap(tmp_path):
+    """Ensure an existing non-1% MIP gap is forced to 0.01 for base_performance."""
+    from r2x_plexos import PLEXOSConfig
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    template_path = config.get_config_path().joinpath(FILE_NAME)
+    db = PlexosDB.from_xml(template_path)
+
+    if not db.check_object_exists(ClassEnum.Performance, "base_performance"):
+        db.add_object(ClassEnum.Performance, "base_performance")
+
+    if validate_simulation_attribute(db, ClassEnum.Performance, "MIP Relative Gap").is_ok():
+        object_id = db.get_object_id(ClassEnum.Performance, "base_performance")
+        attribute_id = db.get_attribute_id(ClassEnum.Performance, name="MIP Relative Gap")
+        updated = db._db.execute(
+            """
+            UPDATE t_attribute_data
+            SET value = ?
+            WHERE object_id = ? AND attribute_id = ?
+            """,
+            (0.0001, object_id, attribute_id),
+        )
+        if getattr(updated, "rowcount", 0) == 0:
+            db.add_attribute(
+                ClassEnum.Performance,
+                "base_performance",
+                attribute_name="MIP Relative Gap",
+                attribute_value=0.0001,
+            )
+
+    static_model_defaults = PLEXOSConfig.load_static_models()
+    static_horizon_defaults = PLEXOSConfig.load_static_horizons()
+    defaults = {**static_model_defaults, **static_horizon_defaults}
+
+    build_result = build_plexos_simulation({"horizon_year": 2024}, defaults=defaults)
+    assert build_result.is_ok()
+
+    ingest_result = ingest_simulation_to_plexosdb(db, build_result.unwrap())
+    assert ingest_result.is_ok()
+
+    values = db.get_attribute(
+        ClassEnum.Performance,
+        object_name="base_performance",
+        attribute_name="MIP Relative Gap",
+    )
+    assert values is not None
+    assert values[0] == 0.01
+
+
+def test_ingest_static_simulation_overwrites_base_mip_to_integer_uc(tmp_path):
+    """Ensure base MIP Production uses Integer unit commitment optimality."""
+    from r2x_plexos import PLEXOSConfig
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    template_path = config.get_config_path().joinpath(FILE_NAME)
+    db = PlexosDB.from_xml(template_path)
+
+    if not db.check_object_exists(ClassEnum.Production, "base MIP"):
+        db.add_object(ClassEnum.Production, "base MIP")
+
+    if validate_simulation_attribute(db, ClassEnum.Production, "Unit Commitment Optimality").is_ok():
+        object_id = db.get_object_id(ClassEnum.Production, "base MIP")
+        attribute_id = db.get_attribute_id(ClassEnum.Production, name="Unit Commitment Optimality")
+        updated = db._db.execute(
+            """
+            UPDATE t_attribute_data
+            SET value = ?
+            WHERE object_id = ? AND attribute_id = ?
+            """,
+            (0, object_id, attribute_id),
+        )
+        if getattr(updated, "rowcount", 0) == 0:
+            db.add_attribute(
+                ClassEnum.Production,
+                "base MIP",
+                attribute_name="Unit Commitment Optimality",
+                attribute_value=0,
+            )
+
+    static_model_defaults = PLEXOSConfig.load_static_models()
+    static_horizon_defaults = PLEXOSConfig.load_static_horizons()
+    defaults = {**static_model_defaults, **static_horizon_defaults}
+
+    build_result = build_plexos_simulation({"horizon_year": 2024}, defaults=defaults)
+    assert build_result.is_ok()
+
+    ingest_result = ingest_simulation_to_plexosdb(db, build_result.unwrap())
+    assert ingest_result.is_ok()
+
+    values = db.get_attribute(
+        ClassEnum.Production,
+        object_name="base MIP",
+        attribute_name="Unit Commitment Optimality",
+    )
+    assert values is not None
+    assert values[0] == 2
+
+
+def test_ingest_simulation_sets_production_example_to_integer_uc(tmp_path):
+    """Ensure Production_Example uses Integer unit commitment optimality."""
+    from r2x_plexos import PLEXOSConfig
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    template_path = config.get_config_path().joinpath(FILE_NAME)
+    db = PlexosDB.from_xml(template_path)
+
+    simulation_config = get_default_simulation_config()
+    # Set to Linear initially to confirm ingest forces it to Integer.
+    simulation_config["production"].unit_commitment_optimality = 0
+
+    static_model_defaults = PLEXOSConfig.load_static_models()
+    static_horizon_defaults = PLEXOSConfig.load_static_horizons()
+    defaults = {**static_model_defaults, **static_horizon_defaults}
+
+    build_result = build_plexos_simulation(
+        {"horizon_year": 2024},
+        defaults=defaults,
+        simulation_config=simulation_config,
+    )
+    assert build_result.is_ok()
+
+    ingest_result = ingest_simulation_to_plexosdb(db, build_result.unwrap())
+    assert ingest_result.is_ok()
+
+    values = db.get_attribute(
+        ClassEnum.Production,
+        object_name="Production_Example",
+        attribute_name="Unit Commitment Optimality",
+    )
+    assert values is not None
+    assert values[0] == 2
