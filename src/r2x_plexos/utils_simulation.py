@@ -37,6 +37,17 @@ BASE_DIAGNOSE_DEFAULT_ATTRIBUTES: dict[str, int] = {
     "MIP Solver Progress": -1,
 }
 
+# Transmission defaults for scenario membership objects (e.g., base_transmission).
+# Values: -1 = enabled/checked, 1 = "Fixed Shift Factor" selection in Optimal Power Flow.
+TRANSMISSION_DEFAULT_ATTRIBUTE_CANDIDATES: dict[tuple[str, ...], int] = {
+    ("OF Method", "Optimal Power Flow"): 1,
+    ("Formulate Upfront",): -1,
+    ("Constraints Enabled", "Enforced Line and Transformer Limits"): -1,
+    ("Interface Constraints Enabled", "Enforce Interface Limits"): -1,
+    ("Enforce Limits On Lines In Interfaces",): -1,
+    ("Losses Enabled", "Model Losses"): -1,
+}
+
 
 @dataclass
 class SimulationConfig:
@@ -1142,6 +1153,58 @@ def _ensure_base_diagnostic_defaults(db: PlexosDB) -> None:
             )
 
 
+def _ensure_transmission_defaults(db: PlexosDB, transmission_object_names: set[str]) -> None:
+    """Ensure default Transmission options are enabled for selected objects.
+
+    For each desired option, we try known attribute name candidates and set the
+    first schema-supported one when missing.
+    """
+    if not transmission_object_names:
+        return
+
+    for object_name in transmission_object_names:
+        if not db.check_object_exists(ClassEnum.Transmission, object_name):
+            continue
+
+        for candidates, attr_value in TRANSMISSION_DEFAULT_ATTRIBUTE_CANDIDATES.items():
+            selected_attr: str | None = None
+            for attr_name in candidates:
+                if validate_simulation_attribute(db, ClassEnum.Transmission, attr_name).is_ok():
+                    selected_attr = attr_name
+                    break
+
+            if selected_attr is None:
+                logger.debug("Skipping unsupported Transmission attributes {}.", candidates)
+                continue
+
+            try:
+                current = db.get_attribute(
+                    ClassEnum.Transmission,
+                    object_name=object_name,
+                    attribute_name=selected_attr,
+                )
+            except Exception:
+                current = None
+
+            if current is not None:
+                continue
+
+            try:
+                db.add_attribute(
+                    ClassEnum.Transmission,
+                    object_name,
+                    attribute_name=selected_attr,
+                    attribute_value=attr_value,
+                )
+            except Exception as exc:
+                logger.debug(
+                    "Could not set default Transmission attribute '{}' on '{}': {}",
+                    selected_attr,
+                    object_name,
+                    exc,
+                )
+
+
 def ingest_simulation_to_plexosdb(
     db: PlexosDB, result: SimulationConfig, validate: bool = True, scenario_name: str = "default"
 ) -> Result[dict[str, Any], str]:
@@ -1219,6 +1282,13 @@ def ingest_simulation_to_plexosdb(
                 continue
 
     _ensure_base_diagnostic_defaults(db)
+
+    transmission_object_names = {
+        child_name
+        for _, child_name, membership_type in result.memberships
+        if membership_type == "Transmission"
+    }
+    _ensure_transmission_defaults(db, transmission_object_names)
 
     logger.info(f"Creating {len(result.memberships)} model memberships...")
     seen_memberships: set[tuple[str, str, Any]] = set()

@@ -894,3 +894,46 @@ def test_ingest_static_simulation_sets_base_diagnose_defaults(tmp_path):
         )
         assert values is not None
         assert values[0] == -1
+
+
+def test_ingest_static_simulation_sets_base_transmission_defaults(tmp_path):
+    """Ensure base_transmission has requested Transmission defaults enabled."""
+    from r2x_plexos import PLEXOSConfig
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    template_path = config.get_config_path().joinpath(FILE_NAME)
+    db = PlexosDB.from_xml(template_path)
+
+    static_model_defaults = PLEXOSConfig.load_static_models()
+    static_horizon_defaults = PLEXOSConfig.load_static_horizons()
+    defaults = {**static_model_defaults, **static_horizon_defaults}
+
+    build_result = build_plexos_simulation({"horizon_year": 2024}, defaults=defaults)
+    assert build_result.is_ok()
+
+    ingest_result = ingest_simulation_to_plexosdb(db, build_result.unwrap())
+    assert ingest_result.is_ok()
+
+    assert db.check_object_exists(ClassEnum.Transmission, "base_transmission")
+
+    expected_values = {
+        "OF Method": 1,
+        "Formulate Upfront": -1,
+        "Constraints Enabled": -1,
+        "Interface Constraints Enabled": -1,
+        "Enforce Limits On Lines In Interfaces": -1,
+        "Losses Enabled": -1,
+    }
+
+    # Set and verify only attributes that are supported by the active schema/template.
+    for attr_name, expected in expected_values.items():
+        if validate_simulation_attribute(db, ClassEnum.Transmission, attr_name).is_err():
+            continue
+
+        values = db.get_attribute(
+            ClassEnum.Transmission,
+            object_name="base_transmission",
+            attribute_name=attr_name,
+        )
+        assert values is not None
+        assert values[0] == expected
