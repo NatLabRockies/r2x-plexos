@@ -26,6 +26,17 @@ from r2x_plexos.models.simulation_config import (
 from r2x_plexos.utils_mappings import CONFIG_CLASS_MAP, MEMBERSHIP_TYPE_MAP
 from r2x_plexos.utils_plexosdb import validate_simulation_attribute
 
+BASE_DIAGNOSE_NAME = "base_diagnose"
+BASE_DIAGNOSE_DEFAULT_ATTRIBUTES: dict[str, int] = {
+    "Database Load": -1,
+    "Summary Each Step": -1,
+    "Execution Times": -1,
+    "Task Size": -1,
+    "LP Solver Progress": -1,
+    "Computer Information": -1,
+    "MIP Solver Progress": -1,
+}
+
 
 @dataclass
 class SimulationConfig:
@@ -1090,6 +1101,47 @@ def _add_model_attributes(db: PlexosDB, model: PLEXOSModel) -> None:
         )
 
 
+def _ensure_base_diagnostic_defaults(db: PlexosDB) -> None:
+    """Ensure default diagnostic checkboxes are enabled on base_diagnose.
+
+    Attributes are added only when missing so explicit user/template values are preserved.
+    """
+    if not db.check_object_exists(ClassEnum.Diagnostic, BASE_DIAGNOSE_NAME):
+        return
+
+    for attr_name, attr_value in BASE_DIAGNOSE_DEFAULT_ATTRIBUTES.items():
+        if validate_simulation_attribute(db, ClassEnum.Diagnostic, attr_name).is_err():
+            logger.debug("Skipping unsupported Diagnostic attribute '{}'.", attr_name)
+            continue
+
+        try:
+            current = db.get_attribute(
+                ClassEnum.Diagnostic,
+                object_name=BASE_DIAGNOSE_NAME,
+                attribute_name=attr_name,
+            )
+        except Exception:
+            current = None
+
+        if current is not None:
+            continue
+
+        try:
+            db.add_attribute(
+                ClassEnum.Diagnostic,
+                BASE_DIAGNOSE_NAME,
+                attribute_name=attr_name,
+                attribute_value=attr_value,
+            )
+        except Exception as exc:
+            logger.debug(
+                "Could not set default Diagnostic attribute '{}' on '{}': {}",
+                attr_name,
+                BASE_DIAGNOSE_NAME,
+                exc,
+            )
+
+
 def ingest_simulation_to_plexosdb(
     db: PlexosDB, result: SimulationConfig, validate: bool = True, scenario_name: str = "default"
 ) -> Result[dict[str, Any], str]:
@@ -1165,6 +1217,8 @@ def ingest_simulation_to_plexosdb(
                 logger.debug(f"Created simulation config object '{obj_name}' as {child_class_enum.name}")
             except Exception:
                 continue
+
+    _ensure_base_diagnostic_defaults(db)
 
     logger.info(f"Creating {len(result.memberships)} model memberships...")
     seen_memberships: set[tuple[str, str, Any]] = set()

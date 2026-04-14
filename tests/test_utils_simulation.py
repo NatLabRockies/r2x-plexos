@@ -23,6 +23,7 @@ from r2x_plexos.utils_simulation import (
     ingest_simulation_to_plexosdb,
     validate_simulation_config,
 )
+from r2x_plexos.utils_plexosdb import validate_simulation_attribute
 
 FILE_NAME = "master_10.0R2_btu.xml"
 
@@ -850,3 +851,46 @@ def test_shift_ole_date_to_year_non_leap_non_feb29_unchanged():
     ole = datetime_to_ole_date(datetime(2012, 6, 15))
     shifted = _shift_ole_date_to_year(ole, 2023)
     assert shifted == datetime_to_ole_date(datetime(2023, 6, 15))
+
+
+def test_ingest_static_simulation_sets_base_diagnose_defaults(tmp_path):
+    """Ensure base_diagnose has default diagnostic checkboxes enabled."""
+    from r2x_plexos import PLEXOSConfig
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    template_path = config.get_config_path().joinpath(FILE_NAME)
+    db = PlexosDB.from_xml(template_path)
+
+    static_model_defaults = PLEXOSConfig.load_static_models()
+    static_horizon_defaults = PLEXOSConfig.load_static_horizons()
+    defaults = {**static_model_defaults, **static_horizon_defaults}
+
+    build_result = build_plexos_simulation({"horizon_year": 2024}, defaults=defaults)
+    assert build_result.is_ok()
+
+    ingest_result = ingest_simulation_to_plexosdb(db, build_result.unwrap())
+    assert ingest_result.is_ok()
+
+    requested_attrs = [
+        "Database Load",
+        "Summary Each Step",
+        "Execution Times",
+        "Task Size",
+        "LP Solver Progress",
+        "Computer Information",
+        "MIP Solver Progress",
+    ]
+
+    assert db.check_object_exists(ClassEnum.Diagnostic, "base_diagnose")
+    # The template/version may not define all requested checkbox attributes.
+    # Verify we set defaults for every requested attribute that exists in schema.
+    for attr_name in requested_attrs:
+        if validate_simulation_attribute(db, ClassEnum.Diagnostic, attr_name).is_err():
+            continue
+        values = db.get_attribute(
+            ClassEnum.Diagnostic,
+            object_name="base_diagnose",
+            attribute_name=attr_name,
+        )
+        assert values is not None
+        assert values[0] == -1
