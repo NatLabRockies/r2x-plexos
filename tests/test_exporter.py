@@ -9,7 +9,7 @@ from rust_ok import Ok
 from r2x_core import DataStore, Err, PluginConfig, PluginContext, System
 from r2x_plexos import PLEXOSConfig, PLEXOSPropertyValue
 from r2x_plexos.exporter import DEFAULT_XML_TEMPLATE, PLEXOSExporter
-from r2x_plexos.models import PLEXOSDatafile, PLEXOSGenerator, PLEXOSMembership, PLEXOSNode
+from r2x_plexos.models import PLEXOSDatafile, PLEXOSGenerator, PLEXOSLine, PLEXOSMembership, PLEXOSNode
 from r2x_plexos.parser import PLEXOSParser
 
 pytestmark = pytest.mark.export
@@ -898,6 +898,44 @@ def test_add_component_properties_does_not_export_explicit_default_values(templa
     prop_names = [p.get("property") for p in props]
 
     assert "Expansion Economy Units" not in prop_names
+
+
+def test_add_component_properties_adds_line_flow_clip_memo(template_db):
+    """Memo text is added only for line Min/Max Flow rows clipped to -99999/99999."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+
+    clipped = PLEXOSLine(name="ClippedLine", max_flow=99999, min_flow=-99999)
+    normal = PLEXOSLine(name="NormalLine", max_flow=8000, min_flow=-8000)
+    sys.add_component(clipped)
+    sys.add_component(normal)
+
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+    exporter.db = template_db
+
+    template_db.add_object(ClassEnum.Line, "ClippedLine", category="-")
+    template_db.add_object(ClassEnum.Line, "NormalLine", category="-")
+
+    exporter._add_component_properties()
+
+    rows = template_db.query(
+        """
+        SELECT o.name, p.name, md.value
+        FROM t_memo_data md
+        INNER JOIN t_data d ON d.data_id = md.data_id
+        INNER JOIN t_property p ON p.property_id = d.property_id
+        INNER JOIN t_membership m ON m.membership_id = d.membership_id
+        INNER JOIN t_object o ON o.object_id = m.child_object_id
+        INNER JOIN t_class c ON c.class_id = o.class_id
+        WHERE c.name = 'Line' AND p.name IN ('Min Flow', 'Max Flow')
+        """
+    )
+
+    assert len(rows) == 2
+    assert {r[0] for r in rows} == {"ClippedLine"}
+    assert {r[1] for r in rows} == {"Min Flow", "Max Flow"}
+    assert all(r[2] == "Seting value to +-99999 to flows larger/less than +-100000" for r in rows)
 
 
 def test_add_component_memberships_db_none_logs_error(caplog):

@@ -53,6 +53,7 @@ XML_TEMPLATE_MAP = {
     "PLEXOS10.0": "master_10.0R2_btu.xml",
 }
 BATCH_SIZE = 500
+FLOW_CLIP_MEMO_TEXT = "Seting value to +-99999 to flows larger/less than +-100000"
 
 
 class PLEXOSExporter(Plugin[PLEXOSConfig]):
@@ -136,7 +137,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
     def _build_xml_filename(self) -> str:
         """Build XML filename from model, horizon year, and weather year."""
-        horizon_year = self.solve_year if self.solve_year is not None else getattr(self.config, "horizon_year", None)
+        horizon_year = (
+            self.solve_year if self.solve_year is not None else getattr(self.config, "horizon_year", None)
+        )
         weather_year = (
             self.weather_year if self.weather_year is not None else getattr(self.config, "weather_year", None)
         )
@@ -687,6 +690,60 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 collection=collection,
                 scenario=self.plexos_scenario,
             )
+
+        self._add_line_flow_clip_memo_entries()
+
+    def _add_line_flow_clip_memo_entries(self) -> None:
+        """Insert memo text for clipped Line flow properties.
+
+        Adds memo entries only to `Line` `Min Flow`/`Max Flow` data rows where
+        values are exactly -99999/99999, and only for lines that contain both
+        clipped values.
+        """
+        if self.db is None:
+            return
+
+        try:
+            # Apply memo text only to clipped flow bounds and preserve any existing memo rows.
+            self.db._db.execute(
+                """
+                WITH line_flow_rows AS (
+                    SELECT
+                        d.data_id,
+                        o.object_id,
+                        p.name AS property_name,
+                        CAST(d.value AS REAL) AS flow_value
+                    FROM t_data d
+                    INNER JOIN t_membership m ON d.membership_id = m.membership_id
+                    INNER JOIN t_object o ON m.child_object_id = o.object_id
+                    INNER JOIN t_class c ON o.class_id = c.class_id
+                    INNER JOIN t_property p ON d.property_id = p.property_id
+                    WHERE c.name = 'Line'
+                      AND p.name IN ('Min Flow', 'Max Flow')
+                ),
+                qualified_lines AS (
+                    SELECT object_id
+                    FROM line_flow_rows
+                    GROUP BY object_id
+                    HAVING MAX(CASE WHEN property_name = 'Max Flow' AND flow_value = 99999 THEN 1 ELSE 0 END) = 1
+                       AND MAX(CASE WHEN property_name = 'Min Flow' AND flow_value = -99999 THEN 1 ELSE 0 END) = 1
+                )
+                INSERT INTO t_memo_data (data_id, value)
+                SELECT lfr.data_id, ?
+                FROM line_flow_rows lfr
+                INNER JOIN qualified_lines ql ON ql.object_id = lfr.object_id
+                WHERE (
+                    (lfr.property_name = 'Max Flow' AND lfr.flow_value = 99999)
+                    OR (lfr.property_name = 'Min Flow' AND lfr.flow_value = -99999)
+                )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM t_memo_data md WHERE md.data_id = lfr.data_id
+                  )
+                """,
+                (FLOW_CLIP_MEMO_TEXT,),
+            )
+        except Exception as exc:
+            logger.debug("Skipping line flow memo insertion; t_memo_data may be unavailable: {}", exc)
 
     def _bulk_resolve_object_ids(
         self, class_to_names: dict[ClassEnum, set[str]]
