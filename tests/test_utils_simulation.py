@@ -1098,3 +1098,73 @@ def test_ingest_simulation_sets_production_example_to_integer_uc(tmp_path):
     )
     assert values is not None
     assert values[0] == 2
+
+
+def test_build_static_simulation_keeps_d1_horizon_one_day():
+    """Ensure base_<year>_d1 horizon remains a one-day chrono test horizon."""
+    from r2x_plexos import PLEXOSConfig
+
+    static_model_defaults = PLEXOSConfig.load_static_models()
+    static_horizon_defaults = PLEXOSConfig.load_static_horizons()
+    defaults = {**static_model_defaults, **static_horizon_defaults}
+
+    result = build_plexos_simulation(
+        {"horizon_year": 2023},
+        defaults=defaults,
+    )
+    assert result.is_ok()
+
+    build_result = result.unwrap()
+    d1 = next((h for h in build_result.horizons if h.name == "base_2023_d1"), None)
+
+    assert d1 is not None
+    assert d1.chrono_step_count == 1.0
+
+
+def test_ingest_static_simulation_sets_base_st_deterministic(tmp_path):
+    """Ensure base_st ST Schedule runs in deterministic mode."""
+    from r2x_plexos import PLEXOSConfig
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    template_path = config.get_config_path().joinpath(FILE_NAME)
+    db = PlexosDB.from_xml(template_path)
+
+    if not db.check_object_exists(ClassEnum.STSchedule, "base_st"):
+        db.add_object(ClassEnum.STSchedule, "base_st")
+
+    if validate_simulation_attribute(db, ClassEnum.STSchedule, "Stochastic Method").is_ok():
+        object_id = db.get_object_id(ClassEnum.STSchedule, "base_st")
+        attribute_id = db.get_attribute_id(ClassEnum.STSchedule, name="Stochastic Method")
+        updated = db._db.execute(
+            """
+            UPDATE t_attribute_data
+            SET value = ?
+            WHERE object_id = ? AND attribute_id = ?
+            """,
+            (2, object_id, attribute_id),
+        )
+        if getattr(updated, "rowcount", 0) == 0:
+            db.add_attribute(
+                ClassEnum.STSchedule,
+                "base_st",
+                attribute_name="Stochastic Method",
+                attribute_value=2,
+            )
+
+    static_model_defaults = PLEXOSConfig.load_static_models()
+    static_horizon_defaults = PLEXOSConfig.load_static_horizons()
+    defaults = {**static_model_defaults, **static_horizon_defaults}
+
+    build_result = build_plexos_simulation({"horizon_year": 2024}, defaults=defaults)
+    assert build_result.is_ok()
+
+    ingest_result = ingest_simulation_to_plexosdb(db, build_result.unwrap())
+    assert ingest_result.is_ok()
+
+    values = db.get_attribute(
+        ClassEnum.STSchedule,
+        object_name="base_st",
+        attribute_name="Stochastic Method",
+    )
+    assert values is not None
+    assert values[0] == 0
