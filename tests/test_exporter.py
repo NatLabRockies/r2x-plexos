@@ -938,6 +938,38 @@ def test_add_component_properties_adds_line_flow_clip_memo(template_db):
     assert all(r[2] == "Seting value to +-99999 to flows larger/less than +-100000" for r in rows)
 
 
+def test_add_component_properties_removes_heat_rate_when_curve_defined(template_db):
+    """Use heat-rate curve terms over single-point heat rate when both are present."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+
+    gen = PLEXOSGenerator(
+        name="CurveHeatRateGen",
+        category="thermal",
+        units=1,
+        rating=50.0,
+        heat_rate=10.0,
+        heat_rate_base=8.0,
+        heat_rate_incr=2.0,
+    )
+    sys.add_component(gen)
+
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+    exporter.db = template_db
+
+    template_db.add_object(ClassEnum.Generator, "CurveHeatRateGen", category="thermal")
+
+    exporter._add_component_properties()
+
+    props = template_db.get_object_properties(ClassEnum.Generator, "CurveHeatRateGen")
+    prop_names = {p.get("property") for p in props}
+
+    assert "Heat Rate Base" in prop_names
+    assert "Heat Rate Incr" in prop_names
+    assert "Heat Rate" not in prop_names
+
+
 def test_add_component_memberships_db_none_logs_error(caplog):
     """Test _add_component_memberships handles db None - lines 429-440."""
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
