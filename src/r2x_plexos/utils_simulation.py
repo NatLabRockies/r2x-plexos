@@ -1445,9 +1445,7 @@ def ingest_simulation_to_plexosdb(
     _ensure_performance_defaults(db, performance_object_names)
 
     production_object_names = {
-        child_name
-        for _, child_name, membership_type in result.memberships
-        if membership_type == "Production"
+        child_name for _, child_name, membership_type in result.memberships if membership_type == "Production"
     }
 
     st_schedule_object_names = {

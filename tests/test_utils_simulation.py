@@ -14,6 +14,7 @@ from r2x_plexos.models.simulation_config import (
     PLEXOSSTSchedule,
     PLEXOSTransmission,
 )
+from r2x_plexos.utils_plexosdb import validate_simulation_attribute
 from r2x_plexos.utils_simulation import (
     build_plexos_simulation,
     convert_simulation_config_to_attributes,
@@ -23,7 +24,6 @@ from r2x_plexos.utils_simulation import (
     ingest_simulation_to_plexosdb,
     validate_simulation_config,
 )
-from r2x_plexos.utils_plexosdb import validate_simulation_attribute
 
 FILE_NAME = "master_10.0R2_btu.xml"
 

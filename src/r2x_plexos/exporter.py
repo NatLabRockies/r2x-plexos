@@ -601,8 +601,12 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                                 aliased_dict[alias_name] = value
 
                 if isinstance(comp, PLEXOSGenerator):
-                    has_heat_rate_base = "Heat Rate Base" in aliased_dict and aliased_dict["Heat Rate Base"] is not None
-                    has_heat_rate_incr = "Heat Rate Incr" in aliased_dict and aliased_dict["Heat Rate Incr"] is not None
+                    has_heat_rate_base = (
+                        "Heat Rate Base" in aliased_dict and aliased_dict["Heat Rate Base"] is not None
+                    )
+                    has_heat_rate_incr = (
+                        "Heat Rate Incr" in aliased_dict and aliased_dict["Heat Rate Incr"] is not None
+                    )
                     if has_heat_rate_base and has_heat_rate_incr:
                         aliased_dict.pop("Heat Rate", None)
 
