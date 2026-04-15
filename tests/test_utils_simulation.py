@@ -871,26 +871,33 @@ def test_ingest_static_simulation_sets_base_diagnose_defaults(tmp_path):
     ingest_result = ingest_simulation_to_plexosdb(db, build_result.unwrap())
     assert ingest_result.is_ok()
 
-    requested_attrs = [
-        "Database Load",
-        "Summary Each Step",
-        "Execution Times",
-        "Task Size",
-        "LP Solver Progress",
-        "Computer Information",
-        "MIP Solver Progress",
+    requested_attr_candidates = [
+        ("Database Load",),
+        ("Summary Each Step", "Step Summary"),
+        ("Execution Times", "Times"),
+        ("Task Size",),
+        ("LP Solver Progress", "LP Progress"),
+        ("Computer Information",),
+        ("MIP Solver Progress", "MIP Progress"),
     ]
 
     assert db.check_object_exists(ClassEnum.Diagnostic, "base_diagnose")
-    # The template/version may not define all requested checkbox attributes.
-    # Verify we set defaults for every requested attribute that exists in schema.
-    for attr_name in requested_attrs:
-        if validate_simulation_attribute(db, ClassEnum.Diagnostic, attr_name).is_err():
+    # The template/version may use alternate names for some requested options.
+    # Verify we set defaults for each requested option via any supported candidate name.
+    for candidates in requested_attr_candidates:
+        resolved_name = None
+        for candidate in candidates:
+            if validate_simulation_attribute(db, ClassEnum.Diagnostic, candidate).is_ok():
+                resolved_name = candidate
+                break
+
+        if resolved_name is None:
             continue
+
         values = db.get_attribute(
             ClassEnum.Diagnostic,
             object_name="base_diagnose",
-            attribute_name=attr_name,
+            attribute_name=resolved_name,
         )
         assert values is not None
         assert values[0] == -1

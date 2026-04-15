@@ -27,14 +27,14 @@ from r2x_plexos.utils_mappings import CONFIG_CLASS_MAP, MEMBERSHIP_TYPE_MAP
 from r2x_plexos.utils_plexosdb import validate_simulation_attribute
 
 BASE_DIAGNOSE_NAME = "base_diagnose"
-BASE_DIAGNOSE_DEFAULT_ATTRIBUTES: dict[str, int] = {
-    "Database Load": -1,
-    "Summary Each Step": -1,
-    "Execution Times": -1,
-    "Task Size": -1,
-    "LP Solver Progress": -1,
-    "Computer Information": -1,
-    "MIP Solver Progress": -1,
+BASE_DIAGNOSE_DEFAULT_ATTRIBUTE_CANDIDATES: dict[tuple[str, ...], int] = {
+    ("Database Load",): -1,
+    ("Summary Each Step", "Step Summary"): -1,
+    ("Execution Times", "Times"): -1,
+    ("Task Size",): -1,
+    ("LP Solver Progress", "LP Progress"): -1,
+    ("Computer Information",): -1,
+    ("MIP Solver Progress", "MIP Progress"): -1,
 }
 
 # Transmission defaults for scenario membership objects (e.g., base_transmission).
@@ -1134,38 +1134,34 @@ def _add_model_attributes(db: PlexosDB, model: PLEXOSModel) -> None:
 def _ensure_base_diagnostic_defaults(db: PlexosDB) -> None:
     """Ensure default diagnostic checkboxes are enabled on base_diagnose.
 
-    Attributes are added only when missing so explicit user/template values are preserved.
+    For each requested option, the first schema-supported name candidate is used
+    and forced to checked (-1).
     """
     if not db.check_object_exists(ClassEnum.Diagnostic, BASE_DIAGNOSE_NAME):
         return
 
-    for attr_name, attr_value in BASE_DIAGNOSE_DEFAULT_ATTRIBUTES.items():
-        if validate_simulation_attribute(db, ClassEnum.Diagnostic, attr_name).is_err():
-            logger.debug("Skipping unsupported Diagnostic attribute '{}'.", attr_name)
+    for candidates, attr_value in BASE_DIAGNOSE_DEFAULT_ATTRIBUTE_CANDIDATES.items():
+        attr_name: str | None = None
+        for candidate in candidates:
+            if validate_simulation_attribute(db, ClassEnum.Diagnostic, candidate).is_ok():
+                attr_name = candidate
+                break
+
+        if attr_name is None:
+            logger.debug("Skipping unsupported Diagnostic attribute candidates {}.", candidates)
             continue
 
         try:
-            current = db.get_attribute(
-                ClassEnum.Diagnostic,
+            _set_or_add_attribute_value(
+                db,
+                class_enum=ClassEnum.Diagnostic,
                 object_name=BASE_DIAGNOSE_NAME,
-                attribute_name=attr_name,
-            )
-        except Exception:
-            current = None
-
-        if current is not None:
-            continue
-
-        try:
-            db.add_attribute(
-                ClassEnum.Diagnostic,
-                BASE_DIAGNOSE_NAME,
                 attribute_name=attr_name,
                 attribute_value=attr_value,
             )
         except Exception as exc:
             logger.debug(
-                "Could not set default Diagnostic attribute '{}' on '{}': {}",
+                "Could not force Diagnostic attribute '{}' on '{}': {}",
                 attr_name,
                 BASE_DIAGNOSE_NAME,
                 exc,
@@ -1224,6 +1220,45 @@ def _ensure_transmission_defaults(db: PlexosDB, transmission_object_names: set[s
                 )
 
 
+def _set_or_add_attribute_value(
+    db: PlexosDB,
+    *,
+    class_enum: ClassEnum,
+    object_name: str,
+    attribute_name: str,
+    attribute_value: Any,
+) -> None:
+    """Upsert an object attribute value in t_attribute_data."""
+    object_id = db.get_object_id(class_enum, object_name)
+    attribute_id = db.get_attribute_id(class_enum, name=attribute_name)
+
+    existing = db._db.fetchone(
+        """
+        SELECT 1
+        FROM t_attribute_data
+        WHERE object_id = ? AND attribute_id = ?
+        """,
+        (object_id, attribute_id),
+    )
+
+    if existing:
+        db._db.execute(
+            """
+            UPDATE t_attribute_data
+            SET value = ?
+            WHERE object_id = ? AND attribute_id = ?
+            """,
+            (attribute_value, object_id, attribute_id),
+        )
+    else:
+        db.add_attribute(
+            class_enum,
+            object_name,
+            attribute_name=attribute_name,
+            attribute_value=attribute_value,
+        )
+
+
 def _ensure_performance_defaults(db: PlexosDB, performance_object_names: set[str]) -> None:
     """Force default Performance options for selected objects."""
     if not performance_object_names:
@@ -1239,25 +1274,13 @@ def _ensure_performance_defaults(db: PlexosDB, performance_object_names: set[str
                 continue
 
             try:
-                object_id = db.get_object_id(ClassEnum.Performance, object_name)
-                attribute_id = db.get_attribute_id(ClassEnum.Performance, name=attr_name)
-                updated = db._db.execute(
-                    """
-                    UPDATE t_attribute_data
-                    SET value = ?
-                    WHERE object_id = ? AND attribute_id = ?
-                    """,
-                    (attr_value, object_id, attribute_id),
+                _set_or_add_attribute_value(
+                    db,
+                    class_enum=ClassEnum.Performance,
+                    object_name=object_name,
+                    attribute_name=attr_name,
+                    attribute_value=attr_value,
                 )
-
-                # If no existing row was updated, insert it.
-                if getattr(updated, "rowcount", 0) == 0:
-                    db.add_attribute(
-                        ClassEnum.Performance,
-                        object_name,
-                        attribute_name=attr_name,
-                        attribute_value=attr_value,
-                    )
             except Exception as exc:
                 logger.debug(
                     "Could not set default Performance attribute '{}' on '{}': {}",
@@ -1282,25 +1305,13 @@ def _ensure_production_defaults(db: PlexosDB, production_object_names: set[str])
                 continue
 
             try:
-                object_id = db.get_object_id(ClassEnum.Production, object_name)
-                attribute_id = db.get_attribute_id(ClassEnum.Production, name=attr_name)
-                updated = db._db.execute(
-                    """
-                    UPDATE t_attribute_data
-                    SET value = ?
-                    WHERE object_id = ? AND attribute_id = ?
-                    """,
-                    (attr_value, object_id, attribute_id),
+                _set_or_add_attribute_value(
+                    db,
+                    class_enum=ClassEnum.Production,
+                    object_name=object_name,
+                    attribute_name=attr_name,
+                    attribute_value=attr_value,
                 )
-
-                # If no existing row was updated, insert it.
-                if getattr(updated, "rowcount", 0) == 0:
-                    db.add_attribute(
-                        ClassEnum.Production,
-                        object_name,
-                        attribute_name=attr_name,
-                        attribute_value=attr_value,
-                    )
             except Exception as exc:
                 logger.debug(
                     "Could not set default Production attribute '{}' on '{}': {}",
@@ -1325,24 +1336,13 @@ def _ensure_st_schedule_defaults(db: PlexosDB, st_schedule_object_names: set[str
                 continue
 
             try:
-                object_id = db.get_object_id(ClassEnum.STSchedule, object_name)
-                attribute_id = db.get_attribute_id(ClassEnum.STSchedule, name=attr_name)
-                updated = db._db.execute(
-                    """
-                    UPDATE t_attribute_data
-                    SET value = ?
-                    WHERE object_id = ? AND attribute_id = ?
-                    """,
-                    (attr_value, object_id, attribute_id),
+                _set_or_add_attribute_value(
+                    db,
+                    class_enum=ClassEnum.STSchedule,
+                    object_name=object_name,
+                    attribute_name=attr_name,
+                    attribute_value=attr_value,
                 )
-
-                if getattr(updated, "rowcount", 0) == 0:
-                    db.add_attribute(
-                        ClassEnum.STSchedule,
-                        object_name,
-                        attribute_name=attr_name,
-                        attribute_value=attr_value,
-                    )
             except Exception as exc:
                 logger.debug(
                     "Could not set default ST Schedule attribute '{}' on '{}': {}",
