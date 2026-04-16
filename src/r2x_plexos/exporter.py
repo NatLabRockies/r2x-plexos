@@ -403,26 +403,49 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         return Ok(None)
 
     def _deduplicate_property_records(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Remove duplicate property records before bulk insert."""
+        """Remove duplicate property records before bulk insert.
+
+        `plexosdb.add_properties_from_records` identifies rows by
+        `(name, property, value)` for scenario tagging. If this exporter emits
+        the same triple multiple times, scenario tag insertion can fail with
+        `UNIQUE constraint failed: t_tag.data_id, t_tag.object_id`.
+
+        To keep insertion idempotent and stable, collapse records by that key
+        while preserving the richest metadata encountered.
+        """
         if not records:
             return records
+
+        def _normalize_value(value: Any) -> Any:
+            # PLEXOS warnings can be triggered by duplicate values written with
+            # different Python types (e.g. 23.3 vs "23.3"). Canonicalize these.
+            if isinstance(value, str):
+                stripped = value.strip()
+                if stripped == "":
+                    return ""
+                lowered = stripped.lower()
+                if lowered in {"true", "false"}:
+                    return lowered == "true"
+                try:
+                    return float(stripped)
+                except ValueError:
+                    return stripped
+            return value
 
         seen: dict[tuple, dict[str, Any]] = {}
         for rec in records:
             key = (
-                rec.get("name"),
-                rec.get("property"),
-                rec.get("band", 1),
-                rec.get("timeslice"),
-                rec.get("date_from"),
-                rec.get("date_to"),
+                str(rec.get("name", "")).strip(),
+                str(rec.get("property", "")).strip(),
+                _normalize_value(rec.get("value")),
             )
             if key not in seen:
                 seen[key] = dict(rec)
             else:
                 current = seen[key]
-                if current.get("datafile_text") is None and rec.get("datafile_text") is not None:
-                    current["datafile_text"] = rec["datafile_text"]
+                for field in ("band", "timeslice", "date_from", "date_to", "datafile_text"):
+                    if current.get(field) is None and rec.get(field) is not None:
+                        current[field] = rec[field]
 
         deduped = list(seen.values())
         dropped = len(records) - len(deduped)
