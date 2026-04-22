@@ -8,7 +8,7 @@ from rust_ok import Ok
 
 from r2x_core import DataStore, Err, PluginConfig, PluginContext, System
 from r2x_plexos import PLEXOSConfig, PLEXOSPropertyValue
-from r2x_plexos.exporter import DEFAULT_XML_TEMPLATE, PLEXOSExporter
+from r2x_plexos.exporter import DEFAULT_XML_TEMPLATE, FLOW_CLIP_MEMO_TEXT, PLEXOSExporter
 from r2x_plexos.models import PLEXOSDatafile, PLEXOSGenerator, PLEXOSLine, PLEXOSMembership, PLEXOSNode
 from r2x_plexos.parser import PLEXOSParser
 
@@ -935,7 +935,7 @@ def test_add_component_properties_adds_line_flow_clip_memo(template_db):
     assert len(rows) == 2
     assert {r[0] for r in rows} == {"ClippedLine"}
     assert {r[1] for r in rows} == {"Min Flow", "Max Flow"}
-    assert all(r[2] == "Seting value to +-99999 to flows larger/less than +-100000" for r in rows)
+    assert all(r[2] == FLOW_CLIP_MEMO_TEXT for r in rows)
 
 
 def test_add_component_properties_removes_heat_rate_when_curve_defined(template_db):
