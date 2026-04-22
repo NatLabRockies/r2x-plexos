@@ -148,6 +148,9 @@
     "PLEXOSNode": [
       "units"
     ],
+    "PLEXOSZone": [
+      "units"
+    ],
     "PLEXOSInterface": [
       "units"
     ],
