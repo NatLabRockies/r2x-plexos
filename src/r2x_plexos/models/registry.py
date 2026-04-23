@@ -1,6 +1,6 @@
 """Registry for PLEXOS components and their corresponding enums."""
 
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 from infrasys.component import Component
 from plexosdb.enums import ClassEnum, CollectionEnum
@@ -8,6 +8,8 @@ from plexosdb.enums import ClassEnum, CollectionEnum
 from .generator import PLEXOSGenerator
 from .node import PLEXOSNode
 from .purchaser import PLEXOSPurchaser
+
+PURCHASER_CLASS_ENUM: ClassEnum | None = cast("ClassEnum | None", getattr(ClassEnum, "Purchaser", None))
 
 
 class PLEXOSComponentRegistry:
@@ -17,7 +19,6 @@ class PLEXOSComponentRegistry:
     _class_registry: ClassVar[dict[type[Component], ClassEnum]] = {
         PLEXOSGenerator: ClassEnum.Generator,
         PLEXOSNode: ClassEnum.Node,
-        PLEXOSPurchaser: ClassEnum.Purchaser,
     }
 
     # Collection registry mapping (parent_class_enum, child_class_enum) to CollectionEnum
@@ -96,7 +97,6 @@ for child_enum in [
     ClassEnum.Region,
     ClassEnum.Zone,
     ClassEnum.Node,
-    ClassEnum.Purchaser,
     ClassEnum.Line,
     ClassEnum.Transformer,
     ClassEnum.Interface,
@@ -109,6 +109,16 @@ for child_enum in [
             ClassEnum.System,
             child_enum,
             collection_enum,
+        )
+
+if PURCHASER_CLASS_ENUM is not None:
+    PLEXOSComponentRegistry.register_component(PLEXOSPurchaser, PURCHASER_CLASS_ENUM)
+    purchaser_collection = PLEXOSComponentRegistry.get_collection_enum(ClassEnum.System, PURCHASER_CLASS_ENUM)
+    if purchaser_collection is not None:
+        PLEXOSComponentRegistry.register_collection(
+            ClassEnum.System,
+            PURCHASER_CLASS_ENUM,
+            purchaser_collection,
         )
 
 # Register other common parent-child relationships

@@ -18,6 +18,7 @@ from .models import (
     PLEXOSMembership,
     PLEXOSModel,
     PLEXOSObject,
+    PLEXOSPurchaser,
     PLEXOSRegion,
     PLEXOSReserve,
     PLEXOSStorage,
@@ -1048,6 +1049,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             PLEXOSReserve: "Min Provision",
             PLEXOSRegion: "Load",
             PLEXOSStorage: "Natural Inflow",
+            PLEXOSPurchaser: "Max Load",
         }
 
         fixed = fixed_property_by_type.get(type(component))
@@ -1099,12 +1101,8 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         """Export all time series data from the system to CSV files and update property references."""
         all_components_with_ts = []
         for component_type in self.system.get_component_types():
-            components = list(
-                self.system.get_components(
-                    component_type, filter_func=lambda c: self.system.has_time_series(c)
-                )
-            )
-            all_components_with_ts.extend(components)
+            components = list(self.system.get_components(component_type))
+            all_components_with_ts.extend([c for c in components if self.system.has_time_series(c)])
 
         if not all_components_with_ts:
             logger.warning("No components with time series found")
@@ -1121,10 +1119,11 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
         def _grouping_key(item: tuple[Any, Any]) -> tuple[Any, ...]:
             """Group by variable name, initial timestamp, resolution, and features."""
-            _, ts_key = item
+            component, ts_key = item
             initial_ts = getattr(ts_key, "initial_timestamp", None)
             resolution = getattr(ts_key, "resolution", None)
             return (
+                type(component).__name__,
                 ts_key.name,
                 str(initial_ts),
                 str(resolution),
@@ -1137,7 +1136,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         output_dir = get_output_directory(self.config, self.system, output_path=self.output_path)
 
         for group_key, group_items in groupby(ts_metadata_sorted, key=_grouping_key):
-            field_name, _initial_ts_str, _resolution_str, features_tuple = group_key
+            component_class, field_name, _initial_ts_str, _resolution_str, features_tuple = group_key
             metadata_dict = dict(features_tuple)
             if self.config.model_name is not None:
                 metadata_dict["model_name"] = self.config.model_name
@@ -1148,9 +1147,6 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             if self.weather_year is not None:
                 metadata_dict["weather_year"] = self.weather_year
             group_list = list(group_items)
-
-            first_component = group_list[0][0]
-            component_class = type(first_component).__name__
 
             filename = generate_csv_filename(field_name, component_class, metadata_dict)
             filepath = output_dir / filename

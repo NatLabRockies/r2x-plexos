@@ -1314,6 +1314,110 @@ def test_export_time_series_with_weather_and_solve_year(mocker, tmp_path):
     assert result.is_ok()
 
 
+def test_export_time_series_purchaser_without_filter_func_dependency(mocker, tmp_path):
+    """Ensure purchaser TS export uses has_time_series gating without get_components filter_func."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = mocker.Mock()
+
+    class PurchaserType:
+        pass
+
+    comp = mocker.Mock()
+    comp.name = "Purchaser_H2"
+    type(comp).__name__ = "PLEXOSPurchaser"
+
+    ts_key = mocker.Mock()
+    ts_key.name = "ReEDSElectrolyzerDemand"
+    ts_key.features = {}
+    ts_key.initial_timestamp = None
+
+    ts_obj = mocker.Mock()
+    ts_obj.data = [1.0, 1.0]
+
+    sys.get_component_types.return_value = [PurchaserType]
+    # Intentionally provide a callable that accepts only component_type.
+    # If exporter passes filter_func, this test would fail.
+    sys.get_components.side_effect = lambda component_type: [comp]
+    sys.has_time_series.return_value = True
+    sys.list_time_series_keys.return_value = [ts_key]
+    sys.list_time_series.return_value = [ts_obj]
+
+    data_dir = tmp_path / "Data"
+    data_dir.mkdir()
+
+    ctx = PluginContext(config=config, system=sys)
+    exporter = cast(PLEXOSExporter, PLEXOSExporter.from_context(ctx))
+
+    mocker.patch("r2x_plexos.exporter.get_output_directory", return_value=data_dir)
+    export_csv = mocker.patch("r2x_plexos.exporter.export_time_series_csv", return_value=Ok(None))
+
+    result = exporter.export_time_series()
+    assert result.is_ok()
+    export_csv.assert_called_once()
+
+
+def test_export_time_series_separates_same_ts_key_by_component_class(mocker, tmp_path):
+    """Same TS key on different classes should generate distinct class-specific CSVs."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = mocker.Mock()
+
+    class GeneratorType:
+        pass
+
+    class PurchaserType:
+        pass
+
+    gen = mocker.Mock()
+    gen.name = "Gen1"
+    type(gen).__name__ = "PLEXOSGenerator"
+
+    purchaser = mocker.Mock()
+    purchaser.name = "H2Purchaser"
+    type(purchaser).__name__ = "PLEXOSPurchaser"
+
+    ts_key_gen = mocker.Mock()
+    ts_key_gen.name = "max_active_power"
+    ts_key_gen.features = {}
+    ts_key_gen.initial_timestamp = None
+    ts_key_gen.resolution = None
+
+    ts_key_purch = mocker.Mock()
+    ts_key_purch.name = "max_active_power"
+    ts_key_purch.features = {}
+    ts_key_purch.initial_timestamp = None
+    ts_key_purch.resolution = None
+
+    ts_obj = mocker.Mock()
+    ts_obj.data = [1.0, 2.0]
+
+    sys.get_component_types.return_value = [GeneratorType, PurchaserType]
+    sys.get_components.side_effect = lambda component_type: (
+        [gen] if component_type is GeneratorType else [purchaser] if component_type is PurchaserType else []
+    )
+    sys.has_time_series.return_value = True
+    sys.list_time_series_keys.side_effect = lambda component: (
+        [ts_key_gen] if component is gen else [ts_key_purch]
+    )
+    sys.list_time_series.return_value = [ts_obj]
+
+    data_dir = tmp_path / "Data"
+    data_dir.mkdir()
+
+    ctx = PluginContext(config=config, system=sys)
+    exporter = cast(PLEXOSExporter, PLEXOSExporter.from_context(ctx))
+
+    mocker.patch("r2x_plexos.exporter.get_output_directory", return_value=data_dir)
+    export_csv = mocker.patch("r2x_plexos.exporter.export_time_series_csv", return_value=Ok(None))
+
+    result = exporter.export_time_series()
+    assert result.is_ok()
+    assert export_csv.call_count == 2
+
+    exported_paths = [call.args[0].name for call in export_csv.call_args_list]
+    assert any(name.startswith("PLEXOSGenerator_max_active_power_") for name in exported_paths)
+    assert any(name.startswith("PLEXOSPurchaser_max_active_power_") for name in exported_paths)
+
+
 def test_create_datafile_objects_skips_existing_component(tmp_path):
     """Test _create_datafile_objects creates DataFile retrievable by name."""
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)

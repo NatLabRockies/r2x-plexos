@@ -1,5 +1,7 @@
 """MAPPING FOR CLASS ENUM."""
 
+from typing import cast
+
 from plexosdb import ClassEnum, CollectionEnum
 
 from .models import (
@@ -23,6 +25,8 @@ from .models import (
     PLEXOSZone,
 )
 
+PURCHASER_CLASS_ENUM: ClassEnum | None = cast("ClassEnum | None", getattr(ClassEnum, "Purchaser", None))
+
 PLEXOS_TYPE_MAP: dict[ClassEnum, type[PLEXOSObject]] = {
     ClassEnum.Generator: PLEXOSGenerator,
     ClassEnum.Node: PLEXOSNode,
@@ -35,13 +39,16 @@ PLEXOS_TYPE_MAP: dict[ClassEnum, type[PLEXOSObject]] = {
     ClassEnum.Reserve: PLEXOSReserve,
     ClassEnum.Region: PLEXOSRegion,
     ClassEnum.Zone: PLEXOSZone,
-    ClassEnum.Purchaser: PLEXOSPurchaser,
     ClassEnum.Interface: PLEXOSInterface,
     ClassEnum.Timeslice: PLEXOSTimeslice,
     ClassEnum.Transformer: PLEXOSTransformer,
     ClassEnum.Model: PLEXOSModel,
     ClassEnum.Horizon: PLEXOSHorizon,
 }
+
+if PURCHASER_CLASS_ENUM is not None:
+    PLEXOS_TYPE_MAP[PURCHASER_CLASS_ENUM] = PLEXOSPurchaser
+
 PLEXOS_TYPE_MAP_INVERTED = dict(zip(PLEXOS_TYPE_MAP.values(), PLEXOS_TYPE_MAP.keys(), strict=False))
 
 MEMBERSHIP_TYPE_MAP = {
@@ -91,4 +98,5 @@ STORAGE_TO_GENERATOR_TS_PROPERTY_MAP: dict[str, str] = {
 FIXED_TS_PROP: dict[type, str] = {
     PLEXOSReserve: "Min Provision",
     PLEXOSRegion: "Load",
+    PLEXOSPurchaser: "Max Load",
 }
