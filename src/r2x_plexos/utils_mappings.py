@@ -4,6 +4,7 @@ from typing import cast
 
 from plexosdb import ClassEnum, CollectionEnum
 
+from .enums_compat import PURCHASER_CLASS_ENUM
 from .models import (
     PLEXOSBattery,
     PLEXOSDatafile,
@@ -25,8 +26,6 @@ from .models import (
     PLEXOSZone,
 )
 
-PURCHASER_CLASS_ENUM: ClassEnum | None = cast("ClassEnum | None", getattr(ClassEnum, "Purchaser", None))
-
 PLEXOS_TYPE_MAP: dict[ClassEnum, type[PLEXOSObject]] = {
     ClassEnum.Generator: PLEXOSGenerator,
     ClassEnum.Node: PLEXOSNode,
@@ -46,8 +45,7 @@ PLEXOS_TYPE_MAP: dict[ClassEnum, type[PLEXOSObject]] = {
     ClassEnum.Horizon: PLEXOSHorizon,
 }
 
-if PURCHASER_CLASS_ENUM is not None:
-    PLEXOS_TYPE_MAP[PURCHASER_CLASS_ENUM] = PLEXOSPurchaser
+PLEXOS_TYPE_MAP[cast(ClassEnum, PURCHASER_CLASS_ENUM)] = PLEXOSPurchaser
 
 PLEXOS_TYPE_MAP_INVERTED = dict(zip(PLEXOS_TYPE_MAP.values(), PLEXOS_TYPE_MAP.keys(), strict=False))
 

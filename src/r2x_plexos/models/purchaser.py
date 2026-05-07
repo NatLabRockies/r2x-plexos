@@ -1,6 +1,6 @@
 """The following file contains Pydantic models for a PLEXOS purchaser model."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field
 
@@ -84,11 +84,10 @@ class PLEXOSPurchaser(PLEXOSObject):
         ),
     ] = 0
     load_settlement_source: Annotated[
-        int,
+        Literal[0, 1],
         Field(
             alias="Load Settlement Source",
             description="Source used to determine price paid by loads.",
-            json_schema_extra={"enum": [0, 1]},
         ),
     ] = 0
     marginal_loss_factor: Annotated[

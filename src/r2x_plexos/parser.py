@@ -1339,7 +1339,7 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
             resolution=ts.resolution,
         )
 
-        features: dict[str, Any] = {"band": band_num}
+        features: dict[str, Any] = {"band": str(band_num)}
         if horizon:
             features["horizon"] = datetime.fromisoformat(horizon[0]).year
 
