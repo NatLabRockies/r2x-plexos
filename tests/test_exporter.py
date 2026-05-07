@@ -8,8 +8,8 @@ from rust_ok import Ok
 
 from r2x_core import DataStore, Err, PluginConfig, PluginContext, System
 from r2x_plexos import PLEXOSConfig, PLEXOSPropertyValue
-from r2x_plexos.exporter import DEFAULT_XML_TEMPLATE, PLEXOSExporter
-from r2x_plexos.models import PLEXOSDatafile, PLEXOSGenerator, PLEXOSMembership, PLEXOSNode
+from r2x_plexos.exporter import DEFAULT_XML_TEMPLATE, FLOW_CLIP_MEMO_TEXT, PLEXOSExporter
+from r2x_plexos.models import PLEXOSDatafile, PLEXOSGenerator, PLEXOSLine, PLEXOSMembership, PLEXOSNode
 from r2x_plexos.parser import PLEXOSParser
 
 pytestmark = pytest.mark.export
@@ -900,6 +900,76 @@ def test_add_component_properties_does_not_export_explicit_default_values(templa
     assert "Expansion Economy Units" not in prop_names
 
 
+def test_add_component_properties_adds_line_flow_clip_memo(template_db):
+    """Memo text is added only for line Min/Max Flow rows clipped to -99999/99999."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+
+    clipped = PLEXOSLine(name="ClippedLine", max_flow=99999, min_flow=-99999)
+    normal = PLEXOSLine(name="NormalLine", max_flow=8000, min_flow=-8000)
+    sys.add_component(clipped)
+    sys.add_component(normal)
+
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+    exporter.db = template_db
+
+    template_db.add_object(ClassEnum.Line, "ClippedLine", category="-")
+    template_db.add_object(ClassEnum.Line, "NormalLine", category="-")
+
+    exporter._add_component_properties()
+
+    rows = template_db.query(
+        """
+        SELECT o.name, p.name, md.value
+        FROM t_memo_data md
+        INNER JOIN t_data d ON d.data_id = md.data_id
+        INNER JOIN t_property p ON p.property_id = d.property_id
+        INNER JOIN t_membership m ON m.membership_id = d.membership_id
+        INNER JOIN t_object o ON o.object_id = m.child_object_id
+        INNER JOIN t_class c ON c.class_id = o.class_id
+        WHERE c.name = 'Line' AND p.name IN ('Min Flow', 'Max Flow')
+        """
+    )
+
+    assert len(rows) == 2
+    assert {r[0] for r in rows} == {"ClippedLine"}
+    assert {r[1] for r in rows} == {"Min Flow", "Max Flow"}
+    assert all(r[2] == FLOW_CLIP_MEMO_TEXT for r in rows)
+
+
+def test_add_component_properties_removes_heat_rate_when_curve_defined(template_db):
+    """Use heat-rate curve terms over single-point heat rate when both are present."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+
+    gen = PLEXOSGenerator(
+        name="CurveHeatRateGen",
+        category="thermal",
+        units=1,
+        rating=50.0,
+        heat_rate=10.0,
+        heat_rate_base=8.0,
+        heat_rate_incr=2.0,
+    )
+    sys.add_component(gen)
+
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+    exporter.db = template_db
+
+    template_db.add_object(ClassEnum.Generator, "CurveHeatRateGen", category="thermal")
+
+    exporter._add_component_properties()
+
+    props = template_db.get_object_properties(ClassEnum.Generator, "CurveHeatRateGen")
+    prop_names = {p.get("property") for p in props}
+
+    assert "Heat Rate Base" in prop_names
+    assert "Heat Rate Incr" in prop_names
+    assert "Heat Rate" not in prop_names
+
+
 def test_add_component_memberships_db_none_logs_error(caplog):
     """Test _add_component_memberships handles db None - lines 429-440."""
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
@@ -1156,7 +1226,7 @@ def test_setup_configuration_db_none_returns_err():
 
 
 def test_deduplicate_property_records_float_normalization():
-    """Two records with same name/property/band deduplicate; only the first is kept."""
+    """Different values for the same property are preserved as distinct rows."""
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     sys = System(name="test")
     ctx = PluginContext(config=config, system=sys)
@@ -1167,25 +1237,56 @@ def test_deduplicate_property_records_float_normalization():
         {"name": "Gen1", "property": "Rating", "value": 99.0},
     ]
     result = exporter._deduplicate_property_records(records)
-    assert len(result) == 1
-    assert result[0]["value"] == 50.0  # first one wins
+    assert len(result) == 2
+    assert {r["value"] for r in result} == {50.0, 99.0}
 
 
 def test_deduplicate_property_records_merges_fields():
-    """Test that duplicate records merge non-None fields from second into first."""
+    """Duplicate name/property/value rows merge metadata into one record."""
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     sys = System(name="test")
     ctx = PluginContext(config=config, system=sys)
     exporter = PLEXOSExporter.from_context(ctx)
 
     records = [
-        {"name": "Gen1", "property": "Rating", "value": 50.0, "band": None, "datafile_text": None},
-        {"name": "Gen1", "property": "Rating", "value": 50.0, "band": 2, "datafile_text": "file.csv"},
+        {
+            "name": "Gen1",
+            "property": "Rating",
+            "value": 50.0,
+            "band": None,
+            "timeslice": None,
+            "datafile_text": None,
+        },
+        {
+            "name": "Gen1",
+            "property": "Rating",
+            "value": 50.0,
+            "band": 2,
+            "timeslice": "Peak",
+            "datafile_text": "file.csv",
+        },
     ]
     result = exporter._deduplicate_property_records(records)
-    assert len(result) == 2
-    assert result[1]["band"] == 2
-    assert result[1]["datafile_text"] == "file.csv"
+    assert len(result) == 1
+    assert result[0]["band"] == 2
+    assert result[0]["timeslice"] == "Peak"
+    assert result[0]["datafile_text"] == "file.csv"
+
+
+def test_deduplicate_property_records_normalizes_numeric_strings():
+    """Equivalent numeric values as float/string should collapse to one row."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+    ctx = PluginContext(config=config, system=sys)
+    exporter = PLEXOSExporter.from_context(ctx)
+
+    records = [
+        {"name": "Wallace Dam_tail", "property": "Max Volume", "value": 23.3, "band": 1},
+        {"name": "Wallace Dam_tail", "property": "Max Volume", "value": "23.3", "band": 1},
+    ]
+
+    result = exporter._deduplicate_property_records(records)
+    assert len(result) == 1
 
 
 def test_get_required_properties_unknown_type_returns_set():

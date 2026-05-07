@@ -26,6 +26,43 @@ from r2x_plexos.models.simulation_config import (
 from r2x_plexos.utils_mappings import CONFIG_CLASS_MAP, MEMBERSHIP_TYPE_MAP
 from r2x_plexos.utils_plexosdb import validate_simulation_attribute
 
+BASE_DIAGNOSE_NAME = "base_diagnose"
+BASE_DIAGNOSE_DEFAULT_ATTRIBUTE_CANDIDATES: dict[tuple[str, ...], int] = {
+    ("Database Load",): -1,
+    ("Summary Each Step", "Step Summary"): -1,
+    ("Execution Times", "Times"): -1,
+    ("Task Size",): -1,
+    ("LP Solver Progress", "LP Progress"): -1,
+    ("Computer Information",): -1,
+    ("MIP Solver Progress", "MIP Progress"): -1,
+}
+
+# Transmission defaults for scenario membership objects (e.g., base_transmission).
+# Values: -1 = enabled/checked, 1 = "Fixed Shift Factor" selection in Optimal Power Flow.
+TRANSMISSION_DEFAULT_ATTRIBUTE_CANDIDATES: dict[tuple[str, ...], int] = {
+    ("OF Method", "Optimal Power Flow"): 1,
+    ("Formulate Upfront",): -1,
+    ("Constraints Enabled", "Enforced Line and Transformer Limits"): -1,
+    ("Interface Constraints Enabled", "Enforce Interface Limits"): -1,
+    ("Enforce Limits On Lines In Interfaces",): -1,
+    ("Losses Enabled", "Model Losses"): -1,
+}
+
+PERFORMANCE_DEFAULT_ATTRIBUTES: dict[str, float] = {
+    # 1% relative MIP gap (template class default is 0.0001 = 0.01%).
+    "MIP Relative Gap": 0.01,
+}
+
+PRODUCTION_DEFAULT_ATTRIBUTES: dict[str, int] = {
+    # Integer unit commitment optimality.
+    "Unit Commitment Optimality": 2,
+}
+
+ST_SCHEDULE_DEFAULT_ATTRIBUTES: dict[str, int] = {
+    # Deterministic ST schedule mode.
+    "Stochastic Method": 0,
+}
+
 
 @dataclass
 class SimulationConfig:
@@ -386,7 +423,11 @@ def _rewrite_horizon_attributes_for_weather_year(
         lower_name = horizon_name.lower()
 
         # Fullyear horizon
-        if lower_name.startswith(f"base_{weather_year}".lower()) and "_m" not in lower_name:
+        if (
+            lower_name.startswith(f"base_{weather_year}".lower())
+            and "_m" not in lower_name
+            and "_d1" not in lower_name
+        ):
             if is_overlap:
                 updated["Chrono Step Count"] = 363.0 if is_leap else 362.0
             else:
@@ -1090,6 +1131,227 @@ def _add_model_attributes(db: PlexosDB, model: PLEXOSModel) -> None:
         )
 
 
+def _ensure_base_diagnostic_defaults(db: PlexosDB) -> None:
+    """Ensure default diagnostic checkboxes are enabled on base_diagnose.
+
+    For each requested option, the first schema-supported name candidate is used
+    and forced to checked (-1).
+    """
+    if not db.check_object_exists(ClassEnum.Diagnostic, BASE_DIAGNOSE_NAME):
+        return
+
+    for candidates, attr_value in BASE_DIAGNOSE_DEFAULT_ATTRIBUTE_CANDIDATES.items():
+        attr_name: str | None = None
+        for candidate in candidates:
+            if validate_simulation_attribute(db, ClassEnum.Diagnostic, candidate).is_ok():
+                attr_name = candidate
+                break
+
+        if attr_name is None:
+            logger.debug("Skipping unsupported Diagnostic attribute candidates {}.", candidates)
+            continue
+
+        try:
+            _set_or_add_attribute_value(
+                db,
+                class_enum=ClassEnum.Diagnostic,
+                object_name=BASE_DIAGNOSE_NAME,
+                attribute_name=attr_name,
+                attribute_value=attr_value,
+            )
+        except Exception as exc:
+            logger.debug(
+                "Could not force Diagnostic attribute '{}' on '{}': {}",
+                attr_name,
+                BASE_DIAGNOSE_NAME,
+                exc,
+            )
+
+
+def _ensure_transmission_defaults(db: PlexosDB, transmission_object_names: set[str]) -> None:
+    """Ensure default Transmission options are enabled for selected objects.
+
+    For each desired option, we try known attribute name candidates and set the
+    first schema-supported one when missing.
+    """
+    if not transmission_object_names:
+        return
+
+    for object_name in transmission_object_names:
+        if not db.check_object_exists(ClassEnum.Transmission, object_name):
+            continue
+
+        for candidates, attr_value in TRANSMISSION_DEFAULT_ATTRIBUTE_CANDIDATES.items():
+            selected_attr: str | None = None
+            for attr_name in candidates:
+                if validate_simulation_attribute(db, ClassEnum.Transmission, attr_name).is_ok():
+                    selected_attr = attr_name
+                    break
+
+            if selected_attr is None:
+                logger.debug("Skipping unsupported Transmission attributes {}.", candidates)
+                continue
+
+            try:
+                current = db.get_attribute(
+                    ClassEnum.Transmission,
+                    object_name=object_name,
+                    attribute_name=selected_attr,
+                )
+            except Exception:
+                current = None
+
+            if current is not None:
+                continue
+
+            try:
+                db.add_attribute(
+                    ClassEnum.Transmission,
+                    object_name,
+                    attribute_name=selected_attr,
+                    attribute_value=attr_value,
+                )
+            except Exception as exc:
+                logger.debug(
+                    "Could not set default Transmission attribute '{}' on '{}': {}",
+                    selected_attr,
+                    object_name,
+                    exc,
+                )
+
+
+def _set_or_add_attribute_value(
+    db: PlexosDB,
+    *,
+    class_enum: ClassEnum,
+    object_name: str,
+    attribute_name: str,
+    attribute_value: Any,
+) -> None:
+    """Upsert an object attribute value in t_attribute_data."""
+    object_id = db.get_object_id(class_enum, object_name)
+    attribute_id = db.get_attribute_id(class_enum, name=attribute_name)
+
+    existing = db._db.fetchone(
+        """
+        SELECT 1
+        FROM t_attribute_data
+        WHERE object_id = ? AND attribute_id = ?
+        """,
+        (object_id, attribute_id),
+    )
+
+    if existing:
+        db._db.execute(
+            """
+            UPDATE t_attribute_data
+            SET value = ?
+            WHERE object_id = ? AND attribute_id = ?
+            """,
+            (attribute_value, object_id, attribute_id),
+        )
+    else:
+        db.add_attribute(
+            class_enum,
+            object_name,
+            attribute_name=attribute_name,
+            attribute_value=attribute_value,
+        )
+
+
+def _ensure_performance_defaults(db: PlexosDB, performance_object_names: set[str]) -> None:
+    """Force default Performance options for selected objects."""
+    if not performance_object_names:
+        return
+
+    for object_name in performance_object_names:
+        if not db.check_object_exists(ClassEnum.Performance, object_name):
+            continue
+
+        for attr_name, attr_value in PERFORMANCE_DEFAULT_ATTRIBUTES.items():
+            if validate_simulation_attribute(db, ClassEnum.Performance, attr_name).is_err():
+                logger.debug("Skipping unsupported Performance attribute '{}'.", attr_name)
+                continue
+
+            try:
+                _set_or_add_attribute_value(
+                    db,
+                    class_enum=ClassEnum.Performance,
+                    object_name=object_name,
+                    attribute_name=attr_name,
+                    attribute_value=attr_value,
+                )
+            except Exception as exc:
+                logger.debug(
+                    "Could not set default Performance attribute '{}' on '{}': {}",
+                    attr_name,
+                    object_name,
+                    exc,
+                )
+
+
+def _ensure_production_defaults(db: PlexosDB, production_object_names: set[str]) -> None:
+    """Force default Production options for selected objects."""
+    if not production_object_names:
+        return
+
+    for object_name in production_object_names:
+        if not db.check_object_exists(ClassEnum.Production, object_name):
+            continue
+
+        for attr_name, attr_value in PRODUCTION_DEFAULT_ATTRIBUTES.items():
+            if validate_simulation_attribute(db, ClassEnum.Production, attr_name).is_err():
+                logger.debug("Skipping unsupported Production attribute '{}'.", attr_name)
+                continue
+
+            try:
+                _set_or_add_attribute_value(
+                    db,
+                    class_enum=ClassEnum.Production,
+                    object_name=object_name,
+                    attribute_name=attr_name,
+                    attribute_value=attr_value,
+                )
+            except Exception as exc:
+                logger.debug(
+                    "Could not set default Production attribute '{}' on '{}': {}",
+                    attr_name,
+                    object_name,
+                    exc,
+                )
+
+
+def _ensure_st_schedule_defaults(db: PlexosDB, st_schedule_object_names: set[str]) -> None:
+    """Force default ST Schedule options for selected objects."""
+    if not st_schedule_object_names:
+        return
+
+    for object_name in st_schedule_object_names:
+        if not db.check_object_exists(ClassEnum.STSchedule, object_name):
+            continue
+
+        for attr_name, attr_value in ST_SCHEDULE_DEFAULT_ATTRIBUTES.items():
+            if validate_simulation_attribute(db, ClassEnum.STSchedule, attr_name).is_err():
+                logger.debug("Skipping unsupported ST Schedule attribute '{}'.", attr_name)
+                continue
+
+            try:
+                _set_or_add_attribute_value(
+                    db,
+                    class_enum=ClassEnum.STSchedule,
+                    object_name=object_name,
+                    attribute_name=attr_name,
+                    attribute_value=attr_value,
+                )
+            except Exception as exc:
+                logger.debug(
+                    "Could not set default ST Schedule attribute '{}' on '{}': {}",
+                    attr_name,
+                    object_name,
+                    exc,
+                )
+
+
 def ingest_simulation_to_plexosdb(
     db: PlexosDB, result: SimulationConfig, validate: bool = True, scenario_name: str = "default"
 ) -> Result[dict[str, Any], str]:
@@ -1166,6 +1428,32 @@ def ingest_simulation_to_plexosdb(
             except Exception:
                 continue
 
+    _ensure_base_diagnostic_defaults(db)
+
+    transmission_object_names = {
+        child_name
+        for _, child_name, membership_type in result.memberships
+        if membership_type == "Transmission"
+    }
+    _ensure_transmission_defaults(db, transmission_object_names)
+
+    performance_object_names = {
+        child_name
+        for _, child_name, membership_type in result.memberships
+        if membership_type == "Performance"
+    }
+    _ensure_performance_defaults(db, performance_object_names)
+
+    production_object_names = {
+        child_name for _, child_name, membership_type in result.memberships if membership_type == "Production"
+    }
+
+    st_schedule_object_names = {
+        child_name
+        for _, child_name, membership_type in result.memberships
+        if membership_type == "ST Schedule"
+    }
+
     logger.info(f"Creating {len(result.memberships)} model memberships...")
     seen_memberships: set[tuple[str, str, Any]] = set()
     for model_name, child_name, membership_type in result.memberships:
@@ -1189,9 +1477,7 @@ def ingest_simulation_to_plexosdb(
             # instead of pre-checking existence with a database query per row.
             msg = str(exc).lower()
             if any(token in msg for token in ("unique", "duplicate", "already exists")):
-                logger.debug(
-                    f"Membership already exists: {model_name} → {child_name} ({membership_type})"
-                )
+                logger.debug(f"Membership already exists: {model_name} → {child_name} ({membership_type})")
                 continue
             raise
 
@@ -1226,6 +1512,20 @@ def ingest_simulation_to_plexosdb(
 
         success_count = len(simulation_objects_added)
         logger.info(f"Successfully ingested {success_count}/{total_configs} simulation configuration objects")
+
+    # Include simulation-config Production objects (e.g., Production_Example)
+    # in addition to membership-linked Production objects (e.g., base MIP).
+    if result.simulation_configs:
+        production_config = result.simulation_configs.get("production")
+        if production_config is not None and production_config.name:
+            production_object_names.add(production_config.name)
+
+        st_schedule_config = result.simulation_configs.get("st_schedule")
+        if st_schedule_config is not None and st_schedule_config.name:
+            st_schedule_object_names.add(st_schedule_config.name)
+
+    _ensure_production_defaults(db, production_object_names)
+    _ensure_st_schedule_defaults(db, st_schedule_object_names)
 
     logger.info("Simulation configuration successfully ingested into PlexosDB")
 
