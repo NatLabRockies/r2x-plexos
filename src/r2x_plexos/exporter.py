@@ -18,6 +18,7 @@ from .models import (
     PLEXOSMembership,
     PLEXOSModel,
     PLEXOSObject,
+    PLEXOSPurchaser,
     PLEXOSRegion,
     PLEXOSReserve,
     PLEXOSStorage,
@@ -136,7 +137,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
     def _build_xml_filename(self) -> str:
         """Build XML filename from model, horizon year, and weather year."""
-        horizon_year = self.solve_year if self.solve_year is not None else getattr(self.config, "horizon_year", None)
+        horizon_year = (
+            self.solve_year if self.solve_year is not None else getattr(self.config, "horizon_year", None)
+        )
         weather_year = (
             self.weather_year if self.weather_year is not None else getattr(self.config, "weather_year", None)
         )
@@ -404,7 +407,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         if not records:
             return records
 
-        seen: dict[tuple, dict[str, Any]] = {}
+        seen: dict[tuple[Any, ...], dict[str, Any]] = {}
         for rec in records:
             key = (
                 rec.get("name"),
@@ -776,7 +779,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             )
 
         records: list[dict[str, int]] = []
-        seen: set[tuple[int, int, int]] = set()
+        seen_membership_keys: set[tuple[int, int, int]] = set()
 
         for idx, (parent_class, parent_name, child_class, child_name, collection) in enumerate(
             filtered, start=1
@@ -787,10 +790,10 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 continue
 
             collection_id = collection_id_cache[(collection, parent_class, child_class)]
-            key = (parent_id, collection_id, child_id)
-            if key in seen:
+            membership_key = (parent_id, collection_id, child_id)
+            if membership_key in seen_membership_keys:
                 continue
-            seen.add(key)
+            seen_membership_keys.add(membership_key)
 
             records.append(
                 {
@@ -1046,6 +1049,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             PLEXOSReserve: "Min Provision",
             PLEXOSRegion: "Load",
             PLEXOSStorage: "Natural Inflow",
+            PLEXOSPurchaser: "Max Load",
         }
 
         fixed = fixed_property_by_type.get(type(component))
@@ -1097,12 +1101,8 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         """Export all time series data from the system to CSV files and update property references."""
         all_components_with_ts = []
         for component_type in self.system.get_component_types():
-            components = list(
-                self.system.get_components(
-                    component_type, filter_func=lambda c: self.system.has_time_series(c)
-                )
-            )
-            all_components_with_ts.extend(components)
+            components = list(self.system.get_components(component_type))
+            all_components_with_ts.extend([c for c in components if self.system.has_time_series(c)])
 
         if not all_components_with_ts:
             logger.warning("No components with time series found")
@@ -1117,12 +1117,13 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
         logger.debug(f"Found {len(ts_metadata)} time series keys total")
 
-        def _grouping_key(item: tuple[Any, Any]) -> tuple:
+        def _grouping_key(item: tuple[Any, Any]) -> tuple[Any, ...]:
             """Group by variable name, initial timestamp, resolution, and features."""
-            _, ts_key = item
+            component, ts_key = item
             initial_ts = getattr(ts_key, "initial_timestamp", None)
             resolution = getattr(ts_key, "resolution", None)
             return (
+                type(component).__name__,
                 ts_key.name,
                 str(initial_ts),
                 str(resolution),
@@ -1135,7 +1136,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         output_dir = get_output_directory(self.config, self.system, output_path=self.output_path)
 
         for group_key, group_items in groupby(ts_metadata_sorted, key=_grouping_key):
-            field_name, _initial_ts_str, _resolution_str, features_tuple = group_key
+            component_class, field_name, _initial_ts_str, _resolution_str, features_tuple = group_key
             metadata_dict = dict(features_tuple)
             if self.config.model_name is not None:
                 metadata_dict["model_name"] = self.config.model_name
@@ -1146,9 +1147,6 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             if self.weather_year is not None:
                 metadata_dict["weather_year"] = self.weather_year
             group_list = list(group_items)
-
-            first_component = group_list[0][0]
-            component_class = type(first_component).__name__
 
             filename = generate_csv_filename(field_name, component_class, metadata_dict)
             filepath = output_dir / filename
@@ -1165,7 +1163,10 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                         continue
                     initial_ts = getattr(ts_key, "initial_timestamp", None)
                     if initial_ts is not None and len(ts_list) > 1:
-                        matched = next((t for t in ts_list if t.initial_timestamp == initial_ts), None)
+                        matched = next(
+                            (t for t in ts_list if getattr(t, "initial_timestamp", None) == initial_ts),
+                            None,
+                        )
                         ts = matched if matched is not None else ts_list[0]
                     else:
                         ts = ts_list[0]
@@ -1254,6 +1255,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
     def _add_reports(self) -> None:
         """Add report definitions from plexos_reports.json to the PlexosDB."""
+        if self.db is None:
+            logger.error("Database not initialized")
+            return
         report_objects = PLEXOSConfig.load_reports()
         for report_object in report_objects:
             report_object["collection"] = get_enum_from_string(report_object["collection"], CollectionEnum)

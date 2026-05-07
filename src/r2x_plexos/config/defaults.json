@@ -146,6 +146,9 @@
     "PLEXOSTransformer": [
       "units"
     ],
+    "PLEXOSPurchaser": [
+      "units"
+    ],
     "PLEXOSNode": [
       "units"
     ],

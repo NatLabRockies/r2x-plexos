@@ -5,7 +5,7 @@ import typing
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from importlib.metadata import version
 from importlib.resources import files
 from operator import itemgetter
@@ -62,7 +62,7 @@ HYDRO_TS_NAME_MAP: dict[str, str] = {
 }
 
 
-class TimeSeriesSourceType(str, Enum):
+class TimeSeriesSourceType(StrEnum):
     """Classification of time series data sources in PLEXOS models.
 
     DIRECT_DATAFILE : Direct CSV file path reference
@@ -1339,7 +1339,7 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
             resolution=ts.resolution,
         )
 
-        features: dict[str, Any] = {"band": band_num}
+        features: dict[str, Any] = {"band": str(band_num)}
         if horizon:
             features["horizon"] = datetime.fromisoformat(horizon[0]).year
 
