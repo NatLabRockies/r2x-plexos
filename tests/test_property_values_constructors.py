@@ -1,6 +1,7 @@
 """Tests for PlexosProperty constructor methods."""
 
 from r2x_plexos import PLEXOSPropertyValue
+from r2x_plexos.models.context import horizon
 
 
 def test_from_dict_scenarios():
@@ -26,6 +27,24 @@ def test_from_dict_bands():
         ]
     )
     assert prop.get_bands() == [1, 2]
+
+
+def test_from_records_defaults_null_band():
+    prop = PLEXOSPropertyValue.from_records([{"band": None, "value": 100}])
+
+    assert prop.get_bands() == [1]
+
+
+def test_get_value_uses_latest_prior_dated_value():
+    prop = PLEXOSPropertyValue.from_records(
+        [
+            {"date_from": "2025-11-01T00:00:00", "value": 13.4},
+            {"date_from": "2026-11-01T00:00:00", "value": 14.1},
+        ]
+    )
+
+    with horizon("2026-07-01T00:00:00", "2026-07-16T05:00:00"):
+        assert prop.get_value() == 13.4
 
 
 def test_get_bands_and_dates():

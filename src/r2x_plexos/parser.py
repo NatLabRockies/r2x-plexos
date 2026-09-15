@@ -753,6 +753,9 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
             else:
                 # Only extract numeric value for properties without external data references
                 expected_type = typing.get_type_hints(type(component)).get(field_name)
+                resolved_value = property_value.get_value()
+                if resolved_value is None:
+                    continue
                 if expected_type is not None and (
                     expected_type in (int, float)
                     or (
@@ -760,8 +763,7 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
                         or getattr(expected_type, "__args__", [None])[0] in [int, float]
                     )
                 ):
-                    value = property_value.get_value()
-                    setattr(component, field_name, value)
+                    setattr(component, field_name, resolved_value)
                 else:
                     setattr(component, field_name, property_value)
         return

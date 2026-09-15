@@ -115,7 +115,7 @@ class PLEXOSPropertyValue:
             prop.add_entry(
                 value=record.get("value"),
                 scenario=record.get("scenario_name") or record.get("scenario"),
-                band=record.get("band", DEFAULT_BAND),
+                band=record.get("band") or DEFAULT_BAND,
                 timeslice=record.get("timeslice_name") or record.get("timeslice") or record.get("time_slice"),
                 date_from=record.get("date_from"),
                 date_to=record.get("date_to"),
