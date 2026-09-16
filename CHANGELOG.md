@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.3](https://github.com/NatLabRockies/r2x-plexos/compare/v0.3.2...v0.3.3) (2026-09-16)
+
+
+### 🐛 Bug Fixes
+
+* resolve parser issues for none property values across components and time series ([#96](https://github.com/NatLabRockies/r2x-plexos/issues/96)) ([eb023bf](https://github.com/NatLabRockies/r2x-plexos/commit/eb023bf5c11a195eff2bc7cacfe2c6eb3490917b))
+
+
+### 📚 Documentation
+
+* update documentation and package features ([#93](https://github.com/NatLabRockies/r2x-plexos/issues/93)) ([be64547](https://github.com/NatLabRockies/r2x-plexos/commit/be64547d97dbe3fd57e5c75d9d449c4eda888e1f))
+
+
+### 📦 Build
+
+* **deps-dev:** Bump prek from 0.4.14 to 0.5.2 ([#95](https://github.com/NatLabRockies/r2x-plexos/issues/95)) ([dac4413](https://github.com/NatLabRockies/r2x-plexos/commit/dac44131ab25722407b1ae3d689100566b452d41))
+* **deps-dev:** Update uv-build requirement ([a5ed176](https://github.com/NatLabRockies/r2x-plexos/commit/a5ed1768a075c1be7f34780ee34a1d4f6a37435b))
+* **deps-dev:** Update uv-build requirement from &lt;0.12.0,&gt;=0.8.22 to &gt;=0.8.22,&lt;0.13.0 ([#91](https://github.com/NatLabRockies/r2x-plexos/issues/91)) ([a5ed176](https://github.com/NatLabRockies/r2x-plexos/commit/a5ed1768a075c1be7f34780ee34a1d4f6a37435b))
+
 ## [0.3.2](https://github.com/NatLabRockies/r2x-plexos/compare/v0.3.1...v0.3.2) (2026-08-13)
 
 
