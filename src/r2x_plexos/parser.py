@@ -743,7 +743,9 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
             # Always keep PLEXOSPropertyValue if it has datafile or variable references
             # This is required for time series attachment logic to work correctly
             if property_value.has_datafile() or property_value.has_variable() or property_value.has_bands():
-                setattr(component, field_name, property_value)
+                # Deferred values are resolved after all components are built. Bypass
+                # Pydantic assignment validation until the datafile is attached.
+                object.__setattr__(component, field_name, property_value)
 
                 # Skip time series registration for DataFile, Variable, and Timeslice components
                 # Variables should always use their constant property values
