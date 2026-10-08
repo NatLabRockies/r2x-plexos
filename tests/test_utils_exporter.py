@@ -388,3 +388,35 @@ def test_get_hydro_budget_property_name_month_resolution():
 
 def test_get_hydro_budget_property_name_year_resolution():
     assert get_hydro_budget_property_name(timedelta(days=32)) == "Max Energy Year"
+
+
+def test_export_time_series_csv_writes_non_sequential_series_at_their_timestamps(tmp_path: Path):
+    """Monthly values keep their own dates (moved to the target year); no rows are invented."""
+    from infrasys.time_series_models import NonSequentialTimeSeries
+
+    stamps = [datetime(2023, month, 1) for month in (1, 2, 3)]
+    ng = NonSequentialTimeSeries.from_array([4.5, 5.0, 4.25], timestamps=stamps, name="fuel_price")
+    rfo = NonSequentialTimeSeries.from_array([12.0, 12.5, 13.0], timestamps=stamps, name="fuel_price")
+    path = tmp_path / "fuel_price.csv"
+
+    assert export_time_series_csv(path, [("NG", ng), ("RFO", rfo)], target_year=2035).is_ok()
+    assert path.read_text().splitlines() == [
+        "DateTime,NG,RFO",
+        "2035-01-01T00:00:00,4.5,12.0",
+        "2035-02-01T00:00:00,5.0,12.5",
+        "2035-03-01T00:00:00,4.25,13.0",
+    ]
+
+
+def test_export_time_series_csv_rejects_non_sequential_series_with_different_timestamps(tmp_path: Path):
+    """Columns in one file must share their timestamps."""
+    from infrasys.time_series_models import NonSequentialTimeSeries
+
+    jan_feb = NonSequentialTimeSeries.from_array(
+        [1.0, 2.0], timestamps=[datetime(2035, 1, 1), datetime(2035, 2, 1)], name="fuel_price"
+    )
+    jan_mar = NonSequentialTimeSeries.from_array(
+        [1.0, 2.0], timestamps=[datetime(2035, 1, 1), datetime(2035, 3, 1)], name="fuel_price"
+    )
+    with pytest.raises(ValueError, match="timestamps"):
+        export_time_series_csv(tmp_path / "x.csv", [("A", jan_feb), ("B", jan_mar)])

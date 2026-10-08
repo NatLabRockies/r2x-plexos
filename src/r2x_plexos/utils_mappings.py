@@ -8,6 +8,7 @@ from .enums_compat import PURCHASER_CLASS_ENUM
 from .models import (
     PLEXOSBattery,
     PLEXOSDatafile,
+    PLEXOSFuel,
     PLEXOSGenerator,
     PLEXOSHorizon,
     PLEXOSInterface,
@@ -28,6 +29,7 @@ from .models import (
 
 PLEXOS_TYPE_MAP: dict[ClassEnum, type[PLEXOSObject]] = {
     ClassEnum.Generator: PLEXOSGenerator,
+    ClassEnum.Fuel: PLEXOSFuel,
     ClassEnum.Node: PLEXOSNode,
     ClassEnum.Storage: PLEXOSStorage,
     ClassEnum.Line: PLEXOSLine,
@@ -103,4 +105,5 @@ FIXED_TS_PROP: dict[type, str] = {
     PLEXOSReserve: "Min Provision",
     PLEXOSRegion: "Load",
     PLEXOSPurchaser: "Fixed Load",
+    PLEXOSFuel: "Price",
 }

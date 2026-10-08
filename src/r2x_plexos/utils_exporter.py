@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from infrasys import System
-from infrasys.time_series_models import SingleTimeSeries
+from infrasys.time_series_models import NonSequentialTimeSeries, SingleTimeSeries
 
 from r2x_core import Ok, Result
 from r2x_plexos.plugin_config import PLEXOSConfig
@@ -76,18 +76,32 @@ def _calendar_month_timestamps(initial_timestamp: datetime, length: int) -> list
     return timestamps
 
 
+def _in_year(timestamp: datetime, target_year: int | None) -> datetime:
+    """Move a timestamp to the target year, clamping Feb 29 to Feb 28."""
+    if target_year is None:
+        return timestamp
+    try:
+        return timestamp.replace(year=target_year)
+    except ValueError:
+        return timestamp.replace(year=target_year, day=28)
+
+
 def export_time_series_csv(
     filepath: Path,
-    time_series_data: list[tuple[str, SingleTimeSeries]],
+    time_series_data: list[tuple[str, SingleTimeSeries | NonSequentialTimeSeries]],
     target_year: int | None = None,
 ) -> Result[None, Exception]:
     """Export time series to CSV in DateTime,Component format.
+
+    A SingleTimeSeries is written at its fixed resolution. A NonSequentialTimeSeries
+    (e.g. monthly prices) is written at its own timestamps, so each value holds until
+    the next row and no finer resolution is implied.
 
     Parameters
     ----------
     filepath : Path
         Destination CSV file path.
-    time_series_data : list[tuple[str, SingleTimeSeries]]
+    time_series_data : list[tuple[str, SingleTimeSeries | NonSequentialTimeSeries]]
         Pairs of (component_name, time_series) to export as columns.
     target_year : int | None, optional
         When provided, replaces the year component of every timestamp so that
@@ -98,14 +112,6 @@ def export_time_series_csv(
         raise ValueError("No time series data provided")
 
     _, first_ts = time_series_data[0]
-    initial_timestamp = first_ts.initial_timestamp
-    if target_year is not None:
-        try:
-            initial_timestamp = initial_timestamp.replace(year=target_year)
-        except ValueError:
-            # e.g. Feb 29 does not exist in target_year — clamp to Feb 28
-            initial_timestamp = initial_timestamp.replace(year=target_year, day=28)
-    resolution = first_ts.resolution
     data_length = len(first_ts.data)
 
     for comp_name, ts in time_series_data:
@@ -114,10 +120,21 @@ def export_time_series_csv(
                 f"Time series length mismatch: {comp_name} has {len(ts.data)} points, expected {data_length}"
             )
 
-    if first_ts.name == "hydro_budget" and resolution == timedelta(days=30):
-        datetime_values = _calendar_month_timestamps(initial_timestamp, data_length)
+    if isinstance(first_ts, NonSequentialTimeSeries):
+        timestamps = list(first_ts.timestamps)
+        for comp_name, ts in time_series_data:
+            if not isinstance(ts, NonSequentialTimeSeries) or list(ts.timestamps) != timestamps:
+                raise ValueError(
+                    f"Time series timestamps differ: {comp_name} does not match the first column"
+                )
+        datetime_values = [_in_year(timestamp, target_year) for timestamp in timestamps]
     else:
-        datetime_values = [initial_timestamp + (i * resolution) for i in range(data_length)]
+        initial_timestamp = _in_year(first_ts.initial_timestamp, target_year)
+        resolution = first_ts.resolution
+        if first_ts.name == "hydro_budget" and resolution == timedelta(days=30):
+            datetime_values = _calendar_month_timestamps(initial_timestamp, data_length)
+        else:
+            datetime_values = [initial_timestamp + (i * resolution) for i in range(data_length)]
 
     with open(filepath, "w", newline="") as csvfile:
         writer = csv.writer(csvfile)
