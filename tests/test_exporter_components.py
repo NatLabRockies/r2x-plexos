@@ -1,3 +1,8 @@
+"""Exporter component, property, and membership tests.
+
+Why did the cat sit on the keyboard during review? To make sure every Fuel was purr-operly mapped.
+"""
+
 from typing import cast
 from unittest.mock import patch
 
@@ -814,3 +819,38 @@ def test_link_datafiles_max_active_power_hydro_er_sienna_type_maps_to_max_energy
     assert "Max Energy Hour" in property_names
     assert "Rating" not in property_names
     assert "Load Subtracter" not in property_names
+
+
+def test_export_writes_fuels_their_price_and_generator_membership(template_db):
+    """Fuel objects, their Price, and Generator.Fuels memberships reach the database."""
+    from r2x_plexos.models import PLEXOSFuel
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+    generator = PLEXOSGenerator(name="Gen1", category="thermal", max_capacity=100.0)
+    fuel = PLEXOSFuel(name="NG_Zone1", category="NG", price=4.99)
+    sys.add_component(generator)
+    sys.add_component(fuel)
+    membership = PLEXOSMembership(parent_object=generator, child_object=fuel, collection=CollectionEnum.Fuels)
+    sys.add_supplemental_attribute(generator, membership)
+    sys.add_supplemental_attribute(fuel, membership)
+
+    ctx = PluginContext(config=config, system=sys)
+    exporter = cast(PLEXOSExporter, PLEXOSExporter.from_context(ctx))
+    exporter.db = template_db
+
+    assert exporter.prepare_export().is_ok()
+    exporter._add_component_properties()
+    exporter._add_component_memberships()
+
+    assert "NG_Zone1" in template_db.list_objects_by_class(ClassEnum.Fuel)
+    prices = template_db.get_object_properties(ClassEnum.Fuel, "NG_Zone1", property_names="Price")
+    assert [record["value"] for record in prices] == [4.99]
+    linked = template_db.query(
+        "SELECT p.name, c.name FROM t_membership m "
+        "JOIN t_object p ON p.object_id = m.parent_object_id "
+        "JOIN t_object c ON c.object_id = m.child_object_id "
+        "JOIN t_collection col ON col.collection_id = m.collection_id "
+        "WHERE col.name = 'Fuels'"
+    )
+    assert ("Gen1", "NG_Zone1") in linked

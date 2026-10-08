@@ -3,6 +3,7 @@ from typing import cast
 from unittest.mock import patch
 
 import pytest
+from infrasys.time_series_models import SingleTimeSeries
 from plexosdb import CollectionEnum
 from rust_ok import Ok
 
@@ -12,6 +13,13 @@ from r2x_plexos.exporter import PLEXOSExporter
 from r2x_plexos.models import PLEXOSGenerator, PLEXOSMembership
 
 pytestmark = pytest.mark.export
+
+
+def _single_time_series_keys(keys):
+    """Mock list_time_series_keys like infrasys: these keys only match SingleTimeSeries queries."""
+    return lambda owner, time_series_type=SingleTimeSeries, **features: (
+        list(keys) if time_series_type is SingleTimeSeries else []
+    )
 
 
 def test_export_time_series_no_components(mocker):
@@ -234,8 +242,8 @@ def test_export_time_series_separates_same_ts_key_by_component_class(mocker, tmp
         [gen] if component_type is GeneratorType else [purchaser] if component_type is PurchaserType else []
     )
     sys.has_time_series.return_value = True
-    sys.list_time_series_keys.side_effect = lambda component: (
-        [ts_key_gen] if component is gen else [ts_key_purch]
+    sys.list_time_series_keys.side_effect = lambda component, time_series_type=SingleTimeSeries: (
+        ([ts_key_gen] if component is gen else [ts_key_purch]) if time_series_type is SingleTimeSeries else []
     )
     sys.list_time_series.return_value = [ts_obj]
 
@@ -297,7 +305,7 @@ def test_export_time_series_prefers_resolution_match(mocker, tmp_path):
     sys_mock.get_component_types.return_value = [DummyType]
     sys_mock.get_components.return_value = [comp1, comp2]
     sys_mock.has_time_series.return_value = True
-    sys_mock.list_time_series_keys.return_value = [ts_key]
+    sys_mock.list_time_series_keys.side_effect = _single_time_series_keys([ts_key])
 
     def _list_ts(component, name, **features):
         if component.name == "HydroA":
@@ -360,7 +368,7 @@ def test_export_time_series_skips_unmatched_variant(mocker, tmp_path):
     sys_mock.get_component_types.return_value = [DummyType]
     sys_mock.get_components.return_value = [comp1, comp2]
     sys_mock.has_time_series.return_value = True
-    sys_mock.list_time_series_keys.return_value = [ts_key]
+    sys_mock.list_time_series_keys.side_effect = _single_time_series_keys([ts_key])
 
     def _list_ts(component, name, **features):
         if component.name == "HydroA":
@@ -422,7 +430,7 @@ def test_export_time_series_hydro_budget_always_resolves_to_coarsest(mocker, tmp
     sys_mock.get_component_types.return_value = [DummyType]
     sys_mock.get_components.return_value = [comp]
     sys_mock.has_time_series.return_value = True
-    sys_mock.list_time_series_keys.return_value = [ts_key]
+    sys_mock.list_time_series_keys.side_effect = _single_time_series_keys([ts_key])
     sys_mock.list_time_series.return_value = [hourly, weekly]
 
     ctx = PluginContext(config=config, system=sys_mock)
@@ -476,7 +484,7 @@ def test_export_time_series_hydro_budget_falls_back_to_coarsest_when_no_resoluti
     sys_mock.get_component_types.return_value = [DummyType]
     sys_mock.get_components.return_value = [comp]
     sys_mock.has_time_series.return_value = True
-    sys_mock.list_time_series_keys.return_value = [ts_key]
+    sys_mock.list_time_series_keys.side_effect = _single_time_series_keys([ts_key])
     sys_mock.list_time_series.return_value = [daily, weekly]
 
     ctx = PluginContext(config=config, system=sys_mock)
@@ -691,3 +699,42 @@ def test_export_time_series_skips_group_when_all_series_unresolved(mocker, tmp_p
 
     assert result.is_ok()
     export_csv_mock.assert_not_called()
+
+
+def test_monthly_fuel_price_series_is_exported_and_linked_to_price(template_db, tmp_path):
+    """A Fuel's monthly price series becomes a 12-row data file referenced by Price."""
+    from infrasys.time_series_models import NonSequentialTimeSeries
+    from plexosdb import ClassEnum
+
+    from r2x_plexos.models import PLEXOSFuel
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2035)
+    sys = System(name="test")
+    fuel = PLEXOSFuel(name="NG_Zone1", category="NG", price=4.99)
+    sys.add_component(fuel)
+    monthly = [4.0 + month / 10 for month in range(1, 13)]
+    sys.add_time_series(
+        NonSequentialTimeSeries.from_array(
+            monthly, timestamps=[datetime(2035, month, 1) for month in range(1, 13)], name="fuel_price"
+        ),
+        fuel,
+    )
+
+    ctx = PluginContext(config=config, system=sys)
+    exporter = cast(PLEXOSExporter, PLEXOSExporter.from_context(ctx))
+    exporter.db = template_db
+    exporter.output_path = str(tmp_path)
+
+    assert exporter.prepare_export().is_ok()
+    assert exporter.postprocess_export().is_ok()
+
+    csvs = list((tmp_path / "Data").glob("PLEXOSFuel_fuel_price_*.csv"))
+    assert len(csvs) == 1
+    rows = csvs[0].read_text().splitlines()
+    assert rows[0] == "DateTime,NG_Zone1"
+    assert rows[1:] == [f"2035-{month:02d}-01T00:00:00,{value}" for month, value in enumerate(monthly, 1)]
+
+    prices = template_db.get_object_properties(ClassEnum.Fuel, "NG_Zone1", property_names="Price")
+    assert len(prices) == 1
+    assert prices[0]["datafile_name"] or prices[0]["text"]
+    assert csvs[0].name in str(prices[0]["datafile_name"] or prices[0]["text"])
