@@ -15,6 +15,7 @@ from plexosdb.enums import CollectionEnum, get_default_collection
 from r2x_core import Err, Ok, Plugin, Result
 
 from .models import (
+    CollectionProperties,
     PLEXOSDatafile,
     PLEXOSFuel,
     PLEXOSGenerator,
@@ -44,6 +45,7 @@ from .utils_mappings import (
     STORAGE_TO_GENERATOR_TS_PROPERTY_MAP,
     STORAGE_TS_PROPERTY_MAP,
 )
+from .utils_parser import to_snake_case
 from .utils_simulation import (
     build_plexos_simulation,
     get_default_simulation_config,
@@ -68,6 +70,13 @@ _RENEWABLE_EXCLUDED_ALIASES: frozenset[str] = PLEXOSGenerator.RENEWABLE_EXCLUDED
 # Time series types written to data files: fixed-resolution series and series at
 # their own timestamps (e.g. monthly prices).
 EXPORTED_TS_TYPES = (SingleTimeSeries, NonSequentialTimeSeries)
+
+
+def _as_datetime(value: Any) -> datetime | None:
+    """Return a property date as a datetime; PLEXOS rows may store ISO strings."""
+    if value is None or isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(str(value))
 
 
 class PLEXOSExporter(Plugin[PLEXOSConfig]):
@@ -419,6 +428,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         logger.info("Adding component properties and memberships")
         self._add_component_properties(datafile_prefix=datafile_prefix)
         self._add_component_memberships()
+        self._add_collection_properties()
         self._resolve_db_consistency()
 
         xml_filename = self._build_xml_filename()
@@ -980,6 +990,68 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             )
 
         logger.success("Successfully added {} memberships.", len(records))
+
+    def _add_collection_properties(self) -> None:
+        """Write properties set on memberships, e.g. Interface.Lines Flow Coefficient.
+
+        Mirrors the parser: each CollectionProperties holds snake_case property names
+        for one membership. Entries are written like component properties (value,
+        band, dates, timeslice, data file) under the export scenario.
+        """
+        if self.db is None:
+            logger.error("Database not initialized")
+            return
+
+        for collection_props in self.system.get_supplemental_attributes(CollectionProperties):
+            membership = collection_props.membership
+            # The nested membership deserializes its objects as plain PLEXOSObjects, so
+            # resolve the system's own components to get their classes.
+            parent = self.system.get_component_by_uuid(membership.parent_object.uuid)
+            child = self.system.get_component_by_uuid(membership.child_object.uuid)
+            parent_class = PLEXOS_TYPE_MAP_INVERTED.get(type(parent))
+            child_class = PLEXOS_TYPE_MAP_INVERTED.get(type(child))
+            if membership.collection is None or parent_class is None or child_class is None:
+                logger.warning(
+                    "Skipping collection properties for {} -> {}: no class or collection mapping",
+                    parent.name,
+                    child.name,
+                )
+                continue
+
+            valid = self.db.list_valid_properties(
+                membership.collection, parent_class_enum=parent_class, child_class_enum=child_class
+            )
+            names = {to_snake_case(name): name for name in valid}
+            for field_name, value in collection_props.properties.items():
+                property_name = names.get(field_name)
+                if property_name is None:
+                    logger.warning(
+                        "{} is not a {}.{} property; skipping for {} -> {}",
+                        field_name,
+                        parent_class.value,
+                        membership.collection.value,
+                        parent.name,
+                        child.name,
+                    )
+                    continue
+                for row in value.entries.values():
+                    if row.value is None:
+                        continue
+                    self.db.add_property(
+                        child_class,
+                        object_name=child.name,
+                        name=property_name,
+                        value=row.value,
+                        scenario=self.plexos_scenario,
+                        band=row.band,
+                        date_from=_as_datetime(row.date_from),
+                        date_to=_as_datetime(row.date_to),
+                        timeslice=row.timeslice_name,
+                        datafile_text=row.datafile_name or row.text,
+                        collection_enum=membership.collection,
+                        parent_class_enum=parent_class,
+                        parent_object_name=parent.name,
+                    )
 
     def _add_component_datafile_objects(self) -> None:
         """

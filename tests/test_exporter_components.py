@@ -854,3 +854,103 @@ def test_export_writes_fuels_their_price_and_generator_membership(template_db):
         "WHERE col.name = 'Fuels'"
     )
     assert ("Gen1", "NG_Zone1") in linked
+
+
+@pytest.mark.parametrize("round_trip", [False, True], ids=["in_memory", "after_json_round_trip"])
+def test_export_writes_properties_set_on_memberships(template_db, tmp_path, round_trip):
+    """CollectionProperties on a membership (Interface.Lines Flow Coefficient) reach the database.
+
+    Pipelines hand systems between plugins as JSON, which turns the membership nested in
+    CollectionProperties into plain PLEXOSObjects, so both paths are checked.
+    """
+    from r2x_plexos.models import CollectionProperties, PLEXOSInterface
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+    interface = PLEXOSInterface(name="Cut", max_flow=500.0)
+    forward = PLEXOSLine(name="LineA", max_flow=300.0)
+    reversed_line = PLEXOSLine(name="LineB", max_flow=400.0)
+    for component in (interface, forward, reversed_line):
+        sys.add_component(component)
+    for line in (forward, reversed_line):
+        membership = PLEXOSMembership(
+            parent_object=interface, child_object=line, collection=CollectionEnum.Lines
+        )
+        sys.add_supplemental_attribute(interface, membership)
+        sys.add_supplemental_attribute(line, membership)
+        if line is reversed_line:
+            sys.add_supplemental_attribute(
+                line,
+                CollectionProperties(
+                    membership=membership,
+                    collection_name=CollectionEnum.Lines.value,
+                    properties={"flow_coefficient": PLEXOSPropertyValue.from_dict({"value": -1})},
+                ),
+            )
+
+    if round_trip:
+        sys.to_json(tmp_path / "system.json")
+        sys = System.from_json(tmp_path / "system.json")
+
+    ctx = PluginContext(config=config, system=sys)
+    exporter = cast(PLEXOSExporter, PLEXOSExporter.from_context(ctx))
+    exporter.db = template_db
+    exporter.output_path = str(tmp_path / "export")
+
+    assert exporter.prepare_export().is_ok()
+    assert exporter.postprocess_export().is_ok()
+
+    coefficients = template_db.query(
+        "SELECT parent.name, child.name, d.value FROM t_data d "
+        "JOIN t_property p ON p.property_id = d.property_id "
+        "JOIN t_membership m ON m.membership_id = d.membership_id "
+        "JOIN t_object parent ON parent.object_id = m.parent_object_id "
+        "JOIN t_object child ON child.object_id = m.child_object_id "
+        "WHERE p.name = 'Flow Coefficient'"
+    )
+    assert coefficients == [("Cut", "LineB", -1.0)]
+
+
+def test_add_collection_properties_db_none_logs_error(caplog):
+    """Membership properties need a database to write into."""
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    ctx = PluginContext(config=config, system=System(name="test"))
+    exporter = cast(PLEXOSExporter, PLEXOSExporter.from_context(ctx))
+    exporter.db = None
+
+    exporter._add_collection_properties()
+
+    assert "Database not initialized" in caplog.text
+
+
+def test_add_collection_properties_skips_unknown_property(template_db, caplog):
+    """A property name the collection does not define is reported, not written."""
+    from r2x_plexos.models import CollectionProperties, PLEXOSInterface
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    sys = System(name="test")
+    interface = PLEXOSInterface(name="Cut")
+    line = PLEXOSLine(name="LineA")
+    sys.add_component(interface)
+    sys.add_component(line)
+    membership = PLEXOSMembership(parent_object=interface, child_object=line, collection=CollectionEnum.Lines)
+    sys.add_supplemental_attribute(line, membership)
+    sys.add_supplemental_attribute(
+        line,
+        CollectionProperties(
+            membership=membership,
+            collection_name=CollectionEnum.Lines.value,
+            properties={"not_a_property": PLEXOSPropertyValue.from_dict({"value": 2})},
+        ),
+    )
+    template_db.add_object(ClassEnum.Interface, "Cut")
+    template_db.add_object(ClassEnum.Line, "LineA")
+    template_db.add_membership(ClassEnum.Interface, ClassEnum.Line, "Cut", "LineA", CollectionEnum.Lines)
+
+    ctx = PluginContext(config=config, system=sys)
+    exporter = cast(PLEXOSExporter, PLEXOSExporter.from_context(ctx))
+    exporter.db = template_db
+
+    exporter._add_collection_properties()
+
+    assert "not_a_property is not a Interface.Lines property" in caplog.text
