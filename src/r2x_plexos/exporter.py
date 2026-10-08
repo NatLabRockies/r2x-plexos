@@ -6,6 +6,7 @@ from itertools import groupby
 from pathlib import Path
 from typing import Any, cast
 
+from infrasys.time_series_models import NonSequentialTimeSeries, SingleTimeSeries
 from loguru import logger
 from plexosdb import ClassEnum, PlexosDB
 from plexosdb.checks import check_object_exists as _check_object_exists
@@ -14,7 +15,9 @@ from plexosdb.enums import CollectionEnum, get_default_collection
 from r2x_core import Err, Ok, Plugin, Result
 
 from .models import (
+    CollectionProperties,
     PLEXOSDatafile,
+    PLEXOSFuel,
     PLEXOSGenerator,
     PLEXOSHorizon,
     PLEXOSMembership,
@@ -42,6 +45,7 @@ from .utils_mappings import (
     STORAGE_TO_GENERATOR_TS_PROPERTY_MAP,
     STORAGE_TS_PROPERTY_MAP,
 )
+from .utils_parser import to_snake_case
 from .utils_simulation import (
     build_plexos_simulation,
     get_default_simulation_config,
@@ -63,6 +67,16 @@ FLOW_CLIP_MEMO_TEXT = "Setting fixed value of ±99999 to flows greater/less than
 # Source of truth lives on PLEXOSGenerator.THERMAL_ONLY_ALIASES — update it there.
 _THERMAL_ONLY_ALIASES: frozenset[str] = PLEXOSGenerator.THERMAL_ONLY_ALIASES
 _RENEWABLE_EXCLUDED_ALIASES: frozenset[str] = PLEXOSGenerator.RENEWABLE_EXCLUDED_ALIASES
+# Time series types written to data files: fixed-resolution series and series at
+# their own timestamps (e.g. monthly prices).
+EXPORTED_TS_TYPES = (SingleTimeSeries, NonSequentialTimeSeries)
+
+
+def _as_datetime(value: Any) -> datetime | None:
+    """Return a property date as a datetime; PLEXOS rows may store ISO strings."""
+    if value is None or isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(str(value))
 
 
 class PLEXOSExporter(Plugin[PLEXOSConfig]):
@@ -414,6 +428,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         logger.info("Adding component properties and memberships")
         self._add_component_properties(datafile_prefix=datafile_prefix)
         self._add_component_memberships()
+        self._add_collection_properties()
         self._resolve_db_consistency()
 
         xml_filename = self._build_xml_filename()
@@ -576,16 +591,14 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             comp_ts_props: dict[str, set[str]] = {}
 
             for _comp in all_comps:
-                if not self.system.has_time_series(_comp):
+                if not self._has_time_series(_comp):
                     continue
                 if fixed_ts_prop is not None:
                     comp_ts_props[_comp.name] = {fixed_ts_prop}
                 elif isinstance(_comp, PLEXOSGenerator):
                     sienna_type = (getattr(_comp, "ext", None) or {}).get("sienna_type", "")
                     _props: set[str] = set()
-                    for ts_key in self._filter_ts_keys_by_weather_year(
-                        self.system.list_time_series_keys(_comp)
-                    ):
+                    for ts_key in self._time_series_keys(_comp):
                         key = ts_key.name.strip().lower().replace(" ", "_")
                         if key == "max_active_power":
                             if sienna_type.startswith("Hydro"):
@@ -606,9 +619,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                         comp_ts_props[_comp.name] = _props
                 elif isinstance(_comp, PLEXOSStorage):
                     _props = set()
-                    for ts_key in self._filter_ts_keys_by_weather_year(
-                        self.system.list_time_series_keys(_comp)
-                    ):
+                    for ts_key in self._time_series_keys(_comp):
                         key = ts_key.name.strip().lower().replace(" ", "_")
                         mapped = STORAGE_TS_PROPERTY_MAP.get(key)
                         if mapped:
@@ -619,11 +630,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             if issubclass(component_type, PLEXOSGenerator):
                 for _gen in all_comps:
                     linked_storage = gen_to_storage.get(_gen.name)
-                    if not linked_storage or not self.system.has_time_series(linked_storage):
+                    if not linked_storage or not self._has_time_series(linked_storage):
                         continue
-                    for ts_key in self._filter_ts_keys_by_weather_year(
-                        self.system.list_time_series_keys(linked_storage)
-                    ):
+                    for ts_key in self._time_series_keys(linked_storage):
                         skey = ts_key.name.strip().lower().replace(" ", "_")
                         if skey == "hydro_budget":
                             resolved_ts = self._resolve_matching_time_series(linked_storage, ts_key)
@@ -982,6 +991,68 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
         logger.success("Successfully added {} memberships.", len(records))
 
+    def _add_collection_properties(self) -> None:
+        """Write properties set on memberships, e.g. Interface.Lines Flow Coefficient.
+
+        Mirrors the parser: each CollectionProperties holds snake_case property names
+        for one membership. Entries are written like component properties (value,
+        band, dates, timeslice, data file) under the export scenario.
+        """
+        if self.db is None:
+            logger.error("Database not initialized")
+            return
+
+        for collection_props in self.system.get_supplemental_attributes(CollectionProperties):
+            membership = collection_props.membership
+            # The nested membership deserializes its objects as plain PLEXOSObjects, so
+            # resolve the system's own components to get their classes.
+            parent = self.system.get_component_by_uuid(membership.parent_object.uuid)
+            child = self.system.get_component_by_uuid(membership.child_object.uuid)
+            parent_class = PLEXOS_TYPE_MAP_INVERTED.get(type(parent))
+            child_class = PLEXOS_TYPE_MAP_INVERTED.get(type(child))
+            if membership.collection is None or parent_class is None or child_class is None:
+                logger.warning(
+                    "Skipping collection properties for {} -> {}: no class or collection mapping",
+                    parent.name,
+                    child.name,
+                )
+                continue
+
+            valid = self.db.list_valid_properties(
+                membership.collection, parent_class_enum=parent_class, child_class_enum=child_class
+            )
+            names = {to_snake_case(name): name for name in valid}
+            for field_name, value in collection_props.properties.items():
+                property_name = names.get(field_name)
+                if property_name is None:
+                    logger.warning(
+                        "{} is not a {}.{} property; skipping for {} -> {}",
+                        field_name,
+                        parent_class.value,
+                        membership.collection.value,
+                        parent.name,
+                        child.name,
+                    )
+                    continue
+                for row in value.entries.values():
+                    if row.value is None:
+                        continue
+                    self.db.add_property(
+                        child_class,
+                        object_name=child.name,
+                        name=property_name,
+                        value=row.value,
+                        scenario=self.plexos_scenario,
+                        band=row.band,
+                        date_from=_as_datetime(row.date_from),
+                        date_to=_as_datetime(row.date_to),
+                        timeslice=row.timeslice_name,
+                        datafile_text=row.datafile_name or row.text,
+                        collection_enum=membership.collection,
+                        parent_class_enum=parent_class,
+                        parent_object_name=parent.name,
+                    )
+
     def _add_component_datafile_objects(self) -> None:
         """
         Add PLEXOSDatafile objects from the system to the database.
@@ -1055,13 +1126,13 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
         for component_type in self.system.get_component_types():
             components = list(self.system.get_components(component_type))
-            components_with_ts = [c for c in components if self.system.has_time_series(c)]
+            components_with_ts = [c for c in components if self._has_time_series(c)]
 
             if not components_with_ts:
                 continue
 
             for component in components_with_ts:
-                ts_keys = self._filter_ts_keys_by_weather_year(self.system.list_time_series_keys(component))
+                ts_keys = self._time_series_keys(component)
                 if not ts_keys:
                     continue
 
@@ -1240,6 +1311,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             PLEXOSRegion: "Load",
             PLEXOSStorage: "Natural Inflow",
             PLEXOSPurchaser: "Fixed Load",
+            PLEXOSFuel: "Price",
         }
 
         fixed = fixed_property_by_type.get(type(component))
@@ -1253,6 +1325,19 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             return GENERATOR_TS_PROPERTY_MAP.get(key)
 
         return None
+
+    def _has_time_series(self, owner: Any) -> bool:
+        """Return whether the owner has a time series of any exported type."""
+        return any(self.system.has_time_series(owner, time_series_type=t) for t in EXPORTED_TS_TYPES)
+
+    def _time_series_keys(self, owner: Any) -> list[Any]:
+        """Return the owner's time series keys of every exported type for the weather year."""
+        keys = [
+            key
+            for t in EXPORTED_TS_TYPES
+            for key in self.system.list_time_series_keys(owner, time_series_type=t)
+        ]
+        return self._filter_ts_keys_by_weather_year(keys)
 
     def _filter_ts_keys_by_weather_year(self, ts_keys: list[Any]) -> list[Any]:
         """Filter time series keys to those matching the configured weather_year.
@@ -1291,7 +1376,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         """Resolve the best matching TS variant for a key using timestamp/resolution."""
         key = str(getattr(ts_key, "name", "")).strip().lower().replace(" ", "_")
         try:
-            ts_list = self.system.list_time_series(component, name=ts_key.name, **ts_key.features)
+            ts_list = self.system.list_time_series(
+                component, name=ts_key.name, time_series_type=ts_key.time_series_type, **ts_key.features
+            )
         except RuntimeError as e:
             logger.error("Failed to get time series for {}.{}: {}", component.name, ts_key.name, e)
             return None
@@ -1393,7 +1480,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         all_components_with_ts = []
         for component_type in self.system.get_component_types():
             components = list(self.system.get_components(component_type))
-            all_components_with_ts.extend([c for c in components if self.system.has_time_series(c)])
+            all_components_with_ts.extend([c for c in components if self._has_time_series(c)])
 
         if not all_components_with_ts:
             logger.warning("No components with time series found")
@@ -1403,7 +1490,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
 
         ts_metadata: list[tuple[Any, Any]] = []
         for component in all_components_with_ts:
-            ts_keys = self._filter_ts_keys_by_weather_year(self.system.list_time_series_keys(component))
+            ts_keys = self._time_series_keys(component)
             ts_metadata.extend((component, ts_key) for ts_key in ts_keys)
 
         logger.debug(f"Found {len(ts_metadata)} time series keys total")
