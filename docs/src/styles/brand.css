@@ -38,3 +38,19 @@
     line-height: 1.25;
   }
 }
+
+pre.mermaid {
+  margin-block: 1.5rem;
+  padding: 1.25rem;
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 0.75rem;
+  background: var(--sl-color-gray-6);
+  overflow-x: auto;
+}
+
+pre.mermaid svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin-inline: auto;
+}

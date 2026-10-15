@@ -1,4 +1,5 @@
 import { defineConfig } from "astro/config";
+import mermaid from "astro-mermaid";
 import starlight from "@astrojs/starlight";
 import { unified } from "@astrojs/markdown-remark";
 
@@ -13,7 +14,9 @@ export default defineConfig({
   "/tutorials/": "/r2x-plexos/tutorials/round-trip/",
   "/how-tos/": "/r2x-plexos/how-to/python/"
 },
-  integrations: [starlight({
+  integrations: [
+    mermaid({ enableLog: false, mermaidConfig: { theme: "base", fontFamily: "system-ui, sans-serif", flowchart: { curve: "basis", nodeSpacing: 35, rankSpacing: 45, padding: 16 } } }),
+    starlight({
     title: "r2x-plexos",
     logo: {
       light: "./src/assets/r2x-logo-full-color.svg",
@@ -49,6 +52,7 @@ export default defineConfig({
         "label": "Python workflow",
         "link": "/how-to/python/"
       },
+      {"label": "Inspect an archive", "link": "/how-to/inspect-system/"},
       {
         "label": "CLI pipeline",
         "link": "/how-to/pipeline/"

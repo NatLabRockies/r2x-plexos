@@ -1,72 +1,213 @@
 ---
-title: "Parse and export a PLEXOS model"
+title: "Read, inspect, and export a PLEXOS model"
 ---
 
-Complete a two-step round trip using the repository's public test fixture.
-This checks the parser/exporter integration; it does not run an optimization or prove numerical equivalence.
+By the end, you will have parsed a public model, exported a native model, and
+loaded a portable archive to check its component graph. This is a format round trip;
+it does not run PLEXOS optimization or establish numerical equivalence.
 
-## Prepare a working copy
+```mermaid
+flowchart LR
+  XML["PLEXOS XML<br/>Model: Base"] --> P["PLEXOSParser"]
+  P --> S["Typed PLEXOS system<br/>objects and memberships"]
+  S --> E["PLEXOSExporter<br/>template: PLEXOS10.0"]
+  E --> X["RoundTrip_2024.xml<br/>plus any profile CSVs"]
+  S --> Z["system.zip<br/>inspect with r2x read"]
+```
 
-Install [r2x-cli](/r2x-plexos/how-to/install/) and Git. Clone a disposable copy of this repository:
+## 1. Prepare the runtime
+
+Install [r2x-cli](https://github.com/NatLabRockies/r2x-cli#quick-start) and
+[uv](https://docs.astral.sh/uv/getting-started/installation/). You also need a shell
+with `curl`; the commands below use macOS/Linux syntax.
+No licensed PLEXOS installation is needed to parse this XML fixture.
+Confirm the CLI version:
 
 ```bash
-git clone https://github.com/NatLabRockies/r2x-plexos.git
-cd r2x-plexos
+r2x --version
+```
+
+Install the Python runtime supported by that binary:
+
+```bash
 r2x python install
+```
+
+Check which environment the CLI will actually use:
+
+```bash
+r2x python show
+```
+
+Install the format package into that managed environment, rather than an unrelated
+project environment. Its [R2X Core](https://github.com/NatLabRockies/r2x-core)
+and [Infrasys](https://github.com/NatLabRockies/infrasys) dependencies supply the
+plugin lifecycle and system/time-series storage.
+
+```bash
 r2x install r2x-plexos
+```
+
+Confirm the two entry points are available:
+
+```bash
 r2x list r2x-plexos
 ```
 
-Keep the fixture's companion files together. The XML contains model selection, memberships, and references used during parsing.
+Look for `plexos-parser` and `plexos-exporter`. If either is absent, fix
+[plugin discovery](/r2x-plexos/troubleshooting/#plugin-is-missing) before continuing.
 
-## Create the pipeline
+## 2. Download a small, reproducible input
 
-Save this as `round-trip.yaml` in the repository root:
+Choose a new directory so earlier results cannot be confused with this run:
+
+```bash
+mkdir r2x-plexos-demo
+```
+
+```bash
+cd r2x-plexos-demo
+```
+
+Keep source files and output artifacts separate:
+
+```bash
+mkdir inputs outputs
+```
+
+Download the five-node XML fixture from a pinned revision. Its Model object is named `Base`; the filename is not the model name.
+
+```bash
+curl -fsSL \
+  https://raw.githubusercontent.com/NatLabRockies/r2x-plexos/e562dd7226e41dd0f27f761959acff04071b271e/tests/data/5_bus_system_variables.xml \
+  -o inputs/model.xml
+```
+
+Verify the downloads are present and nonempty:
+
+```bash
+ls -lh inputs
+```
+
+For your own XML, include all referenced profile files and choose the correct Model object. See [input and model selection](/r2x-plexos/how-to/python/#select-inputs-explicitly).
+
+## 3. Describe the two steps
+
+Save the following as `pipeline.yaml` in the current directory:
 
 ```yaml
-variables: {}
+variables:
+  input_dir: inputs
+  output_dir: outputs
 pipelines:
   round_trip:
     - r2x-plexos.plexos-parser
     - r2x-plexos.plexos-exporter
 config:
   r2x-plexos.plexos-parser:
-    fpath: tests/data/5_bus_system_variables.xml
+    fpath: ${input_dir}/model.xml
     model_name: Base
     horizon_year: 2024
   r2x-plexos.plexos-exporter:
     model_name: RoundTrip
     horizon_year: 2024
     template: PLEXOS10.0
-    output_path: output
-output_folder: output
+    output_path: ${output_dir}
+output_folder: ${output_dir}
 ```
 
-Preview the resolved configuration and execution order:
+`pipelines` defines execution order; `config` gives each plugin its own settings.
+`${input_dir}` and `${output_dir}` expand from `variables`.
+The parser selects Model `Base`; the exporter creates a separate `RoundTrip` simulation using the PLEXOS10.0 master template. Template selection concerns XML schema, not the installed solver.
+
+List the pipeline before executing it:
 
 ```bash
-r2x run round-trip.yaml round_trip --print
-r2x run round-trip.yaml round_trip --dry-run
+r2x run pipeline.yaml --list
 ```
 
-Check the input and output paths in the preview. A dry run displays the plan; it does not validate all model data.
-
-## Execute and verify
+Expect `round_trip` with two steps. Print the expanded configuration:
 
 ```bash
-r2x run round-trip.yaml round_trip
+r2x run pipeline.yaml round_trip --print
 ```
 
-Check that the output folder contains XML and any generated time-series CSVs. Inspect the exported XML model and horizon before opening it in PLEXOS.
+Check the input paths and `Base` Model name in that output.
+Preview the order without parsing any model data:
 
 ```bash
-python -c "from pathlib import Path; files = list(Path('output').rglob('*.xml')); assert files; print(*files, sep='\n')"
+r2x run pipeline.yaml round_trip --dry-run
 ```
 
-For data inspection before export, use the [Python workflow](/r2x-plexos/how-to/python/).
-If a step fails, follow [troubleshooting](/r2x-plexos/troubleshooting/) before retrying with a different input.
+Expect `plexos-parser → plexos-exporter`. A dry run checks discovery and pipeline
+configuration; it cannot prove that an XML object, JSON field, or sidecar exists.
 
-## Verification environment
+## 4. Run and keep a portable system
 
-This pipeline was executed with r2x-cli 0.1.15 and Python 3.12, using r2x-plexos 0.3.3 with its locked r2x-core 0.8.0 dependencies.
-Both parser and exporter completed. Use the CLI binary’s supported Python runtime when repeating the example.
+```bash
+r2x run pipeline.yaml round_trip --zip -o outputs/system.zip
+```
+
+The CLI reports each completed step and the saved ZIP. These are distinct outputs:
+
+| Output | What it contains | How to read it |
+| --- | --- | --- |
+| `outputs/RoundTrip_2024.xml` | Native PLEXOS objects, properties, simulation settings and profile references. | PLEXOS or `plexos-parser`. |
+| Profile CSVs, when present | Exported time-series values referenced by XML. | Keep with the exported model. |
+| `outputs/system.zip` | Infrasys serialization of the parsed system and its storage. | `r2x read --zip` or `System.load`. |
+
+List what this run created:
+
+```bash
+ls -lh outputs
+```
+
+The native export and the archive serve different consumers. Do not pass
+PLEXOS XML to `r2x read` as if it were an Infrasys serialization.
+
+## 5. Inspect the graph, not just the filenames
+
+Save this as `inspect_system.py` beside `pipeline.yaml`:
+
+```python
+from infrasys import Component
+from r2x_plexos.models import PLEXOSGenerator, PLEXOSNode, PLEXOSMembership
+print("System:", sys.name)
+print("Components:", len(list(sys.get_components(Component))))
+print("Generators:", len(list(sys.get_components(PLEXOSGenerator))))
+print("Nodes:", len(list(sys.get_components(PLEXOSNode))))
+print("Memberships:", len(list(sys.get_supplemental_attributes(PLEXOSMembership))))
+for generator in sys.get_components(PLEXOSGenerator):
+    print("Generator:", generator.name)
+```
+
+`r2x read` supplies the loaded system as `sys`. The imports select the actual
+package-specific model classes recorded in the archive. Execute the checks:
+
+```bash
+r2x read outputs/system.zip --zip --exec inspect_system.py
+```
+
+For the pinned fixture, the observed counts are:
+
+```text
+System: PLEXOS
+Components: 37
+Generators: 9
+Nodes: 5
+Memberships: 34
+```
+
+The generator names include Alta, Brighton, Park_City, SolarPV1, SolarPV2, Solitude, Storage, Sundance and Wind. Memberships carry parent/child collection relationships rather than appearing in the ordinary component count.
+Use these counts as a checkpoint for this fixture, not as expectations for a study model.
+If loading or summary metadata fails, use [artifact troubleshooting](/r2x-plexos/troubleshooting/#archive-loading-fails).
+
+## Where to go next
+
+- [Inspect fields and time series](/r2x-plexos/how-to/inspect-system/) before changing model data.
+- [Use Python contexts](/r2x-plexos/how-to/python/) when inserting custom analysis between parsing and export.
+- [Translate PLEXOS to Sienna](https://natlabrockies.github.io/R2X/how-to/plexos-to-sienna/) uses the separate `r2x-plexos-to-sienna` package and `r2x-sienna` exporter.
+- [Public API and defaults](/r2x-plexos/reference/) explain what each configuration field controls.
+
+This walkthrough was executed with CLI 0.1.15 and Python 3.12, using
+r2x-plexos 0.3.3, r2x-core 0.8.0, and Infrasys 1.2.0.
