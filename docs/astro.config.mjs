@@ -29,6 +29,23 @@ export default defineConfig({
     customCss: ["./src/styles/brand.css"],
     sidebar: [
   {
+    "label": "Getting started",
+    "items": [
+      {
+        "label": "Installation",
+        "link": "/getting-started/installation/"
+      },
+      {
+        "label": "Environment and prerequisites",
+        "link": "/getting-started/environment/"
+      },
+      {
+        "label": "Verify installation and first use",
+        "link": "/getting-started/verify/"
+      }
+    ]
+  },
+  {
     "label": "Tutorials",
     "items": [
       {
@@ -45,14 +62,13 @@ export default defineConfig({
     "label": "How-to guides",
     "items": [
       {
-        "label": "Installation",
-        "link": "/how-to/install/"
-      },
-      {
         "label": "Python workflow",
         "link": "/how-to/python/"
       },
-      {"label": "Inspect an archive", "link": "/how-to/inspect-system/"},
+      {
+        "label": "Inspect an archive",
+        "link": "/how-to/inspect-system/"
+      },
       {
         "label": "CLI pipeline",
         "link": "/how-to/pipeline/"
@@ -79,8 +95,14 @@ export default defineConfig({
         "label": "Data flow and compatibility",
         "link": "/explanation/"
       },
-      {"label": "Supplemental attributes", "link": "/explanation/supplemental-attributes/"},
-      {"label": "Data model", "link": "/explanation/data-model/"}
+      {
+        "label": "Supplemental attributes",
+        "link": "/explanation/supplemental-attributes/"
+      },
+      {
+        "label": "Data model",
+        "link": "/explanation/data-model/"
+      }
     ]
   },
   {

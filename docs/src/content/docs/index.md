@@ -8,6 +8,8 @@ Model translation between PLEXOS and Sienna belongs to the [R2X translation plug
 
 ## Start here
 
+- [Getting started: installation](/r2x-plexos/getting-started/installation/), [environment setup](/r2x-plexos/getting-started/environment/) and [verify first use](/r2x-plexos/getting-started/verify/).
+
 - [Tutorial: parse and export](/r2x-plexos/tutorials/round-trip/) uses a small model included in this repository.
 - [How-to guides](/r2x-plexos/how-to/python/) cover Python contexts and [CLI pipelines](/r2x-plexos/how-to/pipeline/).
 - [Reference / API](/r2x-plexos/reference/) maps supported exports and configuration to their source.

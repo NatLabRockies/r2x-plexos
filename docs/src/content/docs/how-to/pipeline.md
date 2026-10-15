@@ -2,13 +2,13 @@
 title: "Configure CLI pipelines"
 ---
 
-Install the package into the [CLI environment](/r2x-plexos/how-to/install/) first.
+Install the package into the [CLI environment](/r2x-plexos/getting-started/installation/) first.
 Plugin references come from the `[project.entry-points."r2x_plugin"]` table in [pyproject.toml](https://github.com/NatLabRockies/r2x-plexos/blob/main/pyproject.toml).
 
 ```bash
 r2x list r2x-plexos
-r2x run plugin plexos-parser --show-help
-r2x run plugin plexos-exporter --show-help
+r2x run plexos-parser --help
+r2x run plexos-exporter --help
 ```
 
 The generated help reflects the installed package's configuration schema.

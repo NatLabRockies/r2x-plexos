@@ -32,6 +32,7 @@ Confirm `plexos-parser` and `plexos-exporter` are discovered, then follow the [r
 
 ## Documentation
 
+- [Getting started](https://natlabrockies.github.io/r2x-plexos/getting-started/installation/): installation, environment setup, and first-use checks.
 - [Tutorials](https://natlabrockies.github.io/r2x-plexos/tutorials/round-trip/): parse and export a public test model.
 - [How-to guides](https://natlabrockies.github.io/r2x-plexos/how-to/python/): Python contexts and CLI pipelines.
 - [Reference / API](https://natlabrockies.github.io/r2x-plexos/reference/): exports, configuration, and source links.

@@ -28,7 +28,7 @@ r2x install r2x-plexos
 Repeat `list` and check generated help before executing:
 
 ```bash
-r2x run plugin plexos-parser --show-help
+r2x run plexos-parser --help
 ```
 
 **Runtime startup instead mentions Python ABI:** compare `r2x --version` and

@@ -15,47 +15,15 @@ flowchart LR
   S --> Z["system.zip<br/>inspect with r2x read"]
 ```
 
-## 1. Prepare the runtime
+## 1. Confirm the prerequisites
 
-Install [r2x-cli](https://github.com/NatLabRockies/r2x-cli#quick-start) and
-[uv](https://docs.astral.sh/uv/getting-started/installation/). You also need a shell
-with `curl`; the commands below use macOS/Linux syntax.
-No licensed PLEXOS installation is needed to parse this XML fixture.
-Confirm the CLI version:
+Complete [Installation](/r2x-plexos/getting-started/installation/),
+[environment setup](/r2x-plexos/getting-started/environment/) and
+[verification](/r2x-plexos/getting-started/verify/) first.
+The CLI must discover `plexos-parser` and `plexos-exporter` in its managed environment.
 
-```bash
-r2x --version
-```
-
-Install the Python runtime supported by that binary:
-
-```bash
-r2x python install
-```
-
-Check which environment the CLI will actually use:
-
-```bash
-r2x python show
-```
-
-Install the format package into that managed environment, rather than an unrelated
-project environment. Its [R2X Core](https://github.com/NatLabRockies/r2x-core)
-and [Infrasys](https://github.com/NatLabRockies/infrasys) dependencies supply the
-plugin lifecycle and system/time-series storage.
-
-```bash
-r2x install r2x-plexos
-```
-
-Confirm the two entry points are available:
-
-```bash
-r2x list r2x-plexos
-```
-
-Look for `plexos-parser` and `plexos-exporter`. If either is absent, fix
-[plugin discovery](/r2x-plexos/troubleshooting/#plugin-is-missing) before continuing.
+This tutorial uses a macOS/Linux shell, `curl`, network access for the pinned
+downloads, and a new working directory. A licensed PLEXOS installation is not required for this XML exercise.
 
 ## 2. Download a small, reproducible input
 
