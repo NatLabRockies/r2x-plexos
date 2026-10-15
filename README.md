@@ -1,8 +1,12 @@
-# r2x-plexos
+<img src="./docs/src/assets/r2x-logo-full-square.svg" alt="R2X framework logo" align="left" width="220px" height="220px" hspace="10"/>
+
+#### r2x-plexos
 
 PLEXOS models, parser, and exporter for the R2X ecosystem.
 
 [![PyPI](https://img.shields.io/pypi/v/r2x-plexos.svg)](https://pypi.org/project/r2x-plexos/) [![Docs](https://img.shields.io/badge/docs-guides-0079c2)](https://natlabrockies.github.io/r2x-plexos/)
+
+<br clear="left">
 
 `r2x-plexos` reads PLEXOS XML into typed R2X systems and exports systems back to PLEXOS.
 Use [r2x-cli](https://github.com/NatLabRockies/r2x-cli) for repeatable pipelines and [R2X translation plugins](https://natlabrockies.github.io/R2X/) for cross-format mappings.
