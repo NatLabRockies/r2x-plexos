@@ -18,4 +18,4 @@ Model translation between PLEXOS and Sienna belongs to the [R2X translation plug
 - [Changelog](/r2x-plexos/changelog/) links the canonical release history.
 - [Contributors](/r2x-plexos/contributors/) covers documentation and development checks.
 
-These pages describe current `main`. [Browse versions](/r2x-plexos/reference/versions/) to compare installed releases with tagged source.
+These pages describe current `main`. [Match your installed release to its source](/r2x-plexos/reference/versions/) to compare installed releases with tagged source.

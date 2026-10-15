@@ -81,10 +81,6 @@ export default defineConfig({
       {
         "label": "Public API and configuration",
         "link": "/reference/"
-      },
-      {
-        "label": "Versions",
-        "link": "/reference/versions/"
       }
     ]
   },
@@ -92,7 +88,7 @@ export default defineConfig({
     "label": "Explanation",
     "items": [
       {
-        "label": "Data flow and compatibility",
+        "label": "PLEXOS objects and relationships",
         "link": "/explanation/"
       },
       {
@@ -116,12 +112,7 @@ export default defineConfig({
   },
   {
     "label": "Changelog",
-    "items": [
-      {
-        "label": "Release history",
-        "link": "/changelog/"
-      }
-    ]
+    "link": "/changelog/"
   },
   {
     "label": "Contributors",

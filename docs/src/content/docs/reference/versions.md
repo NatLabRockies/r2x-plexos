@@ -1,8 +1,8 @@
 ---
-title: "Browse package versions"
+title: "Match an installed release to its source"
 ---
 
-This site documents current `main` and does not publish a separate documentation build for every release.
+Use this guide when current examples differ from your installed package. This site documents current `main` and does not publish a separate documentation build for every release.
 
 - [Release notes](https://github.com/NatLabRockies/r2x-plexos/releases) describe packaged changes.
 - [Git tags](https://github.com/NatLabRockies/r2x-plexos/tags) let you browse the README, docs, and API source at an actual release.
