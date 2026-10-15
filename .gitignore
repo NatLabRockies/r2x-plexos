@@ -452,3 +452,7 @@ $RECYCLE.BIN/
 /default.xml
 /Data/**/*.csv
 /Data/**/*.xml
+
+# Astro documentation
+docs/node_modules/
+docs/.astro/
