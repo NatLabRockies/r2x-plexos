@@ -70,6 +70,8 @@ class DateTimeRange:
     resolution: datetime
 
 
+# PLEXOS Horizon "Chrono Step Type" codes; the master template's default is 2 (day).
+DEFAULT_CHRONO_STEP_TYPE = 2
 CHRONO_STEP_DELTAS = {
     -1: timedelta(seconds=1),
     0: timedelta(minutes=1),
@@ -192,7 +194,7 @@ def resolve_horizon_for_model(db: PlexosDB, model_name: str) -> tuple[datetime, 
     assert date_from is not None
     date_from = ole_date_to_datetime(date_from)
     date_to = ole_date_to_datetime(date_to) if date_to else None
-    step_type = int(step_type) if step_type is not None else 1
+    step_type = int(step_type) if step_type is not None else DEFAULT_CHRONO_STEP_TYPE
     step_count = int(step_count) if step_count is not None else 1
     step_delta = CHRONO_STEP_DELTAS.get(step_type, timedelta(hours=1))
     date_to = date_to or date_from + (step_delta * step_count)
