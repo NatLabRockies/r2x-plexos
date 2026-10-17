@@ -135,18 +135,34 @@ PLEXOS XML to `r2x read` as if it were an Infrasys serialization.
 
 ## 5. Inspect the graph, not just the filenames
 
-Save this as `inspect_system.py` beside `pipeline.yaml`:
+Copy the console input below without `>>>`/`...` prompts into `inspect_system.py` beside `pipeline.yaml`:
 
-```python
-from infrasys import Component
-from r2x_plexos.models import PLEXOSGenerator, PLEXOSNode, PLEXOSMembership
-print("System:", sys.name)
-print("Components:", len(list(sys.get_components(Component))))
-print("Generators:", len(list(sys.get_components(PLEXOSGenerator))))
-print("Nodes:", len(list(sys.get_components(PLEXOSNode))))
-print("Memberships:", len(list(sys.get_supplemental_attributes(PLEXOSMembership))))
-for generator in sys.get_components(PLEXOSGenerator):
-    print("Generator:", generator.name)
+```python doctest
+>>> from infrasys import Component
+>>> from r2x_plexos.models import PLEXOSGenerator, PLEXOSNode, PLEXOSMembership
+>>> print("System:", sys.name)
+System: PLEXOS
+>>> assert len(list(sys.get_components(Component))) == 37
+>>> print("Components:", len(list(sys.get_components(Component))))
+Components: 37
+>>> print("Generators:", len(list(sys.get_components(PLEXOSGenerator))))
+Generators: 9
+>>> print("Nodes:", len(list(sys.get_components(PLEXOSNode))))
+Nodes: 5
+>>> print("Memberships:", len(list(sys.get_supplemental_attributes(PLEXOSMembership))))
+Memberships: 34
+>>> for generator in sys.get_components(PLEXOSGenerator):
+...     print("Generator:", generator.name)
+...
+Generator: Alta
+Generator: Brighton
+Generator: Park_City
+Generator: SolarPV1
+Generator: SolarPV2
+Generator: Solitude
+Generator: Storage
+Generator: Sundance
+Generator: Wind
 ```
 
 `r2x read` supplies the loaded system as `sys`. The imports select the actual

@@ -18,6 +18,7 @@ export default defineConfig({
     mermaid({ enableLog: false, mermaidConfig: { theme: "base", fontFamily: "system-ui, sans-serif", flowchart: { curve: "basis", nodeSpacing: 35, rankSpacing: 45, padding: 16 } } }),
     starlight({
     title: "r2x-plexos",
+    routeMiddleware: "./src/routeData.ts",
     logo: {
       light: "./src/assets/r2x-logo-full-color.svg",
       dark: "./src/assets/r2x-logo-white.svg",
@@ -26,11 +27,12 @@ export default defineConfig({
     },
     social: [{ icon: "github", label: "GitHub", href: "https://github.com/NatLabRockies/r2x-plexos" }],
     editLink: { baseUrl: "https://github.com/NatLabRockies/r2x-plexos/edit/main/docs/src/content/docs/" },
-    customCss: ["./src/styles/brand.css"],
+    customCss: ["./src/styles/brand.css", "./src/styles/api.css"],
     sidebar: [
   {
     "label": "Getting started",
     "items": [
+      {"label": "Plugins and workflow", "link": "/getting-started/plugins/"},
       {
         "label": "Installation",
         "link": "/getting-started/installation/"
@@ -78,8 +80,9 @@ export default defineConfig({
   {
     "label": "Reference / API",
     "items": [
+      {"label": "Python API", "link": "/reference/api/"},
       {
-        "label": "Public API and configuration",
+        "label": "Configuration and lifecycle",
         "link": "/reference/"
       }
     ]

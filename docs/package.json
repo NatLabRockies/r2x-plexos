@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "astro dev",
-    "build": "astro build",
+    "dev": "cd .. && uv run --group docs python docs/generate_api.py && cd docs && astro dev",
+    "build": "cd .. && uv run --group docs python docs/generate_api.py && uv run pytest tests/test_docs_examples.py tests/test_docs_api.py --no-cov -q && cd docs && astro build",
     "preview": "astro preview"
   },
   "dependencies": {

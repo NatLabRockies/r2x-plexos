@@ -456,3 +456,9 @@ $RECYCLE.BIN/
 # Astro documentation
 docs/node_modules/
 docs/.astro/
+
+# Generated API contracts
+docs/build/
+docs/api-source/index.rst
+docs/src/generated/
+docs/src/content/docs/reference/api.md

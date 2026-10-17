@@ -1,8 +1,8 @@
 <img src="./docs/src/assets/r2x-logo-full-square.svg" alt="R2X framework logo" align="left" width="220px" height="220px" hspace="10"/>
+<img align="left" alt="" width="0" height="220px" hspace="10"/>
 
 #### r2x-plexos
-
-PLEXOS models, parser, and exporter for the R2X ecosystem.
+<p><small>PLEXOS models, parser, and exporter for the R2X ecosystem.</small></p>
 
 [![PyPI](https://img.shields.io/pypi/v/r2x-plexos.svg)](https://pypi.org/project/r2x-plexos/) [![Docs](https://img.shields.io/badge/docs-guides-0079c2)](https://natlabrockies.github.io/r2x-plexos/)
 

@@ -9,26 +9,34 @@ refer to Python model modules and class names.
 
 ## Repeat component and relationship checks
 
-Save the following as `inspect_details.py` and run it from the tutorial directory:
+Copy the console input below without prompts into `inspect_details.py` and run it from the tutorial directory:
 
-```python
-from r2x_plexos.models import PLEXOSGenerator, PLEXOSMembership
-
-generators = list(sys.get_components(PLEXOSGenerator))
-if generators:
-    generator = generators[0]
-    print("Name:", generator.name)
-    print("Example fields:", list(type(generator).model_fields)[:8])
-    print("Capacity:", generator.max_capacity)
-    series_list = sys.list_time_series(generator)
-    print("Matching single series:", len(series_list))
-    for series in series_list:
-        print(series.name, series.initial_timestamp, series.resolution)
-        print(series.data[:3])
-
-memberships = list(sys.get_supplemental_attributes(PLEXOSMembership))
-for membership in memberships[:3]:
-    print(membership.parent_object.name, membership.collection, membership.child_object.name)
+```python doctest
+>>> from r2x_plexos.models import PLEXOSGenerator, PLEXOSMembership
+>>> generators = list(sys.get_components(PLEXOSGenerator))
+>>> assert len(generators) == 9
+>>> if generators:
+...     generator = generators[0]
+...     print("Name:", generator.name)
+...     print("Example fields:", list(type(generator).model_fields)[:8])
+...     print("Capacity:", generator.max_capacity)
+...     series_list = sys.list_time_series(generator)
+...     print("Matching single series:", len(series_list))
+...     for series in series_list:
+...         print(series.name, series.initial_timestamp, series.resolution)
+...         print(series.data[:3])
+...
+Name: Alta
+Example fields: ['uuid', 'name', 'category', 'description', 'object_id', 'ext', 'acceptable_risk', 'aux_base']
+Capacity: 40.0
+Matching single series: 0
+>>> memberships = list(sys.get_supplemental_attributes(PLEXOSMembership))
+>>> for membership in memberships[:3]:
+...     print(membership.parent_object.name, membership.collection, membership.child_object.name)
+...
+Storage HeadStorage StorageHead
+Storage TailStorage StorageTail
+Alta Nodes node_a
 ```
 
 ```bash
@@ -45,13 +53,12 @@ for supported filters and serialization behavior.
 ## Load the same archive from Python
 
 Use the Python executable shown by `r2x python show`, or a separate environment
-with compatible `r2x-plexos` and Infrasys versions. Save this as `load_archive.py`:
+with compatible `r2x-plexos` and Infrasys versions. Copy the console input below without `>>>`/`...` prompts into `load_archive.py`:
 
-```python
-from infrasys import Component, System
-
-system = System.load("outputs/system.zip")
-print("Components:", len(list(system.get_components(Component))))
+```python doctest
+>>> from infrasys import Component, System
+>>> system = System.load("outputs/system.zip")
+>>> assert len(list(system.get_components(Component))) == 37
 ```
 
 Run it with that interpreter. For example, in an activated compatible environment:

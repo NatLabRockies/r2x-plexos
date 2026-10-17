@@ -58,19 +58,22 @@ These are different failures: the first is input resolution; the second means a
 named object, commonly the configured Model, is absent in a database that loaded.
 The tutorial reproduced the second with `model_name="NotAModel"`.
 
-Save this as `check_xml.py` and run it with the Python environment containing
+Copy the console input below without `>>>`/`...` prompts into `check_xml.py` and run it with the Python environment containing
 `r2x-plexos`:
 
-```python
-from pathlib import Path
-from plexosdb import PlexosDB
-
-path = Path("inputs/model.xml").resolve()
-print("XML path:", path)
-print("Exists:", path.is_file())
-if path.is_file():
-    db = PlexosDB.from_xml(path)
-    print("Models:", db.list_models())
+```python doctest
+>>> from pathlib import Path
+>>> from plexosdb import PlexosDB
+>>> path = Path("inputs/model.xml").resolve()
+>>> print("XML file:", path.name)
+XML file: model.xml
+>>> print("Exists:", path.is_file())
+Exists: True
+>>> if path.is_file():
+...     db = PlexosDB.from_xml(path)
+...     print("Models:", db.list_models())
+...
+Models: ['Base']
 ```
 
 ```bash
@@ -109,15 +112,21 @@ returning a System does not prove that all requested profiles were attached.
 First record the exact component/property and file named in the warning. In the
 Python workflow, a read-only filesystem check can reproduce path resolution:
 
-```python
-from pathlib import Path
-
-xml = Path(config.fpath)
-base = Path(store.folder)
-if config.timeseries_dir:
-    base = base / config.timeseries_dir
-print("XML:", xml.resolve())
-print("Profile base:", base.resolve())
+```python doctest
+>>> from pathlib import Path
+>>> from r2x_core import DataStore
+>>> from r2x_plexos import PLEXOSConfig
+>>> config = PLEXOSConfig(fpath="inputs/model.xml")
+>>> store = DataStore(path=Path("inputs"))
+>>> xml = Path(config.fpath)
+>>> base = Path(store.folder)
+>>> if config.timeseries_dir:
+...     base = base / config.timeseries_dir
+...
+>>> print("XML:", xml.name)
+XML: model.xml
+>>> print("Profile base:", base.name)
+Profile base: inputs
 ```
 
 Append the **actual relative filename from the warning/XML** to that base and
@@ -154,22 +163,24 @@ The parser uses the resolved Model horizon's start year when available, otherwis
 its configured year. Changing `horizon_year` alone may not override an XML Model
 horizon. A property can also depend on scenario, timeslice and component name.
 
-In an in-memory Python parse, inspect the selected range and the actual series:
+Inspect profile timestamps from the tutorial archive. The process horizon is separate from the saved system:
 
-```python
-from r2x_plexos import get_horizon
-from r2x_plexos.models import PLEXOSGenerator
-
-print("Selected horizon:", get_horizon())
-for generator in system.get_components(PLEXOSGenerator):
-    for series in system.list_time_series(generator):
-        last = series.initial_timestamp + (len(series.data) - 1) * series.resolution
-        print(generator.name, series.name)
-        print(series.initial_timestamp, last, series.resolution, len(series.data))
+```python doctest
+>>> from infrasys import System
+>>> from r2x_plexos import get_horizon
+>>> from r2x_plexos.models import PLEXOSGenerator
+>>> system = System.load("outputs/system.zip")
+>>> print("Process horizon:", get_horizon())
+Process horizon: None
+>>> for generator in system.get_components(PLEXOSGenerator):
+...     for series in system.list_time_series(generator):
+...         last = series.initial_timestamp + (len(series.data) - 1) * series.resolution
+...         print(generator.name, series.name)
+...         print(series.initial_timestamp, last, series.resolution, len(series.data))
+...
 ```
 
-Run this **before serialization**: horizon selection is module-level context, not
-an archive's independent study setting. The error `Horizon end ... is after time
+For the active selection, call `get_horizon()` in the parsing process before serialization: horizon selection is module-level context, not an archive's independent study setting. The error `Horizon end ... is after time
 series end` is the corresponding upper-bound failure.
 
 **Fix:** select the intended existing Model/scenario/year and supply profiles that
@@ -210,12 +221,12 @@ file was found. Supported keys are `PLEXOS9.0`, `PLEXOS10.0`, `PLEXOS11.0` and
 `PLEXOS12.0`; a custom XML file must exist. Inspect bundled template availability
 without calling exporter internals:
 
-```python
-from r2x_plexos import PLEXOSConfig
-
-folder = PLEXOSConfig.get_config_path()
-print(folder)
-print(sorted(path.name for path in folder.glob("*.xml")))
+```python doctest
+>>> from r2x_plexos import PLEXOSConfig
+>>> folder = PLEXOSConfig.get_config_path()
+>>> assert folder.is_dir()
+>>> print(sorted(path.name for path in folder.glob("*.xml")))
+['master_10.0R2_btu.xml', 'master_11.0R4_btu.xml', 'master_12.0R3_btu.xml', 'master_9.2R6_btu.xml']
 ```
 
 **Fix:** provide the intended `horizon_year` on the exporter and use a supported

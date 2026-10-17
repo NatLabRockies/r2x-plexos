@@ -1,5 +1,5 @@
 ---
-title: "Supplemental Attributes in R2X PLEXOS"
+title: "Supplemental Attributes in r2x-plexos"
 ---
 
 ## Overview
@@ -11,7 +11,7 @@ Supplemental attributes in [`infrasys`](https://nrel.github.io/infrasys/index.ht
 - **Have UUIDs**: Each supplemental attribute instance has a unique identifier
 - **Can have time series**: Like components, supplemental attributes can have time series data attached
 
-## Why R2X PLEXOS Uses Supplemental Attributes
+## Why r2x-plexos Uses Supplemental Attributes
 
 In PLEXOS, relationships between objects (memberships) are modeled as supplemental attributes because:
 
@@ -19,9 +19,9 @@ In PLEXOS, relationships between objects (memberships) are modeled as supplement
 2. **Not independent entities**: Memberships only exist in the context of the objects they connect
 3. **Excluded from component operations**: Memberships are explicitly filtered out when iterating over components for export
 
-## Supplemental Attributes in R2X PLEXOS
+## Supplemental Attributes in r2x-plexos
 
-R2X PLEXOS defines two supplemental attribute classes:
+r2x-plexos defines two supplemental attribute classes:
 
 ### 1. PLEXOSMembership
 
@@ -38,63 +38,60 @@ Defines functional and logical relationships between PLEXOS objects.
 - Buses belonging to nodes
 - Fuels used by generators
 
-**How it's stored:**
-```python
-# A membership is associated with BOTH parent and child objects
-system.add_supplemental_attribute(parent_object, membership)
-system.add_supplemental_attribute(child_object, membership)
+**How it's stored:** both endpoints share one membership. This complete example
+creates two ordinary components, attaches the membership, and checks both directions:
+
+```python doctest
+>>> from r2x_core import System
+>>> from r2x_plexos import PLEXOSPropertyValue
+>>> from r2x_plexos.models import PLEXOSGenerator, PLEXOSNode, PLEXOSMembership
+>>> from r2x_plexos.models.collection_property import CollectionProperties
+>>> system = System(name="Membership example")
+>>> parent = PLEXOSGenerator(name="Generator")
+>>> child = PLEXOSNode(name="Node")
+>>> _ = system.add_components(parent, child)
+>>> membership = PLEXOSMembership(parent_object=parent, child_object=child)
+>>> _ = system.add_supplemental_attribute(parent, membership)
+>>> _ = system.add_supplemental_attribute(child, membership)
+>>> assert len(list(system.get_supplemental_attributes(PLEXOSMembership))) == 1
+>>> assert len(system.get_components_with_supplemental_attribute(membership)) == 2
 ```
 
 ### 2. CollectionProperties
 
-Stores properties associated with a specific membership-collection pair.
+A collection-property attribute retains a membership, collection name, and a
+mapping of property names to entry-based values. Continue in the same console:
 
-**Attributes:**
-- `membership`: Reference to the associated `PLEXOSMembership`
-- `collection_name`: Name of the collection (e.g., "Generators", "Nodes")
-- `properties`: Dictionary mapping property names to `PLEXOSPropertyValue` objects
-
-**How it's stored:**
-```python
-# Collection properties are associated with the child object
-system.add_supplemental_attribute(child_object, collection_properties)
+```python doctest
+>>> properties = CollectionProperties(
+...     membership=membership,
+...     collection_name="Nodes",
+...     properties={"Load": PLEXOSPropertyValue.from_dict({"value": 10.0})},
+... )
+>>> _ = system.add_supplemental_attribute(child, properties)
+>>> assert system.get_num_supplemental_attributes() == 2
 ```
 
 ## Working with Supplemental Attributes
 
 ### Querying Supplemental Attributes
 
-```python
-# Get all memberships in the system
-memberships = system.get_supplemental_attributes(PLEXOSMembership)
+The same System can resolve attached membership attributes without inspecting private managers:
 
-# Get all supplemental attributes of a specific type attached to a component
-memberships = system.get_supplemental_attributes_with_component(
-    component,
-    supplemental_attribute_type=PLEXOSMembership
-)
-
-# Get all components associated with a supplemental attribute
-components = system.get_components_with_supplemental_attribute(membership)
-
-# Check if a component has supplemental attributes of a specific type
-has_attrs = system.has_supplemental_attribute(
-    component,
-    supplemental_attribute_type=PLEXOSMembership
-)
-
-# Get counts of supplemental attributes by type
-counts = system.get_supplemental_attribute_counts_by_type()
-
-# Get total number of supplemental attributes
-total = system.get_num_supplemental_attributes()
+```python doctest
+>>> memberships = list(system.get_supplemental_attributes_with_component(
+...     child, supplemental_attribute_type=PLEXOSMembership,
+... ))
+>>> assert memberships == [membership]
+>>> assert system.has_supplemental_attribute(child, supplemental_attribute_type=PLEXOSMembership)
 ```
 
 ### Retrieving by UUID
 
-```python
-# Get a supplemental attribute by its UUID
-attr = system.get_supplemental_attribute_by_uuid(uuid)
+Use the UUID of the attribute itself, rather than an endpoint component UUID:
+
+```python doctest
+>>> assert system.get_supplemental_attribute_by_uuid(membership.uuid) is membership
 ```
 
 ## Key Differences from Components

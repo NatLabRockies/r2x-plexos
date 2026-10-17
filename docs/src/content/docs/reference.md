@@ -23,7 +23,7 @@ The parser supplies `context.system`; the exporter consumes it and writes files.
 
 ## Configuration fields
 
-These are the package-specific settings. Inherited settings and validation are defined by [R2X Core](https://github.com/NatLabRockies/r2x-core/blob/main/src/r2x_core/plugin_config.py).
+These are the package-specific settings. Inherited settings and validation are defined by [r2x-core](https://github.com/NatLabRockies/r2x-core/blob/main/src/r2x_core/plugin_config.py).
 
 | Field | Meaning |
 | --- | --- |
@@ -37,11 +37,9 @@ These are the package-specific settings. Inherited settings and validation are d
 
 Inspect the installed schema rather than assuming current defaults apply to an older release:
 
-```python
-from r2x_plexos import PLEXOSConfig
-
-print(PLEXOSConfig.model_json_schema())
-
+```python doctest
+>>> from r2x_plexos import PLEXOSConfig
+>>> assert "properties" in PLEXOSConfig.model_json_schema()
 ```
 
 ## Model and helper modules
@@ -52,7 +50,7 @@ Follow [Python usage](/r2x-plexos/how-to/python/) for a complete context example
 
 ## Construction and execution signatures
 
-```python
+```text
 PLEXOSParser.from_context(ctx: PluginContext[ConfigT]) -> Plugin[ConfigT]
 PLEXOSExporter.from_context(ctx: PluginContext[ConfigT]) -> Plugin[ConfigT]
 plugin.run(*, ctx: PluginContext[ConfigT] | None = None) -> PluginContext[ConfigT]
@@ -73,7 +71,7 @@ validating YAML. Package fields listed above do not replace inherited Core optio
 
 The public helpers below are exported by `r2x_plexos`:
 
-```python
+```text
 get_scenario_priority() -> dict[str, int] | None
 set_scenario_priority(priority: dict[str, int] | None) -> None
 get_horizon() -> tuple[str, str] | None

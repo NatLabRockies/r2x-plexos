@@ -16,7 +16,7 @@ python -m pip install r2x-plexos
 ```
 
 This installs the format package and its dependencies, including
-[R2X Core](https://github.com/NatLabRockies/r2x-core) and
+[r2x-core](https://github.com/NatLabRockies/r2x-core) and
 [Infrasys](https://github.com/NatLabRockies/infrasys).
 The PLEXOS XML database interface is supplied by [plexosdb](https://github.com/NatLabRockies/plexosdb).
 Published distributions and their Python requirements are on

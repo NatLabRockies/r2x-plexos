@@ -73,13 +73,11 @@ def scenario_priority(priority: dict[str, int] | None) -> Iterator[None]:
 
     Examples
     --------
-    >>> from r2x_plexos.models.context import scenario_priority
-    >>> gen = parser.get_generator("Coal1")
+    >>> from r2x_plexos import get_scenario_priority, scenario_priority, set_scenario_priority
+    >>> set_scenario_priority(None)
     >>> with scenario_priority({"Test": 1, "Base": 2}):
-    ...     print(gen.max_capacity)
-    120.0
-    >>> print(gen.max_capacity)
-    100.0
+    ...     assert get_scenario_priority() == {"Test": 1, "Base": 2}
+    >>> assert get_scenario_priority() is None
     """
     previous = get_scenario_priority()
     set_scenario_priority(priority)
@@ -109,11 +107,11 @@ def horizon(date_from: str, date_to: str) -> Iterator[None]:
 
     Examples
     --------
-    >>> from r2x_plexos.models.context import horizon
-    >>> gen = parser.get_generator("Coal1")
+    >>> from r2x_plexos import get_horizon, horizon, set_horizon
+    >>> set_horizon(None)
     >>> with horizon("2024-01-01", "2024-06-30"):
-    ...     print(gen.max_capacity)
-    100.0
+    ...     assert get_horizon() == ("2024-01-01", "2024-06-30")
+    >>> assert get_horizon() is None
     """
     previous = get_horizon()
     set_horizon((date_from, date_to))
@@ -145,11 +143,10 @@ def scenario_and_horizon(priority: dict[str, int] | None, date_from: str, date_t
 
     Examples
     --------
-    >>> from r2x_plexos.models.context import scenario_and_horizon
-    >>> gen = parser.get_generator("Coal1")
+    >>> from r2x_plexos import get_horizon, get_scenario_priority, scenario_and_horizon
     >>> with scenario_and_horizon({"Test": 1}, "2024-01-01", "2024-12-31"):
-    ...     print(gen.max_capacity)
-    120.0
+    ...     assert get_scenario_priority() == {"Test": 1}
+    ...     assert get_horizon() == ("2024-01-01", "2024-12-31")
     """
     with scenario_priority(priority), horizon(date_from, date_to):
         yield

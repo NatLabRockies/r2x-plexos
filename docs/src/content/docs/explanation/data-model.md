@@ -12,10 +12,10 @@ for the supported names.
 and other PLEXOS dimensions. It is not a single numeric `value` constructor.
 Use `from_dict` for a small property specification:
 
-```python
-from r2x_plexos import PLEXOSPropertyValue
-
-property_value = PLEXOSPropertyValue.from_dict({"value": 500.0, "scenario": "Base"})
+```python doctest
+>>> from r2x_plexos import PLEXOSPropertyValue
+>>> property_value = PLEXOSPropertyValue.from_dict({"value": 500.0, "scenario": "Base"})
+>>> assert property_value.get_value() == 500.0
 ```
 
 The [property implementation](https://github.com/NatLabRockies/r2x-plexos/blob/main/src/r2x_plexos/models/property.py)
