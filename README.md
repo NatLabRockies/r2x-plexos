@@ -1,208 +1,55 @@
-<h1 align="center">r2x-plexos</h1>
+<img src="./docs/src/assets/r2x-logo-full-square.svg" alt="R2X framework logo" align="left" width="220px" height="220px" hspace="10"/>
+<img align="left" alt="" width="0" height="220px" hspace="10"/>
 
-<p align="center">
-    <strong>Translate power-system models between PLEXOS XML and the R2X ecosystem.</strong>
-</p>
+#### r2x-plexos
+<p><small>PLEXOS models, parser, and exporter for the R2X ecosystem.</small></p>
 
-<p align="center">
-    <a href="https://pypi.org/project/r2x-plexos/"><img src="https://img.shields.io/pypi/v/r2x-plexos.svg" alt="PyPI version"></a>
-    <a href="https://pypi.org/project/r2x-plexos/"><img src="https://img.shields.io/pypi/pyversions/r2x-plexos.svg" alt="Supported Python versions"></a>
-    <a href="https://github.com/NatLabRockies/r2x-plexos/actions/workflows/ci.yaml"><img src="https://github.com/NatLabRockies/r2x-plexos/actions/workflows/ci.yaml/badge.svg" alt="CI status"></a>
-    <a href="https://natlabrockies.github.io/r2x-plexos/"><img src="https://github.com/NatLabRockies/r2x-plexos/actions/workflows/docs.yaml/badge.svg?branch=main" alt="Documentation build"></a>
-    <a href="https://codecov.io/gh/NatLabRockies/r2x-plexos"><img src="https://codecov.io/gh/NatLabRockies/r2x-plexos/branch/main/graph/badge.svg" alt="Coverage"></a>
-</p>
+[![PyPI](https://img.shields.io/pypi/v/r2x-plexos.svg)](https://pypi.org/project/r2x-plexos/) [![Docs](https://img.shields.io/badge/docs-guides-0079c2)](https://natlabrockies.github.io/r2x-plexos/)
 
-`r2x-plexos` is an [R2X Core](https://github.com/NatLabRockies/r2x-core)
-plugin for reading PLEXOS XML databases into typed R2X/Infrasys systems and
-writing those systems back to PLEXOS XML. It supports both Python workflows
-and repeatable `r2x` CLI pipelines.
+<br clear="left">
 
-## What it does
+`r2x-plexos` reads PLEXOS XML into typed R2X systems and exports systems back to PLEXOS.
+Use [r2x-cli](https://github.com/NatLabRockies/r2x-cli) for repeatable pipelines and [R2X translation plugins](https://natlabrockies.github.io/R2X/) for cross-format mappings.
 
-- **Parse PLEXOS models**: Read model objects, properties, memberships, scenarios, horizons, and referenced time series.
-- **Export R2X systems**: Create PLEXOS XML databases from R2X systems, including memberships and time-series CSV files.
-- **Round-trip models**: Parse, inspect or transform a system, then export a new PLEXOS model.
-- **Configure simulations**: Build models, horizons, and simulation settings for the exported database.
-- **Compose pipelines**: Connect the PLEXOS parser and exporter with other R2X plugins through YAML pipelines.
+## Quick Start
 
-## Installation
+Use Python 3.11, 3.12, or 3.13. In your active Python environment:
 
-Using [uv](https://docs.astral.sh/uv/):
-
-```console
-uv add r2x-plexos
-```
-
-Or using pip:
-
-```console
+```bash
 python -m pip install r2x-plexos
-```
-
-The package supports Python 3.11, 3.12, and 3.13. To verify installation and
-plugin discovery:
-
-```console
 python -c "import r2x_plexos; print(r2x_plexos.__version__)"
-r2x list
 ```
 
-The CLI executable is `r2x`. Its discovered plugin names include
-`plexos-parser` and `plexos-exporter`.
+The command prints the installed package version. For the separately installed CLI, install into its managed environment:
 
-## Python quick start
-
-### Parse a PLEXOS XML model
-
-The parser is initialized with an R2X Core `PluginContext`. `fpath` can point
-to an XML file or to a directory containing one.
-
-```python
-from pathlib import Path
-from typing import cast
-
-from r2x_core import DataFile, DataStore, PluginContext
-from r2x_plexos import PLEXOSConfig, PLEXOSParser
-
-xml_path = Path("input/model.xml")
-store = DataStore(path=xml_path.parent)
-store.add_data(DataFile(name="xml_file", fpath=xml_path))
-
-config = PLEXOSConfig(
-        fpath=str(xml_path),
-        model_name="Base",
-        horizon_year=2024,
-        timeseries_dir=xml_path.parent,
-)
-context = PluginContext(config=config, store=store)
-parser = cast(PLEXOSParser, PLEXOSParser.from_context(context))
-
-result = parser.run()
-if result.is_err() or result.system is None:
-        raise RuntimeError(result.error if result.is_err() else "No system returned")
-
-system = result.system
-print(system.name)
+```bash
+r2x python install
+r2x install r2x-plexos
+r2x list r2x-plexos
 ```
 
-Parsed components can be queried through the R2X system:
-
-```python
-from r2x_plexos.models import PLEXOSGenerator
-
-for generator in system.get_components(PLEXOSGenerator):
-        print(generator.name, generator.max_capacity)
-```
-
-### Export a system to PLEXOS
-
-Pass the parsed or transformed system to the exporter through a context. The
-exporter creates the simulation configuration and writes XML output using a
-bundled PLEXOS template.
-
-```python
-from typing import cast
-
-from r2x_core import PluginContext
-from r2x_plexos import PLEXOSConfig, PLEXOSExporter
-
-export_config = PLEXOSConfig(
-        model_name="Base_2024",
-        horizon_year=2024,
-        template="PLEXOS10.0",
-        output_path="output",
-)
-export_context = PluginContext(config=export_config, system=system)
-exporter = cast(PLEXOSExporter, PLEXOSExporter.from_context(export_context))
-
-result = exporter.run()
-if result.is_err():
-        raise RuntimeError(result.error)
-```
-
-Supported templates include `PLEXOS9.0`, `PLEXOS10.0`, `PLEXOS11.0`, and
-`PLEXOS12.0`. A custom XML template path can also be supplied through
-`PLEXOSConfig.template`.
-
-## R2X CLI pipelines
-
-Use a pipeline when several plugins should run as one reproducible workflow.
-Create a starter file with:
-
-```console
-r2x init plexos-pipeline.yaml
-```
-
-The following example parses a PLEXOS model and exports it again:
-
-```yaml
-variables:
-    input_xml: /data/input/model.xml
-    output_dir: /data/output
-    model_name: Base
-    horizon_year: 2024
-    template: PLEXOS10.0
-
-pipelines:
-    round_trip:
-        - r2x-plexos.plexos-parser
-        - r2x-plexos.plexos-exporter
-
-config:
-    r2x-plexos.plexos-parser:
-        fpath: ${input_xml}
-        model_name: ${model_name}
-        horizon_year: ${horizon_year}
-
-    r2x-plexos.plexos-exporter:
-        model_name: ${model_name}
-        horizon_year: ${horizon_year}
-        template: ${template}
-        output_path: ${output_dir}
-
-output_folder: ${output_dir}
-```
-
-Inspect and run the pipeline with:
-
-```console
-r2x list
-r2x run plexos-pipeline.yaml round_trip --print
-r2x run plexos-pipeline.yaml round_trip --dry-run
-r2x run plexos-pipeline.yaml round_trip
-```
-
-Transformations from other R2X plugins can be inserted between the parser and
-exporter. For example:
-
-```yaml
-pipelines:
-    p2s:
-        - r2x-plexos.plexos-parser
-        - r2x-plexos-to-sienna.plexos-to-sienna
-        - r2x-sienna.sienna-exporter
-```
-
-Use `${variable}` references for shared paths and years, and use `r2x list` to
-find installed plugin references.
+Confirm `plexos-parser` and `plexos-exporter` are discovered, then follow the [round-trip tutorial](https://natlabrockies.github.io/r2x-plexos/tutorials/round-trip/).
 
 ## Documentation
 
-The complete documentation includes tutorials, task-focused recipes,
-architecture explanations, API details, and pipeline examples:
+- [Getting started](https://natlabrockies.github.io/r2x-plexos/getting-started/installation/): installation, environment setup, and first-use checks.
+- [Tutorials](https://natlabrockies.github.io/r2x-plexos/tutorials/round-trip/): parse and export a public test model.
+- [How-to guides](https://natlabrockies.github.io/r2x-plexos/how-to/python/): Python contexts and CLI pipelines.
+- [Reference / API](https://natlabrockies.github.io/r2x-plexos/reference/): exports, configuration, and source links.
+- [Explanation](https://natlabrockies.github.io/r2x-plexos/explanation/): data flow and compatibility.
+- [Troubleshooting](https://natlabrockies.github.io/r2x-plexos/troubleshooting/): discovery, inputs, and export failures.
+- [Changelog](CHANGELOG.md): canonical release history.
+- [Contributors](https://natlabrockies.github.io/r2x-plexos/contributors/): development and docs checks.
 
-- [Documentation site](https://natlabrockies.github.io/r2x-plexos/)
-- [Complete usage guide](https://natlabrockies.github.io/r2x-plexos/tutorials/using-r2x-plexos.html)
-- [Tutorials](https://natlabrockies.github.io/r2x-plexos/tutorials/)
-- [How-to guides](https://natlabrockies.github.io/r2x-plexos/how-tos/)
-- [API reference](https://natlabrockies.github.io/r2x-plexos/references/)
+## Development
 
-## Contributing
+```bash
+uv sync --all-groups
+uv run prek run --all-files --hook-stage pre-push
+```
 
-- [Issues](https://github.com/NatLabRockies/r2x-plexos/issues)
-- [Pull requests](https://github.com/NatLabRockies/r2x-plexos/pulls)
-- [Labels](https://github.com/NatLabRockies/r2x-plexos/labels)
+See [docs/README.md](docs/README.md) for the documentation build.
 
 ## License
 
-This project is distributed under the [BSD 3-Clause License](LICENSE.txt).
+BSD-3-Clause. See [LICENSE.txt](LICENSE.txt).
