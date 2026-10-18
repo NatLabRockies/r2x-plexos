@@ -44,3 +44,7 @@ uv run pytest tests/test_docs_examples.py tests/test_docs_api.py --no-cov -q
 The tests also reject unmarked Python fences, enforce discovery, and check that an
 incorrect output expectation fails. Shell/YAML/JSON/signature displays use their
 own language fences and are not presented as Python doctests.
+
+Legacy HTML redirect sources in `public/` map removed headings to current sections.
+The post-build `check_redirects.py` checks each mapped route and actual rendered
+anchor; changelog fragments link to the canonical repository changelog.
