@@ -28,3 +28,17 @@ class ApiNavigationTest(unittest.TestCase):
         self.assertEqual(component["slug"], "r2x_plexos.Example")
         self.assertEqual(component["children"][0]["slug"], "r2x_plexos.Example.to_json")
         self.assertEqual(component["children"][0]["text"], "Example.to_json()")
+
+
+def test_source_links_keep_dependency_ownership() -> None:
+    """Installed dependency methods must not become nonexistent local .venv links."""
+    config_path = Path(__file__).resolve().parents[1] / "docs/api-source/conf.py"
+    config_spec = importlib.util.spec_from_file_location("api_conf", config_path)
+    assert config_spec is not None and config_spec.loader is not None
+    config = importlib.util.module_from_spec(config_spec)
+    config_spec.loader.exec_module(config)
+    link = config.linkcode_resolve("py", {"module": "r2x_plexos", "fullname": "PLEXOSParser.from_context"})
+    assert link == "https://github.com/NatLabRockies/r2x-core/blob/main/src/r2x_core/plugin_base.py"
+    local = config.linkcode_resolve("py", {"module": "r2x_plexos", "fullname": "PLEXOSParser"})
+    assert "/src/r2x_plexos/parser.py#L" in local
+    assert "/.venv/" not in local

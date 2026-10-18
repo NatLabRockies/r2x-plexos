@@ -26,7 +26,8 @@ npm run build
 
 The build extracts public top-level exports from the current checkout with
 `generate_api.py` and Sphinx, then renders them in Starlight. Source links are
-pinned to the checkout revision. Edit docstrings and the generator, not the ignored
+pinned to the checkout revision for package code; inherited Core methods link to
+the canonical Core source rather than a local virtual-environment path. Edit docstrings and the generator, not the ignored
 `reference/api.md` or `src/generated/api-toc.json` outputs. The native contents
 tree exposes members on desktop and mobile.
 

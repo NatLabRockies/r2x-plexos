@@ -37,9 +37,27 @@ def linkcode_resolve(domain, info):
         obj = inspect.unwrap(obj)
         source = Path(inspect.getsourcefile(obj)).resolve()
         root = Path(__file__).resolve().parents[2]
-        relative = source.relative_to(root).as_posix()
+        if obj.__module__.startswith("r2x_core."):
+            module_path = obj.__module__.replace(".", "/") + ".py"
+            return "https://github.com/NatLabRockies/r2x-core/blob/main/src/" + module_path
+        relative = "src/" + source.relative_to(root / "src").as_posix()
         lines, start = inspect.getsourcelines(obj)
         revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
     except (AttributeError, ImportError, OSError, TypeError, ValueError, subprocess.CalledProcessError):
         return None
     return f"https://github.com/NatLabRockies/r2x-plexos/blob/{revision}/{relative}#L{start}-L{start + len(lines) - 1}"
+
+
+def keep_inherited_contract(_app, _what, name, obj, _options, lines):
+    """Keep dependency contracts while linking to the package's tested usage example."""
+    if not name.endswith((".from_context", ".run")) or not obj.__module__.startswith("r2x_core."):
+        return
+    if "Examples" in lines:
+        del lines[lines.index("Examples") :]
+    lines.extend(
+        ["", "For a complete tested example, use the `Python workflow </r2x-plexos/how-to/python/>`_."]
+    )
+
+
+def setup(app):
+    app.connect("autodoc-process-docstring", keep_inherited_contract)
