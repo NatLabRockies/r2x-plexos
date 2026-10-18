@@ -48,4 +48,4 @@ own language fences and are not presented as Python doctests.
 
 Legacy HTML redirect sources in `public/` map removed headings to current sections.
 The post-build `check_redirects.py` checks each mapped route and actual rendered
-anchor; changelog fragments link to the canonical repository changelog.
+anchor; old changelog headings lead to the single Changelog page and its canonical repository link.

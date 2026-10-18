@@ -34,10 +34,7 @@ def main() -> None:
             continue
         for target in json.loads(match.group(1)).values():
             url = urlsplit(target)
-            if url.netloc:
-                assert url.netloc == "github.com" and "/blob/main/CHANGELOG.md" in url.path
-                checked += 1
-                continue
+            assert not url.scheme and not url.netloc, target
             assert url.path.startswith(BASE), target
             page = ROOT / "_build" / url.path.removeprefix(BASE) / "index.html"
             assert page.is_file(), (redirect, target)
