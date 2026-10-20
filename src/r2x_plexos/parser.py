@@ -520,6 +520,12 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
                 logger.trace(f"No memberships found for {component.name}, skipping collection properties")
                 continue
 
+            memberships_by_parent_id: dict[int, PLEXOSMembership] = {}
+            for mem in memberships:
+                parent_object_id = mem.parent_object.object_id
+                if parent_object_id is not None:
+                    memberships_by_parent_id.setdefault(parent_object_id, mem)
+
             props_by_parent_and_collection: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
 
             for prop in coll_props_list:
@@ -532,12 +538,7 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
             for (_parent_class, parent_id_str), props_list in props_by_parent_and_collection.items():
                 parent_id = int(parent_id_str)
 
-                matching_membership = None
-                for mem in memberships:
-                    if mem.parent_object.object_id == parent_id:
-                        matching_membership = mem
-                        break
-
+                matching_membership = memberships_by_parent_id.get(parent_id)
                 if not matching_membership:
                     logger.trace(f"No matching membership found for parent_id {parent_id}")
                     continue

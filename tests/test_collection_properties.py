@@ -87,3 +87,54 @@ def test_battery_capacity_with_constant_variable(xml_with_variables, tmp_path, c
     sup = sys.get_supplemental_attributes_with_component(region, CollectionProperties)[0]
     assert "load_risk" in sup.properties
     assert sup.properties["load_risk"].get_value() == 0.0
+
+
+def test_collection_properties_match_membership_per_parent(tmp_path, monkeypatch):
+    """Each parent's collection property attaches to its own membership, in linear time."""
+    from r2x_plexos.models import PLEXOSMembership
+
+    n_parents = 60
+    db: PlexosDB = PlexosDB.from_xml(Path("tests/data/5_bus_system_variables.xml"))
+    db.add_object(ClassEnum.Region, "Region")
+    for i in range(n_parents):
+        reserve_name = f"Reserve{i}"
+        db.add_object(ClassEnum.Reserve, reserve_name)
+        db.add_membership(ClassEnum.Reserve, ClassEnum.Region, reserve_name, "Region", CollectionEnum.Regions)
+        db.add_property(
+            ClassEnum.Region,
+            "Region",
+            "Load Risk",
+            value=float(i),
+            collection_enum=CollectionEnum.Regions,
+            parent_class_enum=ClassEnum.Reserve,
+            parent_object_name=reserve_name,
+        )
+    xml_path = tmp_path / "many_parents.xml"
+    db.to_xml(xml_path)
+
+    parent_lookups = 0
+    original_getattribute = PLEXOSMembership.__getattribute__
+
+    def counting_getattribute(self, name):
+        nonlocal parent_lookups
+        if name == "parent_object":
+            parent_lookups += 1
+        return original_getattribute(self, name)
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    store = DataStore(path=tmp_path)
+    store.add_data([DataFile(name="xml_file", fpath=xml_path)], overwrite=True)
+    parser = cast(PLEXOSParser, PLEXOSParser.from_context(PluginContext(config=config, store=store)))
+    parser.db = db
+    monkeypatch.setattr(PLEXOSMembership, "__getattribute__", counting_getattribute)
+    sys = parser.run().system
+    monkeypatch.undo()
+
+    region = sys.get_component(PLEXOSRegion, "Region")
+    attached = sys.get_supplemental_attributes_with_component(region, CollectionProperties)
+    values_by_parent = {
+        sup.membership.parent_object.name: sup.properties["load_risk"].get_value() for sup in attached
+    }
+    assert values_by_parent == {f"Reserve{i}": float(i) for i in range(n_parents)}
+    # Scanning every membership per parent costs about n_parents**2 / 2 lookups.
+    assert parent_lookups < n_parents**2 / 4, parent_lookups
