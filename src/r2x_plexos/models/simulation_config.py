@@ -383,22 +383,152 @@ class PLEXOSProduction(PLEXOSConfiguration):
 class PLEXOSPASA(PLEXOSConfiguration):
     """PLEXOS PASA (Projected Assessment of System Adequacy) configuration."""
 
-    step_type: Annotated[
-        int,
+    compute_multi_area_reliability_indices: Annotated[
+        ALLOWED_SET,
         Field(
-            alias="Step Type",
-            description="Step type: Day (1), Week (2), Month (3), Year (4)",
-            json_schema_extra={"enum": [1, 2, 3, 4]},
+            alias="Compute Multi-area Reliability Indices",
+            description="Master switch for computation of reliability indices LOLP, LOLE, etc across multiple areas.",
         ),
-    ] = 1
-    write_outage_text_files: Annotated[
-        int,
+    ] = 0
+    compute_reliability_indices: Annotated[
+        ALLOWED_SET,
         Field(
-            alias="Write Outage Text Files",
-            description="Write outage text files: Yes (-1), No (0)",
-            json_schema_extra={"enum": [-1, 0]},
+            alias="Compute Reliability Indices",
+            description="Master switch for computation of reliability indices LOLP, LOLE, etc.",
+        ),
+    ] = 0
+    constraints_enabled: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Constraints Enabled",
+            description="If transmission line constraints are enabled in PASA.",
         ),
     ] = -1
+    energy_objective: Annotated[
+        float,
+        Field(
+            alias="Energy Objective",
+            description="Relative contribution of energy margins to PASA objective function",
+            ge=0,
+            le=100,
+        ),
+    ] = 0.0
+    include_contract_generation: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Include Contract Generation",
+            description="Include physical contract generation capacity in PASA",
+        ),
+    ] = 0
+    include_contract_load: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Include Contract Load",
+            description="Include physical contract load capacity in PASA",
+        ),
+    ] = 0
+    include_demand_bids: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Include Demand Bids",
+            description="Include demand bids are load in PASA",
+        ),
+    ] = 0
+    include_dsp: Annotated[
+        ALLOWED_SET,
+        Field(alias="Include DSP", description="Include demand-side participation in PASA"),
+    ] = -1
+    include_market_purchases: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Include Market Purchases",
+            description="Include market purchases as generation capacity in PASA",
+        ),
+    ] = 0
+    interface_constraints_enabled: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Interface Constraints Enabled",
+            description="If transmission interface constraints are enabled in PASA.",
+        ),
+    ] = -1
+    maintenance_sculpting: Annotated[
+        float,
+        Field(
+            alias="Maintenance Sculpting",
+            description=(
+                "Level of sculpting of maintenance outages: Higher sculpting means outages are more "
+                "concentrated in high reserve periods"
+            ),
+            ge=0,
+            le=100,
+        ),
+    ] = 0.0
+    reliability_criterion: Annotated[
+        Literal[0, 1],
+        Field(
+            alias="Reliability Criterion",
+            description="Criterion used to select periods for Monte Carlo reliability analysis",
+        ),
+    ] = 0
+    reliability_lolp_tolerance: Annotated[
+        float,
+        Field(
+            alias="Reliability LOLP Tolerance",
+            description=(
+                "For reliability-based sampled chronology using LOLP criterion select intervals "
+                "with LOLP at or above this level"
+            ),
+            ge=0,
+        ),
+    ] = 0.01
+    reliability_max_samples: Annotated[
+        float,
+        Field(
+            alias="Reliability Max Samples",
+            description=(
+                "For reliability-based sampled chronology select no more than this many hours per year"
+            ),
+            ge=1,
+        ),
+    ] = 1e30
+    step_type: Annotated[
+        Literal[0, 1, 2],
+        Field(
+            alias="Step Type",
+            description="PASA step type: One period is modelled for each period of this type in horizon.",
+        ),
+    ] = 1
+    stochastic_method: Annotated[
+        Literal[0, 1, 2, 3],
+        Field(
+            alias="Stochastic Method",
+            description="Stochastic optimization method for PASA.",
+        ),
+    ] = 0
+    transmission_detail: Annotated[
+        Literal[0, 1, 2],
+        Field(
+            alias="Transmission Detail",
+            description="Definition of maintenance area for PASA.",
+        ),
+    ] = 0
+    write_outage_text_files: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Write Outage Text Files",
+            description="If outage patterns should be written to text files",
+        ),
+    ] = 0
+    write_reliability_text_files: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Write Reliability Text Files",
+            description=(
+                "If the periods selected for Monte Carlo reliability analysis should be written to text files"
+            ),
+        ),
+    ] = 0
 
     @classmethod
     def example(cls) -> "PLEXOSPASA":
