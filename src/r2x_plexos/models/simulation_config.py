@@ -127,31 +127,247 @@ class PLEXOSSTSchedule(PLEXOSConfiguration):
 class PLEXOSProduction(PLEXOSConfiguration):
     """PLEXOS Production simulation configuration."""
 
-    unit_commitment_optimality: Annotated[
-        int,
+    battery_station_aggregation_mode: Annotated[
+        Literal[0, 1, 2],
         Field(
-            alias="Unit Commitment Optimality",
-            description="Unit commitment method: LP (0), Rounded Relaxation (1), MIP (2)",
-            json_schema_extra={"enum": [0, 1, 2]},
+            alias="Battery Station Aggregation Mode",
+            description="Automatically create Battery Station objects by aggregating Batteries",
         ),
-    ] = 2
-    rounding_up_threshold: Annotated[
+    ] = 0
+    capacity_factor_constraint_basis: Annotated[
+        Literal[0, 1],
+        Field(
+            alias="Capacity Factor Constraint Basis",
+            description="Basis for capacity factor constraints.",
+        ),
+    ] = 0
+    cooling_states_enabled: Annotated[
+        ALLOWED_SET,
+        Field(alias="Cooling States Enabled", description="If generator unit cooling states are enabled"),
+    ] = -1
+    dispatch_by_battery_station: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Dispatch by Battery Station",
+            description="If batteries should be aggregated through manual or automatic battery stations for dispatch.",
+        ),
+    ] = -1
+    dispatch_by_power_station: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Dispatch by Power Station",
+            description="If generators in power stations should be treated in aggregate for dispatch.",
+        ),
+    ] = -1
+    dp_capacity_factor_error_threshold: Annotated[
         float,
         Field(
-            alias="Rounding Up Threshold",
-            description="Threshold for rounding up unit commitment decisions",
-            ge=0.0,
-            le=1.0,
+            alias="DP Capacity Factor Error Threshold",
+            description=(
+                "Error in DP capacity factor compared to MT Schedule capacity factor below which "
+                "the DP solution is accepted"
+            ),
+            ge=0,
         ),
-    ] = 0.26
+    ] = 20.0
+    dp_capacity_factor_threshold: Annotated[
+        float,
+        Field(
+            alias="DP Capacity Factor Threshold",
+            description="Minimum capacity factor for generators to be dispatched by the DP",
+            ge=0,
+        ),
+    ] = 20.0
+    forced_outage_relaxes_min_down_time: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Forced Outage Relaxes Min Down Time",
+            description="If ramp constraints should all be formulated upfront rather than checked iteratively.",
+        ),
+    ] = 0
+    formulate_ramp_upfront: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Formulate Ramp Upfront",
+            description="If ramp constraints should all be formulated upfront rather than checked iteratively.",
+        ),
+    ] = -1
+    formulate_upfront: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Formulate Upfront",
+            description="If production constraints should all be formulated upfront rather than checked iteratively.",
+        ),
+    ] = -1
+    fuel_use_function_precision: Annotated[
+        float,
+        Field(
+            alias="Fuel Use Function Precision",
+            description="Precision for calculation of linear approximation to fuel function.",
+            ge=0,
+        ),
+    ] = 0.0
+    gas_demand_resolution: Annotated[
+        Literal[0, 1, 2],
+        Field(alias="Gas Demand Resolution", description="Resolution of input gas demands"),
+    ] = 0
+    heat_rate_detail: Annotated[
+        Literal[0, 1, 2],
+        Field(
+            alias="Heat Rate Detail",
+            description="Level of detail for Generator heat rate modelling",
+        ),
+    ] = 0
+    heat_rate_error_method: Annotated[
+        Literal[0, 1, 2, 3, 4],
+        Field(
+            alias="Heat Rate Error Method",
+            description="Method for handling non-convex heat rate functions.",
+        ),
+    ] = 2
+    increment_and_decrement: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Increment and Decrement",
+            description="If simultaneous closure of increment and decrement bids/offers around a base is allowed",
+        ),
+    ] = -1
+    integers_in_look_ahead: Annotated[
+        Literal[0, 1, 2],
+        Field(
+            alias="Integers in Look-ahead",
+            description="Controls when the look-ahead contains integers for unit commitment and other decisions.",
+        ),
+    ] = 1
     max_heat_rate_tranches: Annotated[
         int,
         Field(
             alias="Max Heat Rate Tranches",
-            description="Maximum number of heat rate tranches",
+            description="Maximum number of tranches in the fuel function piecewise linear approximation",
             ge=1,
+            le=100,
         ),
-    ] = 1
+    ] = 10
+    min_heat_rate_tranche_size: Annotated[
+        float,
+        Field(
+            alias="Min Heat Rate Tranche Size",
+            description="Minimum tranche size in fuel function piecewise linear approximation",
+            ge=0,
+        ),
+    ] = 0.0
+    power_station_aggregation_mode: Annotated[
+        Literal[0, 1, 2],
+        Field(
+            alias="Power Station Aggregation Mode",
+            description="Automatically create Power Station objects by aggregating Generators",
+        ),
+    ] = 0
+    pump_and_generate: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Pump and Generate",
+            description=(
+                "If pumped storage/battery is allowed to pump/charge and generate/discharge simultaneously"
+            ),
+        ),
+    ] = -1
+    ramping_constraints_enabled: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Ramping Constraints Enabled",
+            description="If facility ramping constraints are modeled",
+        ),
+    ] = -1
+    rounded_relaxation_commitment_model: Annotated[
+        Literal[0, 1],
+        Field(
+            alias="Rounded Relaxation Commitment Model",
+            description="Determines if the unit commitment decisions are made centrally or by self-commitment",
+        ),
+    ] = 0
+    rounded_relaxation_end_threshold: Annotated[
+        float,
+        Field(
+            alias="Rounded Relaxation End Threshold",
+            description="End value for [Rounding Up Threshold] when Rounded Relaxation is running self-tune.",
+            le=1,
+        ),
+    ] = 0.75
+    rounded_relaxation_start_threshold: Annotated[
+        float,
+        Field(
+            alias="Rounded Relaxation Start Threshold",
+            description="Start value for [Rounding Up Threshold] when Rounded Relaxation is running self-tune.",
+            ge=0,
+        ),
+    ] = 0.25
+    rounded_relaxation_threshold_increment: Annotated[
+        float,
+        Field(
+            alias="Rounded Relaxation Threshold Increment",
+            description="Increment value for [Rounding Up Threshold] when Rounded Relaxation is running self-tune.",
+            ge=0.01,
+        ),
+    ] = 0.05
+    rounded_relaxation_tuning: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Rounded Relaxation Tuning",
+            description="If the Rounded Relaxation method should self-tune the [Rounding Up Threshold].",
+        ),
+    ] = 0
+    rounding_up_threshold: Annotated[
+        float,
+        Field(
+            alias="Rounding Up Threshold",
+            description="Threshold at which non-integers are rounded up.",
+            ge=0,
+            le=1,
+        ),
+    ] = 0.5
+    run_up_and_down_enabled: Annotated[
+        ALLOWED_SET,
+        Field(alias="Run Up and Down Enabled", description="If generator run up and run down are modeled"),
+    ] = -1
+    start_and_stop_enabled: Annotated[
+        ALLOWED_SET,
+        Field(alias="Start and Stop Enabled", description="If facility start up and shut down are modeled"),
+    ] = -1
+    start_cost_method: Annotated[
+        Literal[0, 1],
+        Field(
+            alias="Start Cost Method",
+            description=(
+                "Method for handling start costs in the mathematical formulation "
+                "(integrate into the formulation, or calculate ex-post)"
+            ),
+        ),
+    ] = 0
+    transitions_enabled: Annotated[
+        ALLOWED_SET,
+        Field(alias="Transitions Enabled", description="If generator transitions are modeled"),
+    ] = -1
+    unit_commitment_heat_rate_detail: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Unit Commitment Heat Rate Detail",
+            description=(
+                "If modeling fully detailed heat rates for unit commitment. Otherwise perform a two-pass UC/ED."
+            ),
+        ),
+    ] = -1
+    unit_commitment_optimality: Annotated[
+        Literal[0, 1, 2, 3],
+        Field(alias="Unit Commitment Optimality", description="Unit commitment integerization scheme."),
+    ] = 0
+    warm_up_process_enabled: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Warm Up Process Enabled",
+            description="If modeling of Facility Warm Up Process is enabled",
+        ),
+    ] = -1
 
     @classmethod
     def example(cls) -> "PLEXOSProduction":
