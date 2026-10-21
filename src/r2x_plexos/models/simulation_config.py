@@ -1631,11 +1631,475 @@ class PLEXOSTransmission(PLEXOSConfiguration):
 
 
 class PLEXOSDiagnostic(PLEXOSConfiguration):
-    """PLEXOS Diagnostic configuration for debugging and analysis.
+    """PLEXOS Diagnostic configuration for debugging and analysis."""
 
-    This class serves as a container for diagnostic settings.
-    Specific attributes can be added as needed.
-    """
+    algebraic: Annotated[
+        ALLOWED_SET,
+        Field(alias="Algebraic", description="Write LP files in algebraic format"),
+    ] = 0
+    annuities: Annotated[
+        ALLOWED_SET,
+        Field(alias="Annuities", description="Write diagnostics for annuity calculations"),
+    ] = 0
+    atc_reports: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="ATC Reports",
+            description="Write ATC min, ATC max, and most limiting elements for ATC to diagnostic files.",
+        ),
+    ] = 0
+    bertrand_pricing: Annotated[
+        ALLOWED_SET,
+        Field(alias="Bertrand Pricing", description="Write diagnostics for the Bertrand pricing algorithm"),
+    ] = 0
+    bid_cost_mark_up: Annotated[
+        ALLOWED_SET,
+        Field(alias="Bid-Cost Mark-up", description="Write diagnostics for RSI bid cost markup calculations"),
+    ] = 0
+    binary_files: Annotated[
+        ALLOWED_SET,
+        Field(alias="Binary Files", description="Write math programs to disk in binary format"),
+    ] = 0
+    binding_contingencies: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Binding Contingencies", description="Write diagnostics for binding Contingency constraints"
+        ),
+    ] = 0
+    clear_existing: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Clear Existing",
+            description="Clear (delete) existing diagnostic files from the solution folder.",
+        ),
+    ] = -1
+    computer_information: Annotated[
+        ALLOWED_SET,
+        Field(alias="Computer Information", description="Output computer information."),
+    ] = -1
+    congestion_charges: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Congestion Charges",
+            description="Write diagnostics for Node.[Congestion Charge] calculations",
+        ),
+    ] = 0
+    constraint_decomposition: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Constraint Decomposition",
+            description="Write diagnostics for constraint decomposition in MT Schedule",
+        ),
+    ] = 0
+    constraint_rollover: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Constraint Rollover",
+            description="Write diagnostics for constraint RHS carry-over in ST Schedule",
+        ),
+    ] = 0
+    data_file_read: Annotated[
+        ALLOWED_SET,
+        Field(alias="Data File Read", description="Output data file information to log file."),
+    ] = 0
+    database_load: Annotated[
+        ALLOWED_SET,
+        Field(alias="Database Load", description="Output the database loading process to log file."),
+    ] = 0
+    decimal_places_lp: Annotated[
+        int,
+        Field(
+            alias="Decimal Places LP", description="Generic writer decimal places for LP file writing", ge=0
+        ),
+    ] = 6
+    decimal_places_sol: Annotated[
+        int,
+        Field(
+            alias="Decimal Places SOL", description="Generic writer decimal places for SOL file writing", ge=0
+        ),
+    ] = 6
+    embedded_losses: Annotated[
+        ALLOWED_SET,
+        Field(alias="Embedded Losses", description="Write diagnostics for embedded loss iterations"),
+    ] = 0
+    feasibility_repair_weight: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Feasibility Repair Weight",
+            description="Write the weights used in feasibility repair for each variable/constraint class",
+        ),
+    ] = 0
+    future_cost_function: Annotated[
+        ALLOWED_SET,
+        Field(alias="Future Cost Function", description="Write diagnostics for the future cost function."),
+    ] = 0
+    generic_names: Annotated[
+        ALLOWED_SET,
+        Field(alias="Generic Names", description="Use generic names in math program files"),
+    ] = 0
+    heat_rate: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Heat Rate",
+            description="Write diagnostics for Generator Heat Rate curve fitting and non-convex corrections.",
+        ),
+    ] = 0
+    historical_sampling: Annotated[
+        ALLOWED_SET,
+        Field(alias="Historical Sampling", description="Write the historical samples."),
+    ] = 0
+    iis: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="IIS",
+            description=(
+                "Compute the irreducibly inconsistent set (IIS) for each infeasibility and write to disk in text format"
+            ),
+        ),
+    ] = 0
+    infeasibility_lp_files: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Infeasibility LP Files",
+            description="Write infeasible and repaired math programs to disk in text format",
+        ),
+    ] = 0
+    infeasibility_mps_files: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Infeasibility MPS Files",
+            description="Write infeasible and repaired math programs to disk in MPS format",
+        ),
+    ] = 0
+    interleaved: Annotated[
+        ALLOWED_SET,
+        Field(alias="Interleaved", description="Write diagnostics for Model Interleaved run mode"),
+    ] = 0
+    interruption_sharing: Annotated[
+        ALLOWED_SET,
+        Field(alias="Interruption Sharing", description="Write diagnostics for interruption sharing"),
+    ] = 0
+    levelized_company_costs: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Levelized Company Costs",
+            description="Write diagnostics for LT Plan Company Levelized Costs",
+        ),
+    ] = 0
+    licensing: Annotated[
+        ALLOWED_SET,
+        Field(alias="Licensing", description="Writes details of licenses checked out"),
+    ] = 0
+    lp_files: Annotated[
+        ALLOWED_SET,
+        Field(alias="LP Files", description="Write math programs to disk in LP text format"),
+    ] = 0
+    lp_progress: Annotated[
+        ALLOWED_SET,
+        Field(alias="LP Progress", description="Show progress messages from the LP/QP solver"),
+    ] = 0
+    marginal_expansion_increment: Annotated[
+        float,
+        Field(
+            alias="Marginal Expansion Increment",
+            description="Increment used for load in the region marginal expansion unit diagnostic.",
+        ),
+    ] = 1000.0
+    marginal_expansion_unit: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Marginal Expansion Unit",
+            description="Run algorithm to calculate the marginal generating unit for expansion (LT Plan).",
+        ),
+    ] = 0
+    marginal_loss_charges: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Marginal Loss Charges",
+            description="Write diagnostics for Node.[Marginal Loss Charge] calculations",
+        ),
+    ] = 0
+    marginal_unit: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Marginal Unit",
+            description="Execute region marginal unit diagnostic (this is an active diagnostic)",
+        ),
+    ] = 0
+    marginal_unit_increment: Annotated[
+        float,
+        Field(
+            alias="Marginal Unit Increment",
+            description="Increment used for load in the marginal unit diagnostic.",
+        ),
+    ] = -1.0
+    marginal_unit_transmission_detail: Annotated[
+        Literal[0, 1],
+        Field(
+            alias="Marginal Unit Transmission Detail",
+            description="Transmission area for marginal unit diagnostic",
+        ),
+    ] = 0
+    max_infeasibility_log_lines: Annotated[
+        int,
+        Field(
+            alias="Max Infeasibility Log Lines",
+            description="Maximum number of infeasibility diagnostic lines written to the screen and log file.",
+            ge=-1,
+        ),
+    ] = -1
+    mip_progress: Annotated[
+        ALLOWED_SET,
+        Field(alias="MIP Progress", description="Show progress messages from the MIP solver"),
+    ] = 0
+    monitored_iterations: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Monitored Iterations",
+            description="Print messages for every iteration of row/column monitoring",
+        ),
+    ] = 0
+    monitored_iterations_summary: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Monitored Iterations Summary",
+            description="Print a summery message after iterations of row/column monitoring",
+        ),
+    ] = 0
+    mps_files: Annotated[
+        ALLOWED_SET,
+        Field(alias="MPS Files", description="Write math programs to disk in MPS text format"),
+    ] = 0
+    network_traversal: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Network Traversal",
+            description="Invokes network reduction algorithm which can improve performance on large-scale networks.",
+        ),
+    ] = 0
+    new_entry: Annotated[
+        ALLOWED_SET,
+        Field(alias="New Entry", description="Write diagnostics for MT Schedule new entry calculations"),
+    ] = 0
+    npv: Annotated[
+        ALLOWED_SET,
+        Field(alias="NPV", description="Write diagnostics for LT Plan NPV of optimal plan"),
+    ] = 0
+    objective_function: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Objective Function",
+            description="Write diagnostics for non-zero terms in the objective function.",
+        ),
+    ] = 0
+    outages: Annotated[
+        ALLOWED_SET,
+        Field(alias="Outages", description="Write diagnostics for generator and line outages"),
+    ] = 0
+    performance_summary: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Performance Summary",
+            description="Print performance summary at the completion of each simulation phase.",
+        ),
+    ] = -1
+    random_number_seed: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Random Number Seed",
+            description="Write out the Random Number Seed used for each Generator and Line",
+        ),
+    ] = 0
+    region_supply: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Region Supply",
+            description="Execute region supply diagnostic (this is an active diagnostic)",
+        ),
+    ] = 0
+    revenue_recovery: Annotated[
+        ALLOWED_SET,
+        Field(alias="Revenue Recovery", description="Write diagnostics for the LRMC recovery algorithm"),
+    ] = 0
+    sample_from: Annotated[
+        int,
+        Field(
+            alias="Sample From",
+            description="Limit diagnostic file writing to sample numbers starting at this number.",
+            ge=1,
+        ),
+    ] = 1
+    sample_reduction: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Sample Reduction",
+            description="Write diagnostics for reduced sample periods and periods mapping by sampled chronology.",
+        ),
+    ] = 0
+    sample_summary: Annotated[
+        ALLOWED_SET,
+        Field(alias="Sample Summary", description="Print summary for each sample of a multi-sample run."),
+    ] = 0
+    sample_to: Annotated[
+        int,
+        Field(
+            alias="Sample To",
+            description="Limit diagnostic file writing to sample numbers ending at this number (-1 means infinity).",
+            ge=-1,
+        ),
+    ] = -1
+    sample_weights: Annotated[
+        ALLOWED_SET,
+        Field(alias="Sample Weights", description="Write diagnostics for the sample weights"),
+    ] = 0
+    scenario_tree: Annotated[
+        ALLOWED_SET,
+        Field(alias="Scenario Tree", description="Write diagnostics for the scenario tree"),
+    ] = 0
+    sddp_convergence: Annotated[
+        ALLOWED_SET,
+        Field(alias="SDDP Convergence", description="Write SDDP convergence diagnostic file"),
+    ] = 0
+    shift_factors: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Shift Factors", description="Write the computed shift factors (PTDF) to a diagnostic file"
+        ),
+    ] = 0
+    skip_zero_values: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Skip Zero Values",
+            description="Generic writer will print only non-zero valued primal and dual variables in SOL files",
+        ),
+    ] = 0
+    solution_files: Annotated[
+        ALLOWED_SET,
+        Field(alias="Solution Files", description="Write math program solutions to disk in text format"),
+    ] = 0
+    solution_status: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Solution Status",
+            description="Status of the solution to each mathematical programming problem.",
+        ),
+    ] = 0
+    solver_summary: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Solver Summary",
+            description="Print a summary of the solution status, objective function value, etc for each mathematical program solved.",
+        ),
+    ] = 0
+    sort_row_column_names: Annotated[
+        ALLOWED_SET,
+        Field(alias="Sort Row Column Names", description="Generic writer will sort row and columns names"),
+    ] = 0
+    standardize_names: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Standardize Names", description="Generic writer will standardize names in LP and SOL files"
+        ),
+    ] = 0
+    step_from: Annotated[
+        int,
+        Field(
+            alias="Step From",
+            description="Limit diagnostic file writing to step numbers starting at this number.",
+            ge=1,
+        ),
+    ] = 1
+    step_summary: Annotated[
+        ALLOWED_SET,
+        Field(alias="Step Summary", description="Print summary for each step of a multi-step run."),
+    ] = 0
+    step_to: Annotated[
+        int,
+        Field(
+            alias="Step To",
+            description="Limit diagnostic file writing to step numbers ending at this number (-1 means infinity).",
+            ge=-1,
+        ),
+    ] = -1
+    storage_decomposition: Annotated[
+        ALLOWED_SET,
+        Field(alias="Storage Decomposition", description="Write diagnostics for storage decomposition"),
+    ] = 0
+    strip_model_name: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Strip Model Name",
+            description="Generic writer will strip out the Model name from LP and SOL files",
+        ),
+    ] = 0
+    summary_exact_conditioning: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Summary Exact Conditioning",
+            description="Report exact basis condition number (if available) in the solver summary.",
+        ),
+    ] = 0
+    task_components: Annotated[
+        ALLOWED_SET,
+        Field(alias="Task Components", description="Print a summary of the formulation elements by class."),
+    ] = 0
+    task_size: Annotated[
+        ALLOWED_SET,
+        Field(alias="Task Size", description="Print the size of the optimization task."),
+    ] = 0
+    times: Annotated[
+        ALLOWED_SET,
+        Field(alias="Times", description="Print the time taken for each activity."),
+    ] = -1
+    transmission_losses: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Transmission Losses",
+            description="Write diagnostics for convergence of the quadratic loss method",
+        ),
+    ] = 0
+    transmission_topology: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Transmission Topology",
+            description="Write a summary of the transmission topology to the log",
+        ),
+    ] = 0
+    uniform_pricing: Annotated[
+        ALLOWED_SET,
+        Field(alias="Uniform Pricing", description="Write diagnostics for uplift and Uniform Pricing"),
+    ] = 0
+    unit_commitment: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Unit Commitment",
+            description="Write diagnostics for the Rounded Relaxation unit commitment algorithm",
+        ),
+    ] = 0
+    unserved_energy: Annotated[
+        ALLOWED_SET,
+        Field(alias="Unserved Energy", description="Write diagnostics each time USE occurs at a node"),
+    ] = 0
+    use_generic_writer: Annotated[
+        ALLOWED_SET,
+        Field(alias="Use Generic Writer", description="Use generic writer for LP and solution files"),
+    ] = 0
+    zero_tolerance_lp: Annotated[
+        float,
+        Field(
+            alias="Zero Tolerance LP",
+            description="Generic writer zero value tolerance for LP file writing",
+            ge=0,
+        ),
+    ] = 0.0
+    zero_tolerance_sol: Annotated[
+        float,
+        Field(
+            alias="Zero Tolerance SOL",
+            description="Generic writer zero value tolerance for SOL file writing",
+            ge=0,
+        ),
+    ] = 0.0
 
     @classmethod
     def example(cls) -> "PLEXOSDiagnostic":

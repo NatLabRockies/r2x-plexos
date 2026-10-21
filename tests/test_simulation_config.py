@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import plexosdb
 import pytest
 from plexosdb import ClassEnum, PlexosDB
 
@@ -23,6 +24,8 @@ from r2x_plexos.utils_simulation import (
     ingest_simulation_config_to_plexosdb,
     validate_simulation_config,
 )
+
+SCHEMA_PATH = Path(plexosdb.__file__).parent / "config" / "master_12.0R3_btu.xml"
 
 
 @pytest.fixture
@@ -101,15 +104,16 @@ def test_convert_simulation_config_to_attributes():
     assert attrs["MIP Maximum Threads"] == 20
 
 
-def test_validate_simulation_config_success(plexos_db):
-    """Test full config validation (valid)."""
+def test_validate_simulation_config_success():
+    """Test full config validation against the v12 schema."""
+    db = PlexosDB.from_xml(SCHEMA_PATH)
     perf = PLEXOSPerformance(
         name="ValidPerf",
         solver=4,
         mip_relative_gap=0.01,
     )
 
-    result = validate_simulation_config(plexos_db, ClassEnum.Performance, perf)
+    result = validate_simulation_config(db, ClassEnum.Performance, perf)
     assert result.is_ok()
 
 
@@ -128,8 +132,9 @@ def test_validate_simulation_config_failure():
     assert result.is_err()
 
 
-def test_ingest_simulation_config_to_plexosdb(plexos_db):
+def test_ingest_simulation_config_to_plexosdb():
     """Test single simulation config ingestion."""
+    db = PlexosDB.from_xml(SCHEMA_PATH)
     perf = PLEXOSPerformance(
         name="Test_Performance",
         solver=4,
@@ -138,7 +143,7 @@ def test_ingest_simulation_config_to_plexosdb(plexos_db):
     )
 
     result = ingest_simulation_config_to_plexosdb(
-        plexos_db,
+        db,
         ClassEnum.Performance,
         perf,
         validate=True,
@@ -149,9 +154,10 @@ def test_ingest_simulation_config_to_plexosdb(plexos_db):
 
     assert info["object_name"] == "Test_Performance"
     assert info["class"] == "Performance"
-    assert info["attribute_count"] == 4  # solver, gap, threads, max_time
+    assert info["attribute_count"] == 43
     assert "SOLVER" in info["attributes_added"]
     assert "MIP Relative Gap" in info["attributes_added"]
+    assert "MIP Maximum Threads" in info["attributes_added"]
 
 
 def test_build_with_simulation_config():
