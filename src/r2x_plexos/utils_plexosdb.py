@@ -148,9 +148,9 @@ def validate_simulation_attribute(
             hint = ", ".join(valid_attrs[:5])
             if len(valid_attrs) > 5:
                 hint += f"... ({len(valid_attrs)} total)"
+            class_name = getattr(class_enum, "name", str(class_enum))
             return Err(
-                f"Invalid attribute '{attribute_name}' for {class_enum.name}. "
-                f"Valid attributes include: {hint}"
+                f"Invalid attribute '{attribute_name}' for {class_name}. Valid attributes include: {hint}"
             )
     except Exception as e:
         return Err(f"Failed to validate attribute: {e!s}")

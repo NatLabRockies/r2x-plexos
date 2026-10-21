@@ -20,10 +20,12 @@ from r2x_plexos.models.simulation_config import (
 )
 from r2x_plexos.utils_plexosdb import validate_simulation_attribute
 from r2x_plexos.utils_simulation import (
+    SimulationConfig,
     build_plexos_simulation,
     convert_simulation_config_to_attributes,
     get_default_simulation_config,
     ingest_simulation_config_to_plexosdb,
+    ingest_simulation_to_plexosdb,
     validate_simulation_config,
 )
 
@@ -102,6 +104,31 @@ def test_plexos_lt_plan_v12_attributes():
         PLEXOSLTPlan(name="InvalidChronology", chronology=1)
     with pytest.raises(ValueError):
         PLEXOSLTPlan(name="InvalidSolutionQuality", solution_quality=100.1)
+
+
+def test_ingest_lt_plan_config_and_model_membership():
+    """Test LT Plan config routing and its Model membership."""
+    db = PlexosDB.from_xml(SCHEMA_PATH)
+    simulation = SimulationConfig(
+        models=[PLEXOSModel(name="LTPlanModel")],
+        horizons=[PLEXOSHorizon(name="LTPlanHorizon")],
+        memberships=[
+            ("LTPlanModel", "LTPlanHorizon", "Horizon"),
+            ("LTPlanModel", "LTPlan", "LT Plan"),
+        ],
+        simulation_configs={"lt_plan": PLEXOSLTPlan(name="LTPlan")},
+    )
+
+    result = ingest_simulation_to_plexosdb(db, simulation)
+
+    assert result.is_ok()
+    assert db.check_object_exists("LT Plan", "LTPlan")
+    assert db.get_membership_id("LTPlanModel", "LTPlan", "LT Plan")
+    assert db.get_attribute("LT Plan", object_name="LTPlan", attribute_name="Chronology")[0] == 2
+
+    info = result.unwrap()["simulation_objects"]
+    assert len(info) == 1
+    assert info[0]["class"] == "LT Plan"
 
 
 def test_convert_simulation_config_to_attributes():

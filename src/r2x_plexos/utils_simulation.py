@@ -6,15 +6,16 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 
 from loguru import logger
-from plexosdb import ClassEnum, PlexosDB
+from plexosdb import ClassEnum, CollectionEnum, PlexosDB
 from plexosdb.checks import check_object_exists as _check_object_exists
 from plexosdb.enums import get_default_collection
 from plexosdb.exceptions import NotFoundError
 
 from r2x_core import Err, Ok, Result
+from r2x_plexos.enums_compat import LTPLAN_CLASS_ENUM, LTPLAN_COLLECTION_ENUM
 from r2x_plexos.models import PLEXOSHorizon, PLEXOSModel
 from r2x_plexos.models.component import PLEXOSConfiguration
 from r2x_plexos.models.simulation_config import (
@@ -126,6 +127,11 @@ def get_enum_from_string(string: str, enum_class: type[Enum], prefix: str | None
     if closest_enum is None:
         raise KeyError(f"No matching enum found for string '{string}'")
     return closest_enum
+
+
+def _enum_name(value: Enum | str) -> str:
+    """Return a display name for native and compatibility enum values."""
+    return value.name if isinstance(value, Enum) else str(value)
 
 
 def datetime_to_ole_date(dt: datetime) -> float:
@@ -346,11 +352,15 @@ def ingest_simulation_config_to_plexosdb(
 
     attributes = attrs_result.unwrap()
 
-    # Add the object first
-    try:
-        db.add_object(class_enum, sim_config.name)
-    except Exception as e:
-        return Err(f"Failed to add simulation object '{sim_config.name}': {e!s}")
+    # Membership ingestion may have already created this configuration object.
+    if not _check_object_exists(db, class_enum, sim_config.name):
+        try:
+            collection_enum = (
+                cast(CollectionEnum, LTPLAN_COLLECTION_ENUM) if class_enum == LTPLAN_CLASS_ENUM else None
+            )
+            db.add_object(class_enum, sim_config.name, collection_enum=collection_enum)
+        except Exception as e:
+            return Err(f"Failed to add simulation object '{sim_config.name}': {e!s}")
 
     # Add each attribute
     for attr_name, attr_value in attributes.items():
@@ -367,7 +377,7 @@ def ingest_simulation_config_to_plexosdb(
     return Ok(
         {
             "object_name": sim_config.name,
-            "class": class_enum.name,
+            "class": _enum_name(class_enum),
             "attributes_added": list(attributes.keys()),
             "attribute_count": len(attributes),
         }
@@ -1448,8 +1458,15 @@ def ingest_simulation_to_plexosdb(
         if obj_name not in already_created:
             child_class_enum, _ = MEMBERSHIP_TYPE_MAP[membership_type]
             try:
-                db.add_object(child_class_enum, obj_name)
-                logger.debug(f"Created simulation config object '{obj_name}' as {child_class_enum.name}")
+                collection_enum = (
+                    cast(CollectionEnum, LTPLAN_COLLECTION_ENUM)
+                    if child_class_enum == LTPLAN_CLASS_ENUM
+                    else None
+                )
+                db.add_object(child_class_enum, obj_name, collection_enum=collection_enum)
+                logger.debug(
+                    f"Created simulation config object '{obj_name}' as {_enum_name(child_class_enum)}"
+                )
             except Exception:
                 continue
 
