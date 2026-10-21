@@ -76,7 +76,8 @@ def test_get_default_simulation_config():
 
     # Check some default values
     assert defaults["performance"].solver == 4  # Gurobi
-    assert defaults["st_schedule"].transmission_detail == 1  # Nodal
+    assert defaults["st_schedule"].stochastic_method == 1
+    assert defaults["st_schedule"].transmission_detail == 1
 
 
 def test_convert_simulation_config_to_attributes():
@@ -189,8 +190,8 @@ def test_ingest_full_simulation_with_config():
         ),
         "st_schedule": PLEXOSSTSchedule(
             name="Test_ST",
-            transmission_detail=1,
-            heat_rate_detail=2,
+            stochastic_method=1,
+            step_link_mode=0,
         ),
         "diagnostic": None,  # Test that None values are skipped
     }
@@ -231,6 +232,7 @@ def test_simulation_config_examples():
 
     st_schedule = PLEXOSSTSchedule.example()
     assert st_schedule.name == "ST_Schedule_Example"
+    assert st_schedule.stochastic_method == 1
     assert st_schedule.transmission_detail == 1
 
     production = PLEXOSProduction.example()

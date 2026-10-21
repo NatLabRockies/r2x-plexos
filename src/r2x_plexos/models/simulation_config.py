@@ -294,39 +294,94 @@ class PLEXOSMTSchedule(PLEXOSConfiguration):
 class PLEXOSSTSchedule(PLEXOSConfiguration):
     """PLEXOS ST Schedule (Short-Term Schedule) configuration."""
 
-    transmission_detail: Annotated[
+    discount_period_type: Annotated[
+        Literal[1, 2, 3, 4, 6, 7],
+        Field(
+            alias="Discount Period Type",
+            description="A unique discount factor will be computed for each of these periods.",
+        ),
+    ] = 2
+    discount_rate: Annotated[
+        float,
+        Field(alias="Discount Rate", description="Discount rate.", ge=0),
+    ] = 0.0
+    discount_rate_reset: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Discount Rate Reset",
+            description="Flag if discount factor resets at the beginning of each ST Schedule step.",
+        ),
+    ] = 0
+    end_effects_method: Annotated[
+        Literal[0, 1],
+        Field(
+            alias="End Effects Method",
+            description="Method used to account for end of horizon discounting.",
+        ),
+    ] = 1
+    sequential_steps: Annotated[
         int,
         Field(
-            alias="Transmission Detail",
-            description="Transmission modeling detail: Regional (0), Zonal (1), Nodal (2)",
-            json_schema_extra={"enum": [0, 1, 2]},
+            alias="Sequential Steps",
+            description="Number of steps run in each sequential block when running in parallel Step Link Mode.",
+            ge=1,
+        ),
+    ] = 1
+    step_link_mode: Annotated[
+        Literal[0, 1, 2],
+        Field(
+            alias="Step Link Mode",
+            description="Controls how the solutions of each step are linked together.",
+        ),
+    ] = 0
+    step_relink_count: Annotated[
+        int,
+        Field(
+            alias="Step Relink Count",
+            description=(
+                "Number of steps that require relinking of initial conditions in parallel Step Link Mode, "
+                "where 1 means no relinking."
+            ),
+            ge=1,
         ),
     ] = 1
     stochastic_method: Annotated[
-        int,
+        Literal[0, 1, 2, 3],
         Field(
             alias="Stochastic Method",
-            description="Stochastic optimization method",
-            ge=0,
+            description="Stochastic optimization method for ST Schedule.",
         ),
-    ] = 0
-    heat_rate_detail: Annotated[
-        int,
+    ] = 1
+    storage_formulate_head_effects: Annotated[
+        ALLOWED_SET,
         Field(
-            alias="Heat Rate Detail",
-            description="Level of heat rate detail",
-            ge=0,
+            alias="Storage Formulate Head Effects",
+            description="If storage head effects should be formulated in ST Schedule.",
         ),
-    ] = 2
+    ] = -1
+    transmission_detail: Annotated[
+        Literal[0, 1, 2],
+        Field(
+            alias="Transmission Detail",
+            description="Transmission modeling detail: Regional (0), Zonal (1), Nodal (2)",
+        ),
+    ] = 1
 
     @classmethod
     def example(cls) -> "PLEXOSSTSchedule":
         """Create an example ST Schedule configuration."""
         return PLEXOSSTSchedule(
             name="ST_Schedule_Example",
+            discount_period_type=2,
+            discount_rate=0.0,
+            discount_rate_reset=0,
+            end_effects_method=1,
+            sequential_steps=1,
+            step_link_mode=0,
+            step_relink_count=1,
+            stochastic_method=1,
+            storage_formulate_head_effects=-1,
             transmission_detail=1,
-            stochastic_method=0,
-            heat_rate_detail=2,
         )
 
 
