@@ -22,17 +22,17 @@ class PLEXOSConfig(PluginConfig):
     Parameters
     ----------
     fpath : str, optional
-        Path to the PLEXOS run directory or XML file. If not provided, the parser will attempt to locate the model using default paths or configuration.
+        Path to the XML file or its directory. A DataStore entry named ``xml_file`` takes precedence.
     model_name : str, optional
         Name of the PLEXOS model. Defaults to "default".
     timeseries_dir : DirectoryPath, optional
         Optional subdirectory containing time series files. If passed it must exist.
     horizon_year : int, optional
         Horizon year for the model simulation
-    solve_year : int, optional
-        Solve year for simulation configuration. If not provided, it will be set to the same value
+    weather_year : int, optional
+        Optional weather-year metadata used by the exporter filename.
     output_path : str, optional
-        Alias for output directory. If provided, it will override `timeseries_dir` for time
+        Directory for native XML and exported profile files.
     template : str, optional
         Selects the base XML template used to initialise the PLEXOS database.
         Accepts either:
@@ -57,22 +57,11 @@ class PLEXOSConfig(PluginConfig):
 
     Examples
     --------
-    Basic configuration with model name:
+    Basic configuration with a checked model/year selection:
 
-    >>> config = PLEXOSConfig(
-    ...     model_name="MyPLEXOSModel",
-    ...     horizon_year=2030,
-    ... )
-
-    Full configuration with time series and simulation:
-
-    >>> config = PLEXOSConfig(
-    ...     model_name="MyPLEXOSModel",
-    ...     timeseries_dir=Path("./timeseries"),
-    ...     horizon_year=2030,
-    ...     template="PLEXOS9.0",
-    ...     simulation_config=SimulationConfig(...),
-    ... )
+    >>> from r2x_plexos import PLEXOSConfig
+    >>> config = PLEXOSConfig(model_name="MyPLEXOSModel", horizon_year=2030)
+    >>> assert (config.model_name, config.horizon_year) == ("MyPLEXOSModel", 2030)
 
     See Also
     --------
