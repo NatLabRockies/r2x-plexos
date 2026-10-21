@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.4.0](https://github.com/NatLabRockies/r2x-plexos/compare/v0.3.3...v0.4.0) (2026-10-21)
+
+
+### 🚀 Features
+
+* export fuels and non-sequential time series ([#99](https://github.com/NatLabRockies/r2x-plexos/issues/99)) ([96b3957](https://github.com/NatLabRockies/r2x-plexos/commit/96b3957b1a95b674215ae3f0a88d6ef4f907010a))
+* export membership properties ([#100](https://github.com/NatLabRockies/r2x-plexos/issues/100)) ([12d9954](https://github.com/NatLabRockies/r2x-plexos/commit/12d9954c86a567b41fa4dc17c3b88b0d766f4229))
+
+
+### 🐛 Bug Fixes
+
+* default horizon Chrono Step Type to days ([#104](https://github.com/NatLabRockies/r2x-plexos/issues/104)) ([8b28b11](https://github.com/NatLabRockies/r2x-plexos/commit/8b28b111e8cf9e060cc04c74e7114d3f04e900c6))
+* look up collection-property memberships by parent id ([#105](https://github.com/NatLabRockies/r2x-plexos/issues/105)) ([4633ca6](https://github.com/NatLabRockies/r2x-plexos/commit/4633ca6c3d84c0c719ec08e9f515fabe0ae669bf))
+
+
+### 📚 Documentation
+
+* align PLEXOS guides with R2X documentation ([#103](https://github.com/NatLabRockies/r2x-plexos/issues/103)) ([b17d3eb](https://github.com/NatLabRockies/r2x-plexos/commit/b17d3eb804cb6a39a6372831d8d399ebc89bab0b))
+
 ## [0.3.3](https://github.com/NatLabRockies/r2x-plexos/compare/v0.3.2...v0.3.3) (2026-09-16)
 
 
