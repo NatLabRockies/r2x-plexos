@@ -413,38 +413,345 @@ class PLEXOSPASA(PLEXOSConfiguration):
 class PLEXOSPerformance(PLEXOSConfiguration):
     """PLEXOS Performance configuration for solver settings."""
 
-    solver: Annotated[
-        int,
-        Field(
-            alias="SOLVER",
-            description="Solver selection: CPLEX (1), Xpress (2), CBC (3), Gurobi (4), MOSEK (5), HiGHS (6)",
-            json_schema_extra={"enum": [1, 2, 3, 4, 5, 6]},
-        ),
-    ] = 4
-    mip_relative_gap: Annotated[
+    barrier_convergence_tolerance: Annotated[
         float,
         Field(
-            alias="MIP Relative Gap",
-            description="MIP solver relative optimality gap tolerance",
-            ge=0.0,
+            alias="Barrier Convergence Tolerance",
+            description="Termination criteria for the Barrier algorithm",
+            ge=0,
+            le=1,
         ),
-    ] = 0.01
-    mip_maximum_threads: Annotated[
+    ] = 1e-08
+    carry_over_mip_time: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Carry over MIP Time",
+            description=(
+                "If unused MIP Max Time is carried over to the next MIP solve allowing more time on harder problems"
+            ),
+        ),
+    ] = 0
+    cold_start_optimizer_1: Annotated[
+        Literal[0, 1, 4, 5, 6, 9, 10],
+        Field(
+            alias="Cold Start Optimizer 1",
+            description="First priority optimizer used to solve problems from a cold-start.",
+        ),
+    ] = 0
+    cold_start_optimizer_2: Annotated[
+        Literal[0, 1, 4, 5, 6],
+        Field(
+            alias="Cold Start Optimizer 2",
+            description="Second priority optimizer used to solve problems from a cold-start.",
+        ),
+    ] = 0
+    cold_start_optimizer_3: Annotated[
+        Literal[0, 1, 4, 5, 6],
+        Field(
+            alias="Cold Start Optimizer 3",
+            description="Third priority optimizer used to solve problems from a cold-start.",
+        ),
+    ] = 0
+    concurrent_mode: Annotated[
+        Literal[0, 1],
+        Field(alias="Concurrent Mode", description="Mode for the concurrent optimizer"),
+    ] = 0
+    crossover: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Crossover",
+            description=(
+                "If crossover is used to transform the interior solution produced by barrier into a basic solution"
+            ),
+        ),
+    ] = -1
+    feasibility_repair_failure: Annotated[
+        Literal[0, 1],
+        Field(
+            alias="Feasibility Repair Failure",
+            description="Action to take if an infeasible problem cannot be repaired.",
+        ),
+    ] = 0
+    feasibility_tolerance: Annotated[
+        float,
+        Field(
+            alias="Feasibility Tolerance",
+            description="Allowable violation of variable bounds (0 = solver default value)",
+            ge=0,
+        ),
+    ] = 0.0
+    hint_mode: Annotated[
+        Literal[0, 1, 2],
+        Field(alias="Hint Mode", description="Controls how variable hints are used by the solver"),
+    ] = 0
+    hot_start_optimizer_1: Annotated[
+        Literal[0, 1, 4, 5, 6, 9, 10],
+        Field(
+            alias="Hot Start Optimizer 1",
+            description="First priority optimizer used to solve problems from a hot-start.",
+        ),
+    ] = 0
+    hot_start_optimizer_2: Annotated[
+        Literal[0, 1, 4, 5, 6],
+        Field(
+            alias="Hot Start Optimizer 2",
+            description="Second priority optimizer used to solve problems from a hot-start.",
+        ),
+    ] = 0
+    hot_start_optimizer_3: Annotated[
+        Literal[0, 1, 4, 5, 6],
+        Field(
+            alias="Hot Start Optimizer 3",
+            description="Third priority optimizer used to solve problems from a hot-start.",
+        ),
+    ] = 0
+    maximum_monitored_mip_iterations: Annotated[
         int,
         Field(
-            alias="MIP Maximum Threads",
-            description="Maximum number of threads for MIP solver",
-            ge=1,
+            alias="Maximum Monitored MIP Iterations",
+            description="Maximum number of monitored row/column iterations with MIP enabled",
         ),
-    ] = 20
+    ] = -1
+    maximum_parallel_tasks: Annotated[
+        int,
+        Field(
+            alias="Maximum Parallel Tasks",
+            description=(
+                "Maximum number of parallel optimizations run concurrently, where -1 means one task per CPU."
+            ),
+            ge=-1,
+        ),
+    ] = -1
+    maximum_threads: Annotated[
+        int,
+        Field(
+            alias="Maximum Threads",
+            description=(
+                "Maximum number of threads used simultaneously by all simplex and interior point optimizers, "
+                "where -1 means all available threads."
+            ),
+            ge=-1,
+        ),
+    ] = -1
+    mip_absolute_gap: Annotated[
+        float,
+        Field(
+            alias="MIP Absolute Gap",
+            description=(
+                "Absolute tolerance on the gap between the best integer objective and the objective "
+                "of the best node remaining"
+            ),
+            ge=0,
+        ),
+    ] = 0.0
+    mip_focus: Annotated[
+        Literal[0, 1, 2, 3],
+        Field(alias="MIP Focus", description="High-level solution strategy for the MIP solver"),
+    ] = 0
+    mip_hard_stop: Annotated[
+        int,
+        Field(
+            alias="MIP Hard Stop",
+            description=(
+                "Hard limit on the mixed integer programming time when using MIP Max Relative Gap "
+                "and MIP Max Time is a soft limit"
+            ),
+            ge=-1,
+        ),
+    ] = -1
+    mip_improve_start_gap: Annotated[
+        float,
+        Field(
+            alias="MIP Improve Start Gap",
+            description="Switch strategy to improving the best integer solution when this gap is reached.",
+            ge=0,
+        ),
+    ] = 0.0
+    mip_interrupt: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="MIP Interrupt",
+            description="If the MIP search can be interrupted by pressing the CTRL-P key combination",
+        ),
+    ] = 0
+    mip_max_absolute_gap: Annotated[
+        float,
+        Field(
+            alias="MIP Max Absolute Gap",
+            description=(
+                "When set to a value greater than zero, the MIP Max Time is treated as a soft constraint "
+                "with optimization continuing until the MIP Max Absolute Gap is reached."
+            ),
+            ge=0,
+        ),
+    ] = 0.0
+    mip_max_relative_gap: Annotated[
+        float,
+        Field(
+            alias="MIP Max Relative Gap",
+            description=(
+                "When set to a value greater than zero, the MIP Max Time is treated as a soft constraint "
+                "with optimization continuing until the MIP Max Relative Gap is reached."
+            ),
+            ge=0,
+        ),
+    ] = 0.0
+    mip_max_relaxation_repair_time: Annotated[
+        int,
+        Field(
+            alias="MIP Max Relaxation Repair Time",
+            description="Maximum time allowed in repairing an infeasible mixed integer programming problem",
+            ge=-1,
+        ),
+    ] = -1
     mip_max_time: Annotated[
         int,
         Field(
             alias="MIP Max Time",
-            description="Maximum time in seconds for MIP solver",
+            description="Maximum time in mixed integer programming algorithm",
+            ge=-1,
+        ),
+    ] = -1
+    mip_max_time_with_carry_over: Annotated[
+        int,
+        Field(
+            alias="MIP Max Time with Carry over",
+            description=(
+                "Maximum time in mixed integer programming algorithm including any unused time carried over"
+            ),
+            ge=-1,
+        ),
+    ] = -1
+    mip_maximum_threads: Annotated[
+        int,
+        Field(
+            alias="MIP Maximum Threads",
+            description=(
+                "Maximum number of threads used by the mixed integer optimizer, where -1 means all available threads."
+            ),
+            ge=-1,
+        ),
+    ] = -1
+    mip_node_optimizer: Annotated[
+        Literal[0, 1, 4, 5, 6, 9, 10],
+        Field(
+            alias="MIP Node Optimizer",
+            description="Optimizer used at the nodes of the branch and bound algorithm.",
+        ),
+    ] = 0
+    mip_relative_gap: Annotated[
+        float,
+        Field(
+            alias="MIP Relative Gap",
+            description=(
+                "Declare the integer solution optimal when this gap is reached between the current integer "
+                "solution and best-bound linear relaxation (this is not a measure of optimality)."
+            ),
             ge=0,
         ),
-    ] = 6500
+    ] = 0.0001
+    mip_root_optimizer: Annotated[
+        Literal[0, 1, 4, 5, 6, 9, 10],
+        Field(
+            alias="MIP Root Optimizer",
+            description="Optimizer used to solve the linear relaxation of a mixed-integer program.",
+        ),
+    ] = 0
+    mip_start_solution: Annotated[
+        float,
+        Field(
+            alias="MIP Start Solution",
+            description="MIP solver will be warm started with previous solutions according to this setting.",
+            ge=0,
+            le=2,
+        ),
+    ] = 1.0
+    monitoring_maximum_threads: Annotated[
+        int,
+        Field(
+            alias="Monitoring Maximum Threads",
+            description=(
+                "Maximum number of threads for monitored constraint iterations, where -1 means all available threads."
+            ),
+            ge=-1,
+        ),
+    ] = -1
+    monitoring_periodic_clearing: Annotated[
+        int,
+        Field(
+            alias="Monitoring Periodic Clearing",
+            description=(
+                "Clear monitored constraints and variables from the formulation periodically (number of steps)"
+            ),
+            ge=0,
+        ),
+    ] = 0
+    objective_scalar: Annotated[
+        float,
+        Field(
+            alias="Objective Scalar",
+            description="Scale the objective function internally by this factor",
+            gt=0,
+        ),
+    ] = 1.0
+    objective_tolerance: Annotated[
+        float,
+        Field(
+            alias="Objective Tolerance",
+            description="Smallest allowable objective function coefficient",
+            ge=0,
+        ),
+    ] = 0.0
+    optimality_tolerance: Annotated[
+        float,
+        Field(
+            alias="Optimality Tolerance",
+            description="Optimality tolerance (0 = solver default value)",
+            ge=0,
+        ),
+    ] = 0.0
+    presolve: Annotated[
+        ALLOWED_SET,
+        Field(alias="Presolve", description="Toggles on/off solver presolve"),
+    ] = -1
+    random_number_seed: Annotated[
+        int,
+        Field(
+            alias="Random Number Seed",
+            description="Random number seed for the solver",
+            ge=0,
+            le=2000000000,
+        ),
+    ] = 0
+    scaling: Annotated[
+        ALLOWED_SET,
+        Field(alias="Scaling", description="Toggles on/off solver problem scaling"),
+    ] = -1
+    small_lp_nonzero_count: Annotated[
+        int,
+        Field(
+            alias="Small LP Nonzero Count",
+            description="Maximum number of non-zeros in a 'small' linear programming problem.",
+            gt=0,
+        ),
+    ] = 250000
+    small_lp_optimizer: Annotated[
+        int,
+        Field(
+            alias="Small LP Optimizer",
+            description="Optimizer used to solve 'small' liner programming problems.",
+            ge=0,
+            le=9,
+        ),
+    ] = 0
+    solver: Annotated[
+        Literal[0, 1, 2, 3, 4, 6, 7, 8],
+        Field(alias="SOLVER", description="SOLVER engine used by PLEXOS."),
+    ] = 4
+    sparsify: Annotated[
+        Literal[-1, 0, 1, 2],
+        Field(alias="Sparsify", description="Strategy for matrix sparsification during presolve"),
+    ] = -1
 
     @classmethod
     def example(cls) -> "PLEXOSPerformance":
