@@ -10,6 +10,370 @@ from .component import PLEXOSConfiguration
 ALLOWED_SET = Literal[0, -1]
 
 
+class PLEXOSLTPlan(PLEXOSConfiguration):
+    """PLEXOS LT Plan (Long-Term Plan) configuration."""
+
+    allow_capacity_sharing: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Allow Capacity Sharing",
+            description="If regions/zones can share capacity reserves to meet requirements.",
+        ),
+    ] = 0
+    always_annualize_build_cost: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Always Annualize Build Cost",
+            description="If Build Cost is always annualized even when an option retires inside the horizon.",
+        ),
+    ] = 0
+    at_a_time: Annotated[
+        int,
+        Field(
+            alias="At a Time",
+            description="Number of years solved in each step of LT Plan.",
+            ge=0,
+        ),
+    ] = 0
+    block_count: Annotated[
+        int,
+        Field(
+            alias="Block Count",
+            description="Number of load duration curve blocks in each day/week/month.",
+            ge=1,
+        ),
+    ] = 12
+    bridge_constraints: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Bridge Constraints",
+            description="If LT Plan should bridge (decompose) constraints for subsequent simulation phases.",
+        ),
+    ] = -1
+    bridge_storage: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Bridge Storage",
+            description="If LT Plan should bridge (decompose) storage for subsequent simulation phases.",
+        ),
+    ] = -1
+    capacity_payments_enabled: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Capacity Payments Enabled",
+            description="If payments are made for generation capacity.",
+        ),
+    ] = 0
+    chronology: Annotated[
+        Literal[2, 3, 4],
+        Field(alias="Chronology", description="Type of chronology used."),
+    ] = 2
+    co_optimize_unit_commitment: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Co-optimize Unit Commitment",
+            description="If unit commitment is co-optimized rather than sequentially optimized with expansion.",
+        ),
+    ] = 0
+    compute_multi_area_reliability_indices: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Compute Multi-area Reliability Indices",
+            description="Master switch for computation of reliability indices LOLP, LOLE, etc across multiple areas.",
+        ),
+    ] = 0
+    compute_reliability_indices: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Compute Reliability Indices",
+            description="Master switch for computation of reliability indices LOLP, LOLE, etc.",
+        ),
+    ] = 0
+    decomposition: Annotated[
+        int,
+        Field(
+            alias="Decomposition",
+            description="Reduce the number of simulated periods by this factor in the first pass of a two-pass decomposition.",
+            ge=1,
+        ),
+    ] = 1
+    depreciation_method: Annotated[
+        Literal[0, 1, 2],
+        Field(alias="Depreciation Method", description="Depreciation method for computing annuities."),
+    ] = 0
+    discount_period_type: Annotated[
+        Literal[1, 2, 3, 4, 6, 7],
+        Field(
+            alias="Discount Period Type",
+            description="A unique discount factor and expansion decisions will be computed for each of these periods.",
+        ),
+    ] = 4
+    discount_rate: Annotated[
+        float,
+        Field(alias="Discount Rate", description="Discount rate.", ge=0),
+    ] = 0.0
+    end_effects_method: Annotated[
+        Literal[0, 1],
+        Field(alias="End Effects Method", description="Method used to account for end of horizon effects."),
+    ] = 1
+    inflation_rate: Annotated[
+        float,
+        Field(
+            alias="Inflation Rate",
+            description="Inflation rate used in depreciation calculations.",
+        ),
+    ] = 0.0
+    integerization_horizon: Annotated[
+        int,
+        Field(
+            alias="Integerization Horizon",
+            description="Number of years over which the expansion decisions are integerized.",
+            ge=-1,
+        ),
+    ] = -1
+    last_block_count: Annotated[
+        int,
+        Field(
+            alias="Last Block Count",
+            description=(
+                "Number of load duration curve blocks in the last load duration curve of the horizon, "
+                "or zero if same as Block Count."
+            ),
+            ge=0,
+        ),
+    ] = 0
+    ldc_pin_bottom: Annotated[
+        int,
+        Field(
+            alias="LDC Pin Bottom",
+            description="Number of points at the bottom of the LDC that are pinned and cannot be aggregated into blocks.",
+            ge=-1,
+        ),
+    ] = -1
+    ldc_pin_top: Annotated[
+        int,
+        Field(
+            alias="LDC Pin Top",
+            description="Number of points at the top of the LDC that are pinned and cannot be aggregated into blocks.",
+            ge=-1,
+        ),
+    ] = -1
+    ldc_slicing_method: Annotated[
+        Literal[0, 1],
+        Field(alias="LDC Slicing Method", description="Method used to slice the LDC into blocks."),
+    ] = 0
+    ldc_type: Annotated[
+        Literal[1, 2, 3, 4, 7],
+        Field(alias="LDC Type", description="One LDC is created for each period of this type in horizon."),
+    ] = 3
+    ldc_weight_a: Annotated[
+        float,
+        Field(alias="LDC Weight a", description="LDC weighting polynomial function 'a' parameter."),
+    ] = 0.0
+    ldc_weight_b: Annotated[
+        float,
+        Field(alias="LDC Weight b", description="LDC weighting polynomial function 'b' parameter."),
+    ] = 1.0
+    ldc_weight_c: Annotated[
+        float,
+        Field(alias="LDC Weight c", description="LDC weighting polynomial function 'c' parameter."),
+    ] = 0.0
+    ldc_weight_d: Annotated[
+        float,
+        Field(alias="LDC Weight d", description="LDC weighting polynomial function 'd' parameter."),
+    ] = 0.0
+    limit_capital_cost_perpetuity_by_economic_life: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Limit Capital Cost Perpetuity by Economic Life",
+            description=(
+                "With perpetuity end effect, if annuity calculation should extend beyond the end of the "
+                "horizon up to the Economic Life."
+            ),
+        ),
+    ] = -1
+    maintenance_rate_output_basis: Annotated[
+        Literal[0, 1],
+        Field(
+            alias="Maintenance Rate Output Basis",
+            description="Basis for Maintenance Rate (%) Output due to Maintenance Sculpting.",
+        ),
+    ] = 0
+    maintenance_sculpting: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Maintenance Sculpting",
+            description="If LT Plan should sculpt maintenance derating according to the inverse of load.",
+        ),
+    ] = 0
+    optimality: Annotated[
+        Literal[0, 1, 2],
+        Field(alias="Optimality", description="LT Plan integerization scheme."),
+    ] = 2
+    optimize_expansion: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Optimize Expansion",
+            description="If expansion is optimized by this simulation phase.",
+        ),
+    ] = -1
+    outage_increment: Annotated[
+        float,
+        Field(alias="Outage Increment", description="Generator outage bin size in convolution.", ge=1),
+    ] = 10.0
+    overlap: Annotated[
+        int,
+        Field(
+            alias="Overlap",
+            description="Number of years overlap between steps where -1 invokes Rolling Horizon.",
+            ge=-1,
+        ),
+    ] = 0
+    pricing_method: Annotated[
+        Literal[0, 1],
+        Field(alias="Pricing Method", description="Type of generator pricing used in LT Plan."),
+    ] = 0
+    reduced_sample_count: Annotated[
+        int,
+        Field(
+            alias="Reduced Sample Count",
+            description="Statistically reduce the Sample Type periods to at most this number of samples each year.",
+            ge=1,
+        ),
+    ] = 4
+    reduction_relative_accuracy: Annotated[
+        float,
+        Field(
+            alias="Reduction Relative Accuracy",
+            description="Stop sample reduction when the accuracy of the reduced sample set reaches this level.",
+            ge=0,
+            le=1,
+        ),
+    ] = 1.0
+    sample_type: Annotated[
+        Literal[1, 2, 3, 4],
+        Field(alias="Sample Type", description="For Chronology = Sampled, take this type of sample."),
+    ] = 2
+    sample_year_count: Annotated[
+        int,
+        Field(
+            alias="Sample Year Count",
+            description="For Chronology = Sampled, first select this many years then sample within only those years.",
+            ge=0,
+        ),
+    ] = 0
+    sampled_block_count: Annotated[
+        int,
+        Field(
+            alias="Sampled Block Count",
+            description=(
+                "Number of blocks modeled in each sample period (day/week) where zero means the original "
+                "number of intervals."
+            ),
+            ge=0,
+        ),
+    ] = 0
+    sampled_shallow_storage_cutoff: Annotated[
+        float,
+        Field(
+            alias="Sampled Shallow Storage Cutoff",
+            description=(
+                "For Chronology = Sampled and Sampled Shallow Storage Treatment = Custom, maximum storage "
+                "duration in hours for shallow storage formulation."
+            ),
+            ge=0,
+        ),
+    ] = 0.0
+    sampled_shallow_storage_treatment: Annotated[
+        Literal[1, 2, 3],
+        Field(
+            alias="Sampled Shallow Storage Treatment",
+            description="For Chronology = Sampled, method used for formulating low duration storages and batteries.",
+        ),
+    ] = 1
+    sampling_interval: Annotated[
+        Literal[-1, 2, 3, 4, 7],
+        Field(
+            alias="Sampling Interval",
+            description="For Chronology = Sampled, take Sample Type samples in each of these intervals of time.",
+        ),
+    ] = 4
+    solution_count: Annotated[
+        int,
+        Field(
+            alias="Solution Count",
+            description="Maximum number of solutions produced in the solution hierarchy.",
+            ge=1,
+        ),
+    ] = 1
+    solution_quality: Annotated[
+        float,
+        Field(
+            alias="Solution Quality",
+            description="Continue producing solutions up to Solution Count or when Solution Quality falls to this level.",
+            ge=0,
+            le=100,
+        ),
+    ] = 0.0
+    start_cost_amortization_period: Annotated[
+        int,
+        Field(
+            alias="Start Cost Amortization Period",
+            description="Number of hours over which generator start costs are amortized.",
+            ge=0,
+        ),
+    ] = 0
+    stochastic_method: Annotated[
+        Literal[0, 1, 2, 3],
+        Field(alias="Stochastic Method", description="Stochastic optimization method for LT Plan."),
+    ] = 0
+    storage_formulate_head_effects: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Storage Formulate Head Effects",
+            description="If storage head effects should be formulated in LT Plan.",
+        ),
+    ] = -1
+    storage_restart: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Storage Restart",
+            description="If recycled storage should restart from their initial volume at the start of each capacity optimization period.",
+        ),
+    ] = 0
+    tax_rate: Annotated[
+        float,
+        Field(alias="Tax Rate", description="Tax rate used to compute tax credits."),
+    ] = 0.0
+    use_effective_load_approach: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Use Effective Load Approach",
+            description="If LT Plan uses the effective load approach.",
+        ),
+    ] = 0
+    write_expansion_plan_text_files: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Write Expansion Plan Text Files",
+            description="If expansion plans should be written to text files.",
+        ),
+    ] = 0
+
+    @classmethod
+    def example(cls) -> "PLEXOSLTPlan":
+        """Create an example LT Plan configuration."""
+        return PLEXOSLTPlan(
+            name="LT_Plan_Example",
+            block_count=12,
+            chronology=2,
+            discount_period_type=4,
+            optimality=2,
+            optimize_expansion=-1,
+            sample_type=2,
+        )
+
+
 class PLEXOSMTSchedule(PLEXOSConfiguration):
     """PLEXOS MT Schedule (Medium-Term Schedule) configuration."""
 

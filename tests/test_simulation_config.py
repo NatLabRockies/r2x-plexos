@@ -10,6 +10,7 @@ from r2x_plexos.models.model import PLEXOSHorizon, PLEXOSModel
 from r2x_plexos.models.simulation_config import (
     PLEXOSPASA,
     PLEXOSDiagnostic,
+    PLEXOSLTPlan,
     PLEXOSMTSchedule,
     PLEXOSPerformance,
     PLEXOSProduction,
@@ -82,6 +83,25 @@ def test_get_default_simulation_config():
     assert defaults["performance"].solver == 4  # Gurobi
     assert defaults["st_schedule"].stochastic_method == 1
     assert defaults["st_schedule"].transmission_detail == 1
+
+
+def test_plexos_lt_plan_v12_attributes():
+    """Test LT Plan attributes and constraints from the v12 reference."""
+    result = convert_simulation_config_to_attributes(PLEXOSLTPlan(name="LTPlan"))
+
+    assert result.is_ok()
+    attributes = result.unwrap()
+    assert len(attributes) == 52
+    assert attributes["Allow Capacity Sharing"] == 0
+    assert attributes["Block Count"] == 12
+    assert attributes["Chronology"] == 2
+    assert attributes["Optimize Expansion"] == -1
+    assert attributes["Write Expansion Plan Text Files"] == 0
+
+    with pytest.raises(ValueError):
+        PLEXOSLTPlan(name="InvalidChronology", chronology=1)
+    with pytest.raises(ValueError):
+        PLEXOSLTPlan(name="InvalidSolutionQuality", solution_quality=100.1)
 
 
 def test_convert_simulation_config_to_attributes():
