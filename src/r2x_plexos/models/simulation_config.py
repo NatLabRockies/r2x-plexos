@@ -13,60 +13,262 @@ ALLOWED_SET = Literal[0, -1]
 class PLEXOSMTSchedule(PLEXOSConfiguration):
     """PLEXOS MT Schedule (Medium-Term Schedule) configuration."""
 
-    step_type: Annotated[
-        int,
-        Field(
-            alias="Step Type",
-            description="Step type: Day (1), Week (2), Month (3), Year (4)",
-            json_schema_extra={"enum": [1, 2, 3, 4]},
-        ),
-    ] = 4
     at_a_time: Annotated[
         int,
         Field(
             alias="At a Time",
-            description="Number of steps to process at a time",
-            ge=1,
-        ),
-    ] = 1
-    ldc_type: Annotated[
-        int,
-        Field(
-            alias="LDC Type",
-            description="Load duration curve type",
+            description="Number of day/week/months/years in each MT Schedule simulation step.",
             ge=0,
         ),
-    ] = 3
+    ] = 0
     block_count: Annotated[
         int,
         Field(
             alias="Block Count",
-            description="Number of blocks for load duration curve",
+            description="Number of load duration curve blocks in each day/week/month.",
             ge=1,
         ),
-    ] = 6
-    ldc_slicing_method: Annotated[
+    ] = 3
+    chronology: Annotated[
+        Literal[2, 3, 4, 5],
+        Field(
+            alias="Chronology",
+            description="Type of chronology used.",
+        ),
+    ] = 2
+    discount_period_type: Annotated[
+        Literal[1, 2, 3, 4, 6, 7],
+        Field(
+            alias="Discount Period Type",
+            description="A unique discount factor will be computed for each of these periods.",
+        ),
+    ] = 2
+    discount_rate: Annotated[
+        float,
+        Field(alias="Discount Rate", description="Discount rate.", ge=0),
+    ] = 0.0
+    end_effects_method: Annotated[
+        Literal[0, 1],
+        Field(
+            alias="End Effects Method",
+            description="Method used to account for end of horizon discounting.",
+        ),
+    ] = 1
+    last_block_count: Annotated[
         int,
         Field(
-            alias="LDC Slicing Method",
-            description="Method for slicing load duration curve",
+            alias="Last Block Count",
+            description=(
+                "Number of load duration curve blocks in the last load duration curve of the horizon, "
+                "or zero if same as Block Count."
+            ),
             ge=0,
         ),
     ] = 0
-    heat_rate_detail: Annotated[
+    ldc_pin_bottom: Annotated[
         int,
         Field(
-            alias="Heat Rate Detail",
-            description="Level of heat rate detail (2 = simplest)",
+            alias="LDC Pin Bottom",
+            description="Number of points at the bottom of the LDC that are pinned and cannot be aggregated into blocks.",
+            ge=-1,
+        ),
+    ] = -1
+    ldc_pin_top: Annotated[
+        int,
+        Field(
+            alias="LDC Pin Top",
+            description="Number of points at the top of the LDC that are pinned and cannot be aggregated into blocks.",
+            ge=-1,
+        ),
+    ] = -1
+    ldc_slicing_method: Annotated[
+        Literal[0, 1],
+        Field(
+            alias="LDC Slicing Method",
+            description="Method used to slice the LDC into blocks.",
+        ),
+    ] = 0
+    ldc_type: Annotated[
+        Literal[1, 2, 3, 4, 7],
+        Field(
+            alias="LDC Type",
+            description="Create one LDC for each period of this type in the horizon.",
+        ),
+    ] = 1
+    ldc_weight_a: Annotated[
+        float,
+        Field(
+            alias="LDC Weight a",
+            description="LDC weighting polynomial function 'a' parameter.",
+        ),
+    ] = 0.0
+    ldc_weight_b: Annotated[
+        float,
+        Field(
+            alias="LDC Weight b",
+            description="LDC weighting polynomial function 'b' parameter.",
+        ),
+    ] = 1.0
+    ldc_weight_c: Annotated[
+        float,
+        Field(
+            alias="LDC Weight c",
+            description="LDC weighting polynomial function 'c' parameter.",
+        ),
+    ] = 0.0
+    ldc_weight_d: Annotated[
+        float,
+        Field(
+            alias="LDC Weight d",
+            description="LDC weighting polynomial function 'd' parameter.",
+        ),
+    ] = 0.0
+    new_entry_capacity_mechanism: Annotated[
+        Literal[0, 1, 2],
+        Field(alias="New Entry Capacity Mechanism", description="Capacity payment mechanism."),
+    ] = 0
+    new_entry_driver: Annotated[
+        Literal[0, 1, 2, 3],
+        Field(alias="New Entry Driver", description="New entry driver."),
+    ] = 0
+    new_entry_time_lag: Annotated[
+        int,
+        Field(alias="New Entry Time Lag", description="Lag time for entrepreneurial entry.", ge=0),
+    ] = 12
+    outage_increment: Annotated[
+        float,
+        Field(alias="Outage Increment", description="Generator outage bin size in convolution.", ge=1),
+    ] = 10.0
+    pricing_method: Annotated[
+        Literal[0, 1],
+        Field(alias="Pricing Method", description="Type of generator pricing used in MT Schedule."),
+    ] = 0
+    reduced_sample_count: Annotated[
+        int,
+        Field(
+            alias="Reduced Sample Count",
+            description="Statistically reduce the Sample Type periods to at most this number of samples each year.",
+            ge=1,
+        ),
+    ] = 4
+    reduction_relative_accuracy: Annotated[
+        float,
+        Field(
+            alias="Reduction Relative Accuracy",
+            description="Stop sample reduction when the accuracy of the reduced sample set reaches this level.",
+            ge=0,
+            le=1,
+        ),
+    ] = 1.0
+    reliability_min_contiguous_block: Annotated[
+        int,
+        Field(
+            alias="Reliability Min Contiguous Block",
+            description=(
+                "For reliability based sampled chronology ensure sampled periods are contained in contiguous "
+                "blocks of at least this many hours."
+            ),
             ge=0,
         ),
+    ] = 0
+    sample_type: Annotated[
+        Literal[1, 2, 3, 4],
+        Field(
+            alias="Sample Type",
+            description="For Chronology = Sampled, take this type of sample.",
+        ),
     ] = 2
-    transmission_detail: Annotated[
+    sampled_block_count: Annotated[
         int,
         Field(
-            alias="Transmission Detail",
-            description="Transmission modeling detail: Regional (0), Zonal (1), Nodal (2)",
-            json_schema_extra={"enum": [0, 1, 2]},
+            alias="Sampled Block Count",
+            description=(
+                "Number of blocks modeled in each sample period (day/week) where zero means the original "
+                "number of intervals."
+            ),
+            ge=0,
+        ),
+    ] = 0
+    sampled_shallow_storage_cutoff: Annotated[
+        float,
+        Field(
+            alias="Sampled Shallow Storage Cutoff",
+            description=(
+                "For Chronology = Sampled and Sampled Shallow Storage Treatment = Custom, maximum storage "
+                "duration in hours for shallow storage formulation."
+            ),
+            ge=0,
+        ),
+    ] = 0.0
+    sampled_shallow_storage_treatment: Annotated[
+        Literal[1, 2, 3],
+        Field(alias="Sampled Shallow Storage Treatment", description="Sampled shallow storage treatment."),
+    ] = 1
+    sampling_interval: Annotated[
+        Literal[-1, 2, 3, 4, 7],
+        Field(
+            alias="Sampling Interval",
+            description="For Chronology = Sampled, take Sample Type samples in each of these intervals of time.",
+        ),
+    ] = 4
+    start_cost_amortization_period: Annotated[
+        int,
+        Field(
+            alias="Start Cost Amortization Period",
+            description="Number of hours over which generator start costs are amortized.",
+            ge=0,
+        ),
+    ] = 0
+    step_link_mode: Annotated[
+        Literal[0, 1, 2],
+        Field(
+            alias="Step Link Mode",
+            description="Controls how the solutions of each step are linked together.",
+        ),
+    ] = 0
+    step_type: Annotated[
+        Literal[1, 2, 3, 4, 7],
+        Field(
+            alias="Step Type",
+            description="Each simulation step will span steps of this type.",
+        ),
+    ] = 4
+    stochastic_algorithm: Annotated[
+        Literal[0, 1],
+        Field(
+            alias="Stochastic Algorithm",
+            description="Algorithm invoked by the Stochastic Method when a scenario tree is present.",
+        ),
+    ] = 0
+    stochastic_method: Annotated[
+        Literal[0, 1, 2, 3],
+        Field(
+            alias="Stochastic Method",
+            description="Stochastic optimization method for MT Schedule.",
+        ),
+    ] = 0
+    storage_formulate_head_effects: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Storage Formulate Head Effects",
+            description="If storage head effects should be formulated in MT Schedule.",
+        ),
+    ] = -1
+    use_effective_load_approach: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Use Effective Load Approach",
+            description="If MT Schedule uses the effective load approach.",
+        ),
+    ] = 0
+    write_bridge_text_files: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Write Bridge Text Files",
+            description=(
+                "If bridge information such as constraint decomposition and storage targets should be written "
+                "to text files."
+            ),
         ),
     ] = 0
 
@@ -75,13 +277,17 @@ class PLEXOSMTSchedule(PLEXOSConfiguration):
         """Create an example MT Schedule configuration."""
         return PLEXOSMTSchedule(
             name="MT_Schedule_Example",
-            step_type=4,
             at_a_time=1,
-            ldc_type=3,
             block_count=6,
-            ldc_slicing_method=0,
-            heat_rate_detail=2,
-            transmission_detail=0,
+            chronology=2,
+            discount_rate=0.05,
+            ldc_type=1,
+            new_entry_time_lag=12,
+            outage_increment=10,
+            reduced_sample_count=4,
+            sample_type=2,
+            step_type=4,
+            stochastic_method=0,
         )
 
 
