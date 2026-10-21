@@ -6,6 +6,7 @@ import plexosdb
 import pytest
 from plexosdb import ClassEnum, PlexosDB
 
+from r2x_plexos.models.model import PLEXOSHorizon, PLEXOSModel
 from r2x_plexos.models.simulation_config import (
     PLEXOSPASA,
     PLEXOSDiagnostic,
@@ -102,6 +103,47 @@ def test_convert_simulation_config_to_attributes():
     assert attrs["MIP Relative Gap"] == 0.01
     assert "MIP Maximum Threads" in attrs
     assert attrs["MIP Maximum Threads"] == 20
+
+
+def test_plexos_model_v12_defaults():
+    """Test Model attributes and defaults from the v12 reference."""
+    result = convert_simulation_config_to_attributes(PLEXOSModel(name="TestModel"))
+
+    assert result.is_ok()
+    assert result.unwrap() == {
+        "Enabled": 0,
+        "Execution Order": 0,
+        "Load Custom Assemblies": -1,
+        "Make Unique Name": 0,
+        "Objective Absolute Tolerance": 0.0,
+        "Objective Priority": 1,
+        "Objective Relative Tolerance": 0.0,
+        "Objective Weight": 1.0,
+        "Output to Folder": -1,
+        "Random Number Seed": 0,
+        "Run Mode": 0,
+        "Write Input": 0,
+    }
+
+
+def test_plexos_horizon_v12_enum_constraints():
+    """Test Horizon enum constraints from the v12 reference."""
+    horizon = PLEXOSHorizon(
+        name="TestHorizon",
+        look_ahead_indicator=-1,
+        look_ahead_type=6,
+        step_type=4,
+    )
+    assert horizon.look_ahead_indicator == -1
+    assert horizon.look_ahead_type == 6
+    assert horizon.step_type == 4
+
+    with pytest.raises(ValueError):
+        PLEXOSHorizon(name="InvalidLookAhead", look_ahead_indicator=1)
+    with pytest.raises(ValueError):
+        PLEXOSHorizon(name="InvalidStepType", step_type=0)
+    with pytest.raises(ValueError):
+        PLEXOSHorizon(name="InvalidLookAheadType", look_ahead_type=3)
 
 
 def test_validate_simulation_config_success():

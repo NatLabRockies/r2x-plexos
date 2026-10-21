@@ -1,6 +1,6 @@
 """The following file contains Pydantic models for a PLEXOS Horizon class."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field
 
@@ -10,13 +10,104 @@ from .component import PLEXOSConfiguration
 class PLEXOSModel(PLEXOSConfiguration):
     """PLEXOS Model class."""
 
+    enabled: Annotated[
+        Literal[0, -1],
+        Field(
+            alias="Enabled",
+            description="If the model is ready to be executed",
+        ),
+    ] = 0
+    execution_order: Annotated[
+        int,
+        Field(
+            alias="Execution Order",
+            description="Order in which to execute the Model when running in a batch.",
+            ge=0,
+        ),
+    ] = 0
+    load_custom_assemblies: Annotated[
+        Literal[0, -1],
+        Field(
+            alias="Load Custom Assemblies",
+            description="If the Model should run custom OpenPLEXOS assemblies.",
+        ),
+    ] = -1
+    make_unique_name: Annotated[
+        Literal[-1, 0, 1],
+        Field(
+            alias="Make Unique Name",
+            description="If model output should be written to a unique filename for each execution",
+        ),
+    ] = 0
+    objective_absolute_tolerance: Annotated[
+        float,
+        Field(
+            alias="Objective Absolute Tolerance",
+            description=(
+                "Allowable degradation for the objective when doing hierarchical multi-objective "
+                "optimization for MIP models"
+            ),
+            ge=0,
+        ),
+    ] = 0.0
+    objective_priority: Annotated[
+        int,
+        Field(
+            alias="Objective Priority",
+            description="Priority of the objective when doing hierarchical multi-objective optimization",
+            ge=0,
+        ),
+    ] = 1
+    objective_relative_tolerance: Annotated[
+        float,
+        Field(
+            alias="Objective Relative Tolerance",
+            description=(
+                "Allowable relative degradation for the objective when doing hierarchical multi-objective "
+                "optimization for MIP models"
+            ),
+            ge=0,
+            le=1,
+        ),
+    ] = 0.0
+    objective_weight: Annotated[
+        float,
+        Field(
+            alias="Objective Weight",
+            description="Weight of the objective when doing blended multi-objective optimization",
+        ),
+    ] = 1.0
+    output_to_folder: Annotated[
+        Literal[0, -1],
+        Field(
+            alias="Output to Folder",
+            description=(
+                "If model output should be written to a folder under the source directory, "
+                "or into the source folder itself"
+            ),
+        ),
+    ] = -1
     random_number_seed: Annotated[
         float | int,
         Field(
             alias="Random Number Seed",
-            description="Random number seed assigned to the model",
+            description="Random number seed for this model",
             ge=0,
             le=2147483647,
+        ),
+    ] = 0
+    run_mode: Annotated[
+        Literal[0, 1],
+        Field(
+            alias="Run Mode",
+            description="Switches between Normal and Dry run modes",
+        ),
+    ] = 0
+    write_input: Annotated[
+        Literal[0, -1],
+        Field(
+            alias="Write Input",
+            description="If Model input should be written to the output location along with the solution.",
         ),
     ] = 0
 
@@ -129,11 +220,10 @@ class PLEXOSHorizon(PLEXOSConfiguration):
         ),
     ] = 0
     look_ahead_indicator: Annotated[
-        int,
+        Literal[0, -1],
         Field(
             alias="Look-ahead Indicator",
             description="Flag if chronological model used a look-ahead",
-            json_schema_extra={"enum": [0, 1]},
         ),
     ] = 0
     look_ahead_periods_per_day: Annotated[
@@ -146,11 +236,10 @@ class PLEXOSHorizon(PLEXOSConfiguration):
         ),
     ] = 24
     look_ahead_type: Annotated[
-        int,
+        Literal[0, 1, 2, 6],
         Field(
             alias="Look-ahead Type",
             description="Step type for look-ahead in chronological model",
-            json_schema_extra={"enum": [0, 1, 2, 6]},
         ),
     ] = 1
     periods_per_day: Annotated[
@@ -171,11 +260,10 @@ class PLEXOSHorizon(PLEXOSConfiguration):
         ),
     ] = 1
     step_type: Annotated[
-        int,
+        Literal[1, 2, 3, 4],
         Field(
             alias="Step Type",
             description="Planning horizon step type",
-            json_schema_extra={"enum": [0, 1, 3, 4]},
         ),
     ] = 1
     week_beginning: Annotated[
