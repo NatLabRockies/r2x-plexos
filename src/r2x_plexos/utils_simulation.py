@@ -185,7 +185,7 @@ def get_default_simulation_config() -> dict[str, Any]:
     --------
     >>> defaults = get_default_simulation_config()
     >>> defaults["performance"].solver  # Returns 4 (Gurobi)
-    >>> defaults["st_schedule"].transmission_detail  # Returns 1 (zonal)
+    >>> defaults["st_schedule"].transmission_detail  # Returns 1 (nodal)
     """
     return {
         "mt_schedule": PLEXOSMTSchedule.example(),

@@ -727,7 +727,7 @@ class PLEXOSSTSchedule(PLEXOSConfiguration):
         Literal[0, 1, 2],
         Field(
             alias="Transmission Detail",
-            description="Transmission modeling detail: Regional (0), Zonal (1), Nodal (2)",
+            description="Transmission modeling detail: Regional (0), Nodal (1), Zonal (2)",
         ),
     ] = 1
 
@@ -807,7 +807,7 @@ class PLEXOSProduction(PLEXOSConfiguration):
         ALLOWED_SET,
         Field(
             alias="Forced Outage Relaxes Min Down Time",
-            description="If ramp constraints should all be formulated upfront rather than checked iteratively.",
+            description="If forced outages are allowed to relax minimum down-time constraints.",
         ),
     ] = 0
     formulate_ramp_upfront: Annotated[
@@ -1413,14 +1413,12 @@ class PLEXOSPerformance(PLEXOSConfiguration):
         ),
     ] = 0
     mip_start_solution: Annotated[
-        float,
+        Literal[0, 1, 2],
         Field(
             alias="MIP Start Solution",
             description="MIP solver will be warm started with previous solutions according to this setting.",
-            ge=0,
-            le=2,
         ),
-    ] = 1.0
+    ] = 1
     monitoring_maximum_threads: Annotated[
         int,
         Field(

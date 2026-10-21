@@ -221,6 +221,16 @@ def test_validate_simulation_config_failure():
     assert result.is_err()
 
 
+def test_plexos_performance_mip_start_solution_modes():
+    """Test MIP Start Solution accepts only the documented integer modes."""
+    assert PLEXOSPerformance(name="DefaultPerf").mip_start_solution == 1
+    for mode in (0, 1, 2):
+        assert PLEXOSPerformance(name=f"Mode{mode}", mip_start_solution=mode).mip_start_solution == mode
+
+    with pytest.raises(ValueError):
+        PLEXOSPerformance(name="FractionalMode", mip_start_solution=1.5)
+
+
 def test_ingest_simulation_config_to_plexosdb():
     """Test single simulation config ingestion."""
     db = PlexosDB.from_xml(SCHEMA_PATH)
