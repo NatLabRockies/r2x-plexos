@@ -31,7 +31,7 @@ from r2x_plexos.utils_simulation import (
     validate_simulation_config,
 )
 
-FILE_NAME = "master_10.0R2_btu.xml"
+FILE_NAME = "master_12.0R3_btu.xml"
 _XML_TEMPLATE_DIR = Path(plexosdb.__file__).parent / "config"
 
 
@@ -433,6 +433,57 @@ def test_validate_simulation_config_success(tmp_path):
     result = validate_simulation_config(db, ClassEnum.Performance, perf)
 
     assert result.is_ok()
+
+
+@pytest.mark.parametrize(
+    ("schema_filename", "unsupported_aliases"),
+    [
+        (
+            "master_9.2R6_btu.xml",
+            {
+                "Barrier Convergence Tolerance",
+                "MIP Max Absolute Gap",
+                "Random Number Seed",
+                "Sparsify",
+            },
+        ),
+        (
+            "master_10.0R2_btu.xml",
+            {"Barrier Convergence Tolerance", "Sparsify"},
+        ),
+        ("master_11.0R4_btu.xml", {"Sparsify"}),
+        ("master_12.0R3_btu.xml", set()),
+    ],
+)
+def test_performance_config_validation_by_plexos_version(schema_filename, unsupported_aliases):
+    """Validate Performance aliases against each supported PLEXOS schema version."""
+    db = PlexosDB.from_xml(_XML_TEMPLATE_DIR / schema_filename)
+    performance_fields = {
+        field_info.alias: field_name
+        for field_name, field_info in PLEXOSPerformance.model_fields.items()
+        if field_info.alias and field_name not in {"name", "category", "object_id", "uuid"}
+    }
+
+    actual_unsupported = {
+        alias
+        for alias in performance_fields
+        if validate_simulation_attribute(db, ClassEnum.Performance, alias).is_err()
+    }
+    assert actual_unsupported == unsupported_aliases
+
+    perf = PLEXOSPerformance(name="TestPerf")
+    assert validate_simulation_config(db, ClassEnum.Performance, perf).is_ok()
+    assert ingest_simulation_config_to_plexosdb(db, ClassEnum.Performance, perf).is_ok()
+
+    if unsupported_aliases:
+        explicit_values = {
+            performance_fields[alias]: getattr(perf, performance_fields[alias])
+            for alias in unsupported_aliases
+        }
+        explicit_perf = PLEXOSPerformance(name="ExplicitPerf", **explicit_values)
+        explicit_result = validate_simulation_config(db, ClassEnum.Performance, explicit_perf)
+        assert explicit_result.is_err()
+        assert all(alias in explicit_result.unwrap_err() for alias in unsupported_aliases)
 
 
 def test_validate_simulation_config_invalid_attribute(tmp_path):

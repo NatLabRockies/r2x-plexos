@@ -2,12 +2,15 @@
 
 from pathlib import Path
 
+import plexosdb
 import pytest
 from plexosdb import ClassEnum, PlexosDB
 
+from r2x_plexos.models.model import PLEXOSHorizon, PLEXOSModel
 from r2x_plexos.models.simulation_config import (
     PLEXOSPASA,
     PLEXOSDiagnostic,
+    PLEXOSLTPlan,
     PLEXOSMTSchedule,
     PLEXOSPerformance,
     PLEXOSProduction,
@@ -17,12 +20,16 @@ from r2x_plexos.models.simulation_config import (
 )
 from r2x_plexos.utils_plexosdb import validate_simulation_attribute
 from r2x_plexos.utils_simulation import (
+    SimulationConfig,
     build_plexos_simulation,
     convert_simulation_config_to_attributes,
     get_default_simulation_config,
     ingest_simulation_config_to_plexosdb,
+    ingest_simulation_to_plexosdb,
     validate_simulation_config,
 )
+
+SCHEMA_PATH = Path(plexosdb.__file__).parent / "config" / "master_12.0R3_btu.xml"
 
 
 @pytest.fixture
@@ -76,7 +83,52 @@ def test_get_default_simulation_config():
 
     # Check some default values
     assert defaults["performance"].solver == 4  # Gurobi
-    assert defaults["st_schedule"].transmission_detail == 1  # Nodal
+    assert defaults["st_schedule"].stochastic_method == 1
+    assert defaults["st_schedule"].transmission_detail == 1
+
+
+def test_plexos_lt_plan_v12_attributes():
+    """Test LT Plan attributes and constraints from the v12 reference."""
+    result = convert_simulation_config_to_attributes(PLEXOSLTPlan(name="LTPlan"))
+
+    assert result.is_ok()
+    attributes = result.unwrap()
+    assert len(attributes) == 52
+    assert attributes["Allow Capacity Sharing"] == 0
+    assert attributes["Block Count"] == 12
+    assert attributes["Chronology"] == 2
+    assert attributes["Optimize Expansion"] == -1
+    assert attributes["Write Expansion Plan Text Files"] == 0
+
+    with pytest.raises(ValueError):
+        PLEXOSLTPlan(name="InvalidChronology", chronology=1)
+    with pytest.raises(ValueError):
+        PLEXOSLTPlan(name="InvalidSolutionQuality", solution_quality=100.1)
+
+
+def test_ingest_lt_plan_config_and_model_membership():
+    """Test LT Plan config routing and its Model membership."""
+    db = PlexosDB.from_xml(SCHEMA_PATH)
+    simulation = SimulationConfig(
+        models=[PLEXOSModel(name="LTPlanModel")],
+        horizons=[PLEXOSHorizon(name="LTPlanHorizon")],
+        memberships=[
+            ("LTPlanModel", "LTPlanHorizon", "Horizon"),
+            ("LTPlanModel", "LTPlan", "LT Plan"),
+        ],
+        simulation_configs={"lt_plan": PLEXOSLTPlan(name="LTPlan")},
+    )
+
+    result = ingest_simulation_to_plexosdb(db, simulation)
+
+    assert result.is_ok()
+    assert db.check_object_exists("LT Plan", "LTPlan")
+    assert db.get_membership_id("LTPlanModel", "LTPlan", "LT Plan")
+    assert db.get_attribute("LT Plan", object_name="LTPlan", attribute_name="Chronology")[0] == 2
+
+    info = result.unwrap()["simulation_objects"]
+    assert len(info) == 1
+    assert info[0]["class"] == "LT Plan"
 
 
 def test_convert_simulation_config_to_attributes():
@@ -100,15 +152,57 @@ def test_convert_simulation_config_to_attributes():
     assert attrs["MIP Maximum Threads"] == 20
 
 
-def test_validate_simulation_config_success(plexos_db):
-    """Test full config validation (valid)."""
+def test_plexos_model_v12_defaults():
+    """Test Model attributes and defaults from the v12 reference."""
+    result = convert_simulation_config_to_attributes(PLEXOSModel(name="TestModel"))
+
+    assert result.is_ok()
+    assert result.unwrap() == {
+        "Enabled": 0,
+        "Execution Order": 0,
+        "Load Custom Assemblies": -1,
+        "Make Unique Name": 0,
+        "Objective Absolute Tolerance": 0.0,
+        "Objective Priority": 1,
+        "Objective Relative Tolerance": 0.0,
+        "Objective Weight": 1.0,
+        "Output to Folder": -1,
+        "Random Number Seed": 0,
+        "Run Mode": 0,
+        "Write Input": 0,
+    }
+
+
+def test_plexos_horizon_v12_enum_constraints():
+    """Test Horizon enum constraints from the v12 reference."""
+    horizon = PLEXOSHorizon(
+        name="TestHorizon",
+        look_ahead_indicator=-1,
+        look_ahead_type=6,
+        step_type=4,
+    )
+    assert horizon.look_ahead_indicator == -1
+    assert horizon.look_ahead_type == 6
+    assert horizon.step_type == 4
+
+    with pytest.raises(ValueError):
+        PLEXOSHorizon(name="InvalidLookAhead", look_ahead_indicator=1)
+    with pytest.raises(ValueError):
+        PLEXOSHorizon(name="InvalidStepType", step_type=0)
+    with pytest.raises(ValueError):
+        PLEXOSHorizon(name="InvalidLookAheadType", look_ahead_type=3)
+
+
+def test_validate_simulation_config_success():
+    """Test full config validation against the v12 schema."""
+    db = PlexosDB.from_xml(SCHEMA_PATH)
     perf = PLEXOSPerformance(
         name="ValidPerf",
         solver=4,
         mip_relative_gap=0.01,
     )
 
-    result = validate_simulation_config(plexos_db, ClassEnum.Performance, perf)
+    result = validate_simulation_config(db, ClassEnum.Performance, perf)
     assert result.is_ok()
 
 
@@ -127,8 +221,19 @@ def test_validate_simulation_config_failure():
     assert result.is_err()
 
 
-def test_ingest_simulation_config_to_plexosdb(plexos_db):
+def test_plexos_performance_mip_start_solution_modes():
+    """Test MIP Start Solution accepts only the documented integer modes."""
+    assert PLEXOSPerformance(name="DefaultPerf").mip_start_solution == 1
+    for mode in (0, 1, 2):
+        assert PLEXOSPerformance(name=f"Mode{mode}", mip_start_solution=mode).mip_start_solution == mode
+
+    with pytest.raises(ValueError):
+        PLEXOSPerformance(name="FractionalMode", mip_start_solution=1.5)
+
+
+def test_ingest_simulation_config_to_plexosdb():
     """Test single simulation config ingestion."""
+    db = PlexosDB.from_xml(SCHEMA_PATH)
     perf = PLEXOSPerformance(
         name="Test_Performance",
         solver=4,
@@ -137,7 +242,7 @@ def test_ingest_simulation_config_to_plexosdb(plexos_db):
     )
 
     result = ingest_simulation_config_to_plexosdb(
-        plexos_db,
+        db,
         ClassEnum.Performance,
         perf,
         validate=True,
@@ -148,9 +253,10 @@ def test_ingest_simulation_config_to_plexosdb(plexos_db):
 
     assert info["object_name"] == "Test_Performance"
     assert info["class"] == "Performance"
-    assert info["attribute_count"] == 4  # solver, gap, threads, max_time
+    assert info["attribute_count"] == 43
     assert "SOLVER" in info["attributes_added"]
     assert "MIP Relative Gap" in info["attributes_added"]
+    assert "MIP Maximum Threads" in info["attributes_added"]
 
 
 def test_build_with_simulation_config():
@@ -189,8 +295,8 @@ def test_ingest_full_simulation_with_config():
         ),
         "st_schedule": PLEXOSSTSchedule(
             name="Test_ST",
-            transmission_detail=1,
-            heat_rate_detail=2,
+            stochastic_method=1,
+            step_link_mode=0,
         ),
         "diagnostic": None,  # Test that None values are skipped
     }
@@ -231,6 +337,7 @@ def test_simulation_config_examples():
 
     st_schedule = PLEXOSSTSchedule.example()
     assert st_schedule.name == "ST_Schedule_Example"
+    assert st_schedule.stochastic_method == 1
     assert st_schedule.transmission_detail == 1
 
     production = PLEXOSProduction.example()
@@ -251,7 +358,7 @@ def test_simulation_config_examples():
 
     transmission = PLEXOSTransmission.example()
     assert transmission.name == "Transmission_Example"
-    assert transmission.of_method == 1
+    assert transmission.opf_method == 1
 
     diagnostic = PLEXOSDiagnostic.example()
     assert diagnostic.name == "Diagnostic_Example"
