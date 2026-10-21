@@ -471,11 +471,19 @@ def test_performance_config_validation_by_plexos_version(schema_filename, unsupp
     }
     assert actual_unsupported == unsupported_aliases
 
-    perf = PLEXOSPerformance(name="TestPerf").model_copy(
-        update={performance_fields[alias]: None for alias in unsupported_aliases}
-    )
-
+    perf = PLEXOSPerformance(name="TestPerf")
     assert validate_simulation_config(db, ClassEnum.Performance, perf).is_ok()
+    assert ingest_simulation_config_to_plexosdb(db, ClassEnum.Performance, perf).is_ok()
+
+    if unsupported_aliases:
+        explicit_values = {
+            performance_fields[alias]: getattr(perf, performance_fields[alias])
+            for alias in unsupported_aliases
+        }
+        explicit_perf = PLEXOSPerformance(name="ExplicitPerf", **explicit_values)
+        explicit_result = validate_simulation_config(db, ClassEnum.Performance, explicit_perf)
+        assert explicit_result.is_err()
+        assert all(alias in explicit_result.unwrap_err() for alias in unsupported_aliases)
 
 
 def test_validate_simulation_config_invalid_attribute(tmp_path):

@@ -248,6 +248,30 @@ def convert_simulation_config_to_attributes(
         return Err(f"Failed to convert simulation config to attributes: {e!s}")
 
 
+def _omit_unsupported_implicit_defaults(
+    db: PlexosDB,
+    class_enum: ClassEnum,
+    sim_config: PLEXOSConfiguration,
+    attributes: dict[str, Any],
+) -> dict[str, Any]:
+    """Drop unsupported defaults while preserving explicitly requested attributes."""
+    try:
+        supported_attributes = set(db.list_attributes(class_enum))
+    except Exception:
+        return attributes
+
+    explicit_fields = sim_config.model_fields_set
+    alias_to_field = {
+        field_info.alias or field_name: field_name
+        for field_name, field_info in sim_config.model_fields.items()
+    }
+    return {
+        alias: value
+        for alias, value in attributes.items()
+        if alias in supported_attributes or alias_to_field.get(alias) in explicit_fields
+    }
+
+
 def validate_simulation_config(
     db: PlexosDB,
     class_enum: ClassEnum,
@@ -283,7 +307,7 @@ def validate_simulation_config(
     if attrs_result.is_err():
         return Err(attrs_result.unwrap_err())
 
-    attributes = attrs_result.unwrap()
+    attributes = _omit_unsupported_implicit_defaults(db, class_enum, sim_config, attrs_result.unwrap())
 
     # Validate each attribute
     errors = []
@@ -350,7 +374,7 @@ def ingest_simulation_config_to_plexosdb(
     if attrs_result.is_err():
         return Err(attrs_result.unwrap_err())
 
-    attributes = attrs_result.unwrap()
+    attributes = _omit_unsupported_implicit_defaults(db, class_enum, sim_config, attrs_result.unwrap())
 
     # Membership ingestion may have already created this configuration object.
     if not _check_object_exists(db, class_enum, sim_config.name):
