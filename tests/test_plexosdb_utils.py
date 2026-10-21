@@ -104,3 +104,27 @@ def test_validate_simulation_attribute_exception_path():
     """Passing a non-PlexosDB object triggers the except branch → Err."""
     result = validate_simulation_attribute(object(), ClassEnum.Performance, "SOLVER")  # type: ignore[arg-type]
     assert result.is_err()
+
+
+def test_resolve_horizon_without_chrono_step_type_uses_plexos_default_of_days(template_db):
+    """A horizon that omits Chrono Step Type steps in days (the PLEXOS default), not hours."""
+    from datetime import datetime
+
+    from r2x_plexos.utils_plexosdb import resolve_horizon_for_model
+
+    template_db.add_object(ClassEnum.Model, "model_2023")
+    template_db.add_object(ClassEnum.Horizon, "base_2023")
+    template_db.add_membership(
+        ClassEnum.Model, ClassEnum.Horizon, "model_2023", "base_2023", CollectionEnum.Horizon
+    )
+    template_db.add_attribute(
+        ClassEnum.Horizon, "base_2023", attribute_name="Chrono Date From", attribute_value=44927.0
+    )
+    template_db.add_attribute(
+        ClassEnum.Horizon, "base_2023", attribute_name="Chrono Step Count", attribute_value=364
+    )
+
+    assert resolve_horizon_for_model(template_db, "model_2023") == (
+        datetime(2023, 1, 1),
+        datetime(2023, 12, 31),
+    )

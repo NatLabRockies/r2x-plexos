@@ -32,28 +32,14 @@ class PLEXOSPropertyValue:
     When used as a field in Pydantic models, serializes to a list of records
     compatible with plexosdb_from_records:
 
-    ```python
-    [
-        {
-            "value": 10,
-            "scenario_name": None,
-            "band": 1,
-            "timeslice_name": None,
-            "date_from": None,
-            "date_to": None,
-            "datafile_name": None,
-            "datafile_id": None,
-            "column_name": None,
-            "variable_name": None,
-            "variable_id": None,
-            "action": "=",
-            "units": None,
-            "text": None,
-            "text_class_name": None
-        },
-        ...
-    ]
-    ```
+    >>> from pydantic import TypeAdapter
+    >>> from r2x_plexos import PLEXOSPropertyValue
+    >>> adapter = TypeAdapter(PLEXOSPropertyValue)
+    >>> value = PLEXOSPropertyValue.from_dict({"value": 10.0})
+    >>> records = adapter.dump_python(value, mode="json")
+    >>> assert isinstance(records, list) and len(records) == 1
+    >>> assert records[0]["value"] == 10.0
+    >>> assert PLEXOSPropertyValue.from_records(records).get_value() == 10.0
 
     Round-trip serialization is supported via Pydantic's model_dump(mode='json')
     when used as a field type, and reconstruction from serialized format.
