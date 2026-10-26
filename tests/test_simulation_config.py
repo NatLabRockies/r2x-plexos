@@ -371,7 +371,7 @@ def test_simulation_config_examples():
 
     report = PLEXOSReport.example()
     assert report.name == "Report_Example"
-    assert report.output_results_by_day == -1
+    assert report.output_results_by_day == 0
 
     transmission = PLEXOSTransmission.example()
     assert transmission.name == "Transmission_Example"
@@ -379,3 +379,31 @@ def test_simulation_config_examples():
 
     diagnostic = PLEXOSDiagnostic.example()
     assert diagnostic.name == "Diagnostic_Example"
+
+
+def test_plexos_report_attributes_and_defaults():
+    """Test the documented Report attributes, aliases, and defaults."""
+    report = PLEXOSReport.example()
+    expected_attributes = {
+        "Datetime Convention": 0,
+        "Filter Objects By Interval": -1,
+        "Filter Objects In Summary": -1,
+        "Flat File Format": 0,
+        "Locale": 0,
+        "Output Results by Day": 0,
+        "Output Results by Fiscal Year": -1,
+        "Output Results by Hour": 0,
+        "Output Results by Month": 0,
+        "Output Results by Period": -1,
+        "Output Results by Quarter": 0,
+        "Output Results by Sample": 0,
+        "Output Results by Week": 0,
+        "Output Statistics": 0,
+        "Whole Years Only": 0,
+        "Write Flat Files": 0,
+        "Write XML Files": -1,
+        "XML Content": 0,
+    }
+
+    assert report.model_fields_set == {"name"}
+    assert convert_simulation_config_to_attributes(report).unwrap() == expected_attributes

@@ -501,6 +501,26 @@ def test_performance_config_validation_by_plexos_version(schema_filename, unsupp
         "master_12.0R3_btu.xml",
     ],
 )
+def test_default_report_config_validation_by_plexos_version(schema_filename):
+    """Implicit Report defaults are compatible with every supported schema."""
+    db = PlexosDB.from_xml(_XML_TEMPLATE_DIR / schema_filename)
+    report = get_default_simulation_config()["report"]
+
+    assert report is not None
+    assert report.model_fields_set == {"name"}
+    assert validate_simulation_config(db, ClassEnum.Report, report).is_ok()
+    assert ingest_simulation_config_to_plexosdb(db, ClassEnum.Report, report).is_ok()
+
+
+@pytest.mark.parametrize(
+    "schema_filename",
+    [
+        "master_9.2R6_btu.xml",
+        "master_10.0R2_btu.xml",
+        "master_11.0R4_btu.xml",
+        "master_12.0R3_btu.xml",
+    ],
+)
 def test_transmission_of_method_alias_matches_plexos_schemas(schema_filename):
     """Transmission OF Method uses the alias present in supported schemas."""
     db = PlexosDB.from_xml(_XML_TEMPLATE_DIR / schema_filename)

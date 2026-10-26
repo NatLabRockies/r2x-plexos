@@ -1532,40 +1532,102 @@ class PLEXOSPerformance(PLEXOSConfiguration):
 class PLEXOSReport(PLEXOSConfiguration):
     """PLEXOS Report configuration for output settings."""
 
+    datetime_convention: Annotated[
+        Literal[0, 1],
+        Field(
+            alias="Datetime Convention",
+            description="Convention used when writing DATETIME.",
+        ),
+    ] = 0
+    filter_objects_by_interval: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Filter Objects By Interval",
+            description="If the selection of objects reported on applies to interval output.",
+        ),
+    ] = -1
+    filter_objects_in_summary: Annotated[
+        ALLOWED_SET,
+        Field(
+            alias="Filter Objects In Summary",
+            description="If the selection of objects reported on applies to summary output.",
+        ),
+    ] = -1
+    flat_file_format: Annotated[
+        Literal[0, 1, 2],
+        Field(alias="Flat File Format", description="Format for text solution files."),
+    ] = 0
+    locale: Annotated[
+        int,
+        Field(
+            alias="Locale",
+            description="The numeric index of the locale that should be used to write text files.",
+            ge=0,
+        ),
+    ] = 0
     output_results_by_day: Annotated[
-        int,
-        Field(
-            alias="Output Results by Day",
-            description="Output results aggregated by day: Yes (-1), No (0)",
-            json_schema_extra={"enum": [-1, 0]},
-        ),
-    ] = -1
-    output_results_by_month: Annotated[
-        int,
-        Field(
-            alias="Output Results by Month",
-            description="Output results aggregated by month: Yes (-1), No (0)",
-            json_schema_extra={"enum": [-1, 0]},
-        ),
-    ] = -1
+        ALLOWED_SET,
+        Field(alias="Output Results by Day", description="If summary results are written by day."),
+    ] = 0
     output_results_by_fiscal_year: Annotated[
-        int,
-        Field(
-            alias="Output Results by Fiscal Year",
-            description="Output results aggregated by fiscal year: Yes (-1), No (0)",
-            json_schema_extra={"enum": [-1, 0]},
-        ),
+        ALLOWED_SET,
+        Field(alias="Output Results by Fiscal Year", description="If summary results are written by year."),
     ] = -1
+    output_results_by_hour: Annotated[
+        ALLOWED_SET,
+        Field(alias="Output Results by Hour", description="If summary results are written by hour."),
+    ] = 0
+    output_results_by_month: Annotated[
+        ALLOWED_SET,
+        Field(alias="Output Results by Month", description="If summary results are written by month."),
+    ] = 0
+    output_results_by_period: Annotated[
+        ALLOWED_SET,
+        Field(alias="Output Results by Period", description="If results are written by period."),
+    ] = -1
+    output_results_by_quarter: Annotated[
+        ALLOWED_SET,
+        Field(alias="Output Results by Quarter", description="If summary results are written by quarter."),
+    ] = 0
+    output_results_by_sample: Annotated[
+        ALLOWED_SET,
+        Field(alias="Output Results by Sample", description="If each sample is output."),
+    ] = 0
+    output_results_by_week: Annotated[
+        ALLOWED_SET,
+        Field(alias="Output Results by Week", description="If summary results are written by week."),
+    ] = 0
+    output_statistics: Annotated[
+        ALLOWED_SET,
+        Field(alias="Output Statistics", description="If statistics are calculated on multi-sample results."),
+    ] = 0
+    whole_years_only: Annotated[
+        ALLOWED_SET,
+        Field(alias="Whole Years Only", description="If reporting should be on whole years only."),
+    ] = 0
+    write_flat_files: Annotated[
+        ALLOWED_SET,
+        Field(alias="Write Flat Files", description="If the solution data are written to plain text files."),
+    ] = 0
+    write_xml_files: Annotated[
+        ALLOWED_SET,
+        Field(alias="Write XML Files", description="If the solution data are written to XML files."),
+    ] = -1
+    xml_content: Annotated[
+        Literal[0, 1],
+        Field(
+            alias="XML Content",
+            description=(
+                "Content of zipped-XML solution files: Compact writes binary solution tables; Raw writes "
+                "binary and raw XML solution tables."
+            ),
+        ),
+    ] = 0
 
     @classmethod
     def example(cls) -> "PLEXOSReport":
         """Create an example Report configuration."""
-        return PLEXOSReport(
-            name="Report_Example",
-            output_results_by_day=-1,
-            output_results_by_month=-1,
-            output_results_by_fiscal_year=-1,
-        )
+        return PLEXOSReport(name="Report_Example")
 
 
 class PLEXOSTransmission(PLEXOSConfiguration):
