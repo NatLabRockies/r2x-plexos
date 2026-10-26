@@ -4,7 +4,7 @@ from typing import cast
 
 from plexosdb import ClassEnum, CollectionEnum
 
-from .enums_compat import PURCHASER_CLASS_ENUM
+from .enums_compat import LTPLAN_CLASS_ENUM, LTPLAN_COLLECTION_ENUM, PURCHASER_CLASS_ENUM
 from .models import (
     PLEXOSBattery,
     PLEXOSDatafile,
@@ -53,6 +53,7 @@ PLEXOS_TYPE_MAP_INVERTED = dict(zip(PLEXOS_TYPE_MAP.values(), PLEXOS_TYPE_MAP.ke
 
 MEMBERSHIP_TYPE_MAP = {
     "Horizon": (ClassEnum.Horizon, CollectionEnum.Horizon),
+    "LT Plan": (cast(ClassEnum, LTPLAN_CLASS_ENUM), cast(CollectionEnum, LTPLAN_COLLECTION_ENUM)),
     "Diagnostic": (ClassEnum.Diagnostic, CollectionEnum.Diagnostic),
     "MT Schedule": (ClassEnum.MTSchedule, CollectionEnum.MTSchedule),
     "ST Schedule": (ClassEnum.STSchedule, CollectionEnum.STSchedule),
@@ -64,6 +65,7 @@ MEMBERSHIP_TYPE_MAP = {
 }
 
 CONFIG_CLASS_MAP = {
+    "lt_plan": cast(ClassEnum, LTPLAN_CLASS_ENUM),
     "mt_schedule": ClassEnum.MTSchedule,
     "st_schedule": ClassEnum.STSchedule,
     "production": ClassEnum.Production,

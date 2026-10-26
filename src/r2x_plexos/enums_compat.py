@@ -19,3 +19,5 @@ def _set_missing_attr(cls: type, name: str, value: str) -> str:
 PURCHASER_CLASS_ENUM = _set_missing_attr(ClassEnum, "Purchaser", "Purchaser")
 PURCHASER_COLLECTION_ENUM = _set_missing_attr(CollectionEnum, "Purchasers", "Purchasers")
 REFERENCE_NODE_COLLECTION_ENUM = _set_missing_attr(CollectionEnum, "ReferenceNode", "Reference Node")
+LTPLAN_CLASS_ENUM = _set_missing_attr(ClassEnum, "LTPlan", "LT Plan")
+LTPLAN_COLLECTION_ENUM = _set_missing_attr(CollectionEnum, "LTPlan", "LT Plan")

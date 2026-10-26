@@ -31,6 +31,7 @@ from .scenario import PLEXOSScenario
 from .simulation_config import (
     PLEXOSPASA,
     PLEXOSDiagnostic,
+    PLEXOSLTPlan,
     PLEXOSMTSchedule,
     PLEXOSPerformance,
     PLEXOSProduction,
@@ -56,6 +57,7 @@ __all__ = [
     "PLEXOSGenerator",
     "PLEXOSHorizon",
     "PLEXOSInterface",
+    "PLEXOSLTPlan",
     "PLEXOSLine",
     "PLEXOSMTSchedule",
     "PLEXOSMembership",

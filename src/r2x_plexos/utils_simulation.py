@@ -6,15 +6,16 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 
 from loguru import logger
-from plexosdb import ClassEnum, PlexosDB
+from plexosdb import ClassEnum, CollectionEnum, PlexosDB
 from plexosdb.checks import check_object_exists as _check_object_exists
 from plexosdb.enums import get_default_collection
 from plexosdb.exceptions import NotFoundError
 
 from r2x_core import Err, Ok, Result
+from r2x_plexos.enums_compat import LTPLAN_CLASS_ENUM, LTPLAN_COLLECTION_ENUM
 from r2x_plexos.models import PLEXOSHorizon, PLEXOSModel
 from r2x_plexos.models.component import PLEXOSConfiguration
 from r2x_plexos.models.simulation_config import (
@@ -126,6 +127,11 @@ def get_enum_from_string(string: str, enum_class: type[Enum], prefix: str | None
     if closest_enum is None:
         raise KeyError(f"No matching enum found for string '{string}'")
     return closest_enum
+
+
+def _enum_name(value: Enum | str) -> str:
+    """Return a display name for native and compatibility enum values."""
+    return value.name if isinstance(value, Enum) else str(value)
 
 
 def datetime_to_ole_date(dt: datetime) -> float:
@@ -242,6 +248,30 @@ def convert_simulation_config_to_attributes(
         return Err(f"Failed to convert simulation config to attributes: {e!s}")
 
 
+def _omit_unsupported_implicit_defaults(
+    db: PlexosDB,
+    class_enum: ClassEnum,
+    sim_config: PLEXOSConfiguration,
+    attributes: dict[str, Any],
+) -> dict[str, Any]:
+    """Drop unsupported defaults while preserving explicitly requested attributes."""
+    try:
+        supported_attributes = set(db.list_attributes(class_enum))
+    except Exception:
+        return attributes
+
+    explicit_fields = sim_config.model_fields_set
+    alias_to_field = {
+        field_info.alias or field_name: field_name
+        for field_name, field_info in sim_config.model_fields.items()
+    }
+    return {
+        alias: value
+        for alias, value in attributes.items()
+        if alias in supported_attributes or alias_to_field.get(alias) in explicit_fields
+    }
+
+
 def validate_simulation_config(
     db: PlexosDB,
     class_enum: ClassEnum,
@@ -277,7 +307,7 @@ def validate_simulation_config(
     if attrs_result.is_err():
         return Err(attrs_result.unwrap_err())
 
-    attributes = attrs_result.unwrap()
+    attributes = _omit_unsupported_implicit_defaults(db, class_enum, sim_config, attrs_result.unwrap())
 
     # Validate each attribute
     errors = []
@@ -344,13 +374,17 @@ def ingest_simulation_config_to_plexosdb(
     if attrs_result.is_err():
         return Err(attrs_result.unwrap_err())
 
-    attributes = attrs_result.unwrap()
+    attributes = _omit_unsupported_implicit_defaults(db, class_enum, sim_config, attrs_result.unwrap())
 
-    # Add the object first
-    try:
-        db.add_object(class_enum, sim_config.name)
-    except Exception as e:
-        return Err(f"Failed to add simulation object '{sim_config.name}': {e!s}")
+    # Membership ingestion may have already created this configuration object.
+    if not _check_object_exists(db, class_enum, sim_config.name):
+        try:
+            collection_enum = (
+                cast(CollectionEnum, LTPLAN_COLLECTION_ENUM) if class_enum == LTPLAN_CLASS_ENUM else None
+            )
+            db.add_object(class_enum, sim_config.name, collection_enum=collection_enum)
+        except Exception as e:
+            return Err(f"Failed to add simulation object '{sim_config.name}': {e!s}")
 
     # Add each attribute
     for attr_name, attr_value in attributes.items():
@@ -367,7 +401,7 @@ def ingest_simulation_config_to_plexosdb(
     return Ok(
         {
             "object_name": sim_config.name,
-            "class": class_enum.name,
+            "class": _enum_name(class_enum),
             "attributes_added": list(attributes.keys()),
             "attribute_count": len(attributes),
         }
@@ -1448,8 +1482,15 @@ def ingest_simulation_to_plexosdb(
         if obj_name not in already_created:
             child_class_enum, _ = MEMBERSHIP_TYPE_MAP[membership_type]
             try:
-                db.add_object(child_class_enum, obj_name)
-                logger.debug(f"Created simulation config object '{obj_name}' as {child_class_enum.name}")
+                collection_enum = (
+                    cast(CollectionEnum, LTPLAN_COLLECTION_ENUM)
+                    if child_class_enum == LTPLAN_CLASS_ENUM
+                    else None
+                )
+                db.add_object(child_class_enum, obj_name, collection_enum=collection_enum)
+                logger.debug(
+                    f"Created simulation config object '{obj_name}' as {_enum_name(child_class_enum)}"
+                )
             except Exception:
                 continue
 
