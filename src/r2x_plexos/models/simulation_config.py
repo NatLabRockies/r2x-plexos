@@ -418,6 +418,13 @@ class PLEXOSMTSchedule(PLEXOSConfiguration):
             description="Method used to account for end of horizon discounting.",
         ),
     ] = 1
+    heat_rate_detail: Annotated[
+        Literal[0, 1, 2],
+        Field(
+            alias="Heat Rate Detail",
+            description="Level of detail for Generator heat rate modelling.",
+        ),
+    ] = 1
     last_block_count: Annotated[
         int,
         Field(
@@ -618,6 +625,13 @@ class PLEXOSMTSchedule(PLEXOSConfiguration):
             description="If storage head effects should be formulated in MT Schedule.",
         ),
     ] = -1
+    transmission_detail: Annotated[
+        Literal[0, 1, 2],
+        Field(
+            alias="Transmission Detail",
+            description="Level of detail used in transmission modelling in MT Schedule.",
+        ),
+    ] = 0
     use_effective_load_approach: Annotated[
         ALLOWED_SET,
         Field(
@@ -683,6 +697,13 @@ class PLEXOSSTSchedule(PLEXOSConfiguration):
             description="Method used to account for end of horizon discounting.",
         ),
     ] = 1
+    heat_rate_detail: Annotated[
+        Literal[0, 1, 2],
+        Field(
+            alias="Heat Rate Detail",
+            description="Level of detail for Generator heat rate modelling.",
+        ),
+    ] = 0
     sequential_steps: Annotated[
         int,
         Field(

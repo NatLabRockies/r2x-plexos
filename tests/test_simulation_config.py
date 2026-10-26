@@ -152,6 +152,23 @@ def test_convert_simulation_config_to_attributes():
     assert attrs["MIP Maximum Threads"] == 20
 
 
+def test_schedule_heat_rate_and_transmission_details_are_serialized():
+    """Test MT/ST detail options are retained in PLEXOS attributes."""
+    mt_schedule = PLEXOSMTSchedule(
+        name="MT",
+        heat_rate_detail=2,
+        transmission_detail=1,
+    )
+    st_schedule = PLEXOSSTSchedule(name="ST", heat_rate_detail=2)
+
+    mt_attributes = convert_simulation_config_to_attributes(mt_schedule).unwrap()
+    st_attributes = convert_simulation_config_to_attributes(st_schedule).unwrap()
+
+    assert mt_attributes["Heat Rate Detail"] == 2
+    assert mt_attributes["Transmission Detail"] == 1
+    assert st_attributes["Heat Rate Detail"] == 2
+
+
 def test_plexos_model_v12_defaults():
     """Test Model attributes and defaults from the v12 reference."""
     result = convert_simulation_config_to_attributes(PLEXOSModel(name="TestModel"))
