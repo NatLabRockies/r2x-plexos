@@ -757,16 +757,6 @@ class PLEXOSSTSchedule(PLEXOSConfiguration):
         """Create an example ST Schedule configuration."""
         return PLEXOSSTSchedule(
             name="ST_Schedule_Example",
-            discount_period_type=2,
-            discount_rate=0.0,
-            discount_rate_reset=0,
-            end_effects_method=1,
-            sequential_steps=1,
-            step_link_mode=0,
-            step_relink_count=1,
-            stochastic_method=1,
-            storage_formulate_head_effects=-1,
-            transmission_detail=1,
         )
 
 
@@ -1888,9 +1878,9 @@ class PLEXOSTransmission(PLEXOSConfiguration):
             ge=0,
         ),
     ] = 0.0
-    opf_method: Annotated[
+    of_method: Annotated[
         Literal[0, 1],
-        Field(alias="OPF Method", description="Method for solving optimal power flow."),
+        Field(alias="OF Method", description="Method for solving optimal power flow."),
     ] = 0
     ptdf_method: Annotated[
         Literal[0, 1, 2, 3, 4],
@@ -2006,7 +1996,7 @@ class PLEXOSTransmission(PLEXOSConfiguration):
         """Create an example Transmission configuration."""
         return PLEXOSTransmission(
             name="Transmission_Example",
-            opf_method=1,
+            of_method=1,
             constraint_voltage_threshold=0.0,
             ptdf_method=1,
             bound_node_phase_angles=0,

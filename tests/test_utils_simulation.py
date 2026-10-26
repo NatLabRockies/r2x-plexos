@@ -475,6 +475,12 @@ def test_performance_config_validation_by_plexos_version(schema_filename, unsupp
     assert validate_simulation_config(db, ClassEnum.Performance, perf).is_ok()
     assert ingest_simulation_config_to_plexosdb(db, ClassEnum.Performance, perf).is_ok()
 
+    default_perf = get_default_simulation_config()["performance"]
+    assert default_perf is not None
+    assert {"barrier_convergence_tolerance", "sparsify"}.isdisjoint(default_perf.model_fields_set)
+    assert validate_simulation_config(db, ClassEnum.Performance, default_perf).is_ok()
+    assert ingest_simulation_config_to_plexosdb(db, ClassEnum.Performance, default_perf).is_ok()
+
     if unsupported_aliases:
         explicit_values = {
             performance_fields[alias]: getattr(perf, performance_fields[alias])
@@ -482,6 +488,83 @@ def test_performance_config_validation_by_plexos_version(schema_filename, unsupp
         }
         explicit_perf = PLEXOSPerformance(name="ExplicitPerf", **explicit_values)
         explicit_result = validate_simulation_config(db, ClassEnum.Performance, explicit_perf)
+        assert explicit_result.is_err()
+        assert all(alias in explicit_result.unwrap_err() for alias in unsupported_aliases)
+
+
+@pytest.mark.parametrize(
+    "schema_filename",
+    [
+        "master_9.2R6_btu.xml",
+        "master_10.0R2_btu.xml",
+        "master_11.0R4_btu.xml",
+        "master_12.0R3_btu.xml",
+    ],
+)
+def test_transmission_of_method_alias_matches_plexos_schemas(schema_filename):
+    """Transmission OF Method uses the alias present in supported schemas."""
+    db = PlexosDB.from_xml(_XML_TEMPLATE_DIR / schema_filename)
+
+    assert validate_simulation_attribute(db, ClassEnum.Transmission, "OF Method").is_ok()
+    assert validate_simulation_attribute(db, ClassEnum.Transmission, "OPF Method").is_err()
+
+    transmission = PLEXOSTransmission(name="TestTransmission", of_method=1)
+    attributes = convert_simulation_config_to_attributes(transmission).unwrap()
+    assert attributes["OF Method"] == 1
+    assert "OPF Method" not in attributes
+    assert validate_simulation_config(db, ClassEnum.Transmission, transmission).is_ok()
+
+    result = ingest_simulation_config_to_plexosdb(db, ClassEnum.Transmission, transmission)
+    assert result.is_ok()
+    values = db.get_attribute(
+        ClassEnum.Transmission,
+        object_name="TestTransmission",
+        attribute_name="OF Method",
+    )
+    assert values is not None
+    assert values[0] == 1
+
+
+@pytest.mark.parametrize(
+    ("schema_filename", "unsupported_aliases"),
+    [
+        (
+            "master_9.2R6_btu.xml",
+            {"Discount Rate Reset", "Storage Formulate Head Effects"},
+        ),
+        ("master_10.0R2_btu.xml", {"Discount Rate Reset"}),
+        ("master_11.0R4_btu.xml", {"Discount Rate Reset"}),
+        ("master_12.0R3_btu.xml", set()),
+    ],
+)
+def test_default_st_schedule_config_validation_by_plexos_version(schema_filename, unsupported_aliases):
+    """Implicit ST Schedule defaults are omitted when unsupported by a schema."""
+    db = PlexosDB.from_xml(_XML_TEMPLATE_DIR / schema_filename)
+    st_fields = {
+        field_info.alias: field_name
+        for field_name, field_info in PLEXOSSTSchedule.model_fields.items()
+        if field_info.alias and field_name not in {"name", "category", "object_id", "uuid"}
+    }
+
+    actual_unsupported = {
+        alias
+        for alias in st_fields
+        if validate_simulation_attribute(db, ClassEnum.STSchedule, alias).is_err()
+    }
+    assert actual_unsupported == unsupported_aliases
+
+    st_schedule = get_default_simulation_config()["st_schedule"]
+    assert st_schedule is not None
+    assert st_schedule.model_fields_set == {"name"}
+    assert validate_simulation_config(db, ClassEnum.STSchedule, st_schedule).is_ok()
+    assert ingest_simulation_config_to_plexosdb(db, ClassEnum.STSchedule, st_schedule).is_ok()
+
+    if unsupported_aliases:
+        explicit_values = {
+            st_fields[alias]: getattr(st_schedule, st_fields[alias]) for alias in unsupported_aliases
+        }
+        explicit_schedule = PLEXOSSTSchedule(name="ExplicitST", **explicit_values)
+        explicit_result = validate_simulation_config(db, ClassEnum.STSchedule, explicit_schedule)
         assert explicit_result.is_err()
         assert all(alias in explicit_result.unwrap_err() for alias in unsupported_aliases)
 
