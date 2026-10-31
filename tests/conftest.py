@@ -102,7 +102,7 @@ def serialized_plexos_system(tmp_path, db_all_gen_types, plexos_config) -> "Syst
     from r2x_core import DataStore, PluginContext
     from r2x_plexos import PLEXOSParser
 
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
 
     ctx = PluginContext(config=plexos_config, store=store)
     parser = cast(PLEXOSParser, PLEXOSParser.from_context(ctx))

@@ -120,7 +120,7 @@ def test_multi_band_datafile(tmp_path, xml_with_multi_weather_chrono, caplog):
 
     config = PLEXOSConfig(model_name="TestModel", horizon_year=2026)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)

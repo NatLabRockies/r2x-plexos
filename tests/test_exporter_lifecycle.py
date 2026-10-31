@@ -155,7 +155,7 @@ def test_roundtrip_db_parser_system_exporter_db(db_all_gen_types: PlexosDB, tmp_
     original_db = db_all_gen_types
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024, timeseries_dir=tmp_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
 
     ctx = PluginContext(config=config, store=store)
     parser = cast(PLEXOSParser, PLEXOSParser.from_context(ctx))

@@ -19,6 +19,8 @@ from loguru import logger
 from plexosdb import ClassEnum, PlexosDB
 
 from r2x_core import Err, Ok, Plugin, Result, System
+from r2x_core.exceptions import PluginError
+from r2x_core.utils.files import get_fpath
 
 from .datafile_handler import ParsedFileData, extract_file_data, extract_one_time_series
 from .models import (
@@ -170,7 +172,7 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         self._valid_scenarios: list[str] = []
         self._datafile_cache: dict[str, dict[str, Any]] = {}
         self._property_cache: dict[str, float] = {}
-        self._parsed_files_cache: dict[str, ParsedFileData] = {}
+        self._parsed_files_cache: dict[tuple[str, int], ParsedFileData] = {}
         self._attached_timeseries: dict[tuple[UUID, str], bool] = {}
         self._failed_references: list[tuple[TimeSeriesReference, str]] = []
         self._membership_cache: dict[int, PLEXOSMembership] = {}
@@ -192,9 +194,11 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
                 try:
                     store = self.store
                     if "xml_file" in store:
-                        data_file = store["xml_file"]
-                        xml_fpath = data_file.fpath
-                except Exception:
+                        result = get_fpath(store["xml_file"], folder_path=store.folder)
+                        if result.is_err():
+                            return Err(f"Failed to resolve PLEXOS XML file: {result.err()}")
+                        xml_fpath = result.ok()
+                except PluginError:
                     pass
 
                 if xml_fpath is None:
@@ -225,7 +229,7 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         self.model_name = self.config.model_name
 
         system = System(name="PLEXOS")
-        self._ctx.system = system
+        self.ctx.system = system
 
         validation_result = self.validate_inputs()
         if validation_result.is_err():
@@ -308,7 +312,7 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
                 if not object_id or not isinstance(object_id, int):
                     continue
 
-                prop_dict: dict[str, Any] = prop  # type: ignore[assignment]
+                prop_dict: dict[str, Any] = dict(prop)
 
                 if parent_class and parent_class != "System":
                     collection_properties_by_object[object_id].append(prop_dict)
@@ -888,7 +892,7 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         normalized_path = datafile_path.replace("\\", "/")
         try:
             base_path = Path(self.store.folder)
-        except Exception:
+        except PluginError:
             config_fpath = getattr(self.config, "fpath", None)
             if not config_fpath:
                 raise ValueError(
@@ -896,6 +900,8 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
                     "Provide 'fpath' pointing to the PLEXOS run directory."
                 ) from None
             base_path = Path(config_fpath)
+            if base_path.is_file():
+                base_path = base_path.parent
         if self.config.timeseries_dir:
             base_path = base_path / self.config.timeseries_dir
         return base_path / normalized_path
@@ -1016,9 +1022,12 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
 
             return None
 
-        if file_path in self._parsed_files_cache:
+        extraction_year = horizon_datetime[0].year if horizon_datetime else reference_year
+        cache_key = (file_path, extraction_year)
+        # Timeslice definitions can change between calls and affect expansion.
+        if not timeslices and cache_key in self._parsed_files_cache:
             logger.debug(f"Using cached file parse: {file_path}")
-            component_map = self._parsed_files_cache[file_path]
+            component_map = self._parsed_files_cache[cache_key]
             logger.debug(f"Cached map has {len(component_map)} entries: {list(component_map.keys())[:5]}")
 
             # Handle empty cache (file has no data for this year/scenario)
@@ -1055,7 +1064,6 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         logger.debug(f"Parsing time series file: {file_path}")
 
         # Use horizon start year if available, otherwise reference year
-        extraction_year = horizon_datetime[0].year if horizon_datetime else reference_year
         initial_time = datetime(extraction_year, 1, 1)
         ts_map = extract_file_data(
             path=file_path,
@@ -1064,7 +1072,8 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
             timeslices=timeslices,
         )
 
-        self._parsed_files_cache[file_path] = ts_map
+        if not timeslices:
+            self._parsed_files_cache[cache_key] = ts_map
         logger.trace(f"Cached file with {len(ts_map)} time series: {file_path}")
 
         resolved_key = resolve_component_key(ts_map, component_name)
@@ -1568,18 +1577,19 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
                 )
                 continue
 
-            if str(band_file_path) in self._parsed_files_cache:
-                ts_map = self._parsed_files_cache[str(band_file_path)]
+            extraction_year = horizon_datetime[0].year if horizon_datetime else reference_year
+            file_cache_key = (str(band_file_path), extraction_year)
+            if not timeslices and file_cache_key in self._parsed_files_cache:
+                ts_map = self._parsed_files_cache[file_cache_key]
             else:
-                # Use horizon start year if available, otherwise reference year
-                extraction_year = horizon_datetime[0].year if horizon_datetime else reference_year
                 ts_map = extract_file_data(
                     path=str(band_file_path),
                     default_initial_time=datetime(extraction_year, 1, 1),
                     year=extraction_year,
                     timeslices=timeslices,
                 )
-                self._parsed_files_cache[str(band_file_path)] = ts_map
+                if not timeslices:
+                    self._parsed_files_cache[file_cache_key] = ts_map
 
             if ref.component_name not in ts_map:
                 logger.debug(
@@ -1662,19 +1672,19 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 
-        # Use horizon start year if available, otherwise reference year
         extraction_year = horizon_datetime[0].year if horizon_datetime else reference_year
-        initial_time = datetime(extraction_year, 1, 1)
-
-        if str(file_path) not in self._parsed_files_cache:
-            self._parsed_files_cache[str(file_path)] = extract_file_data(
+        file_cache_key = (str(file_path), extraction_year)
+        if not timeslices and file_cache_key in self._parsed_files_cache:
+            file_map = self._parsed_files_cache[file_cache_key]
+        else:
+            file_map = extract_file_data(
                 path=str(file_path),
-                default_initial_time=initial_time,
+                default_initial_time=datetime(extraction_year, 1, 1),
                 year=extraction_year,
                 timeslices=timeslices,
             )
-
-        file_map = self._parsed_files_cache[str(file_path)]
+            if not timeslices:
+                self._parsed_files_cache[file_cache_key] = file_map
         band_ts_keys = [key for key in file_map if key.startswith(f"{ref.component_name}_band_")]
 
         if band_ts_keys:

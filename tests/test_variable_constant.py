@@ -87,7 +87,7 @@ def test_battery_capacity_with_constant_variable(xml_with_variables, tmp_path, c
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)

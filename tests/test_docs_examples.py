@@ -28,7 +28,7 @@ def prepare_workspace(folder: Path) -> object:
     shutil.copy2(ROOT / "tests/data/5_bus_system_variables.xml", inputs / "model.xml")
     context = PluginContext(
         config=PLEXOSConfig(fpath=str(inputs / "model.xml"), model_name="Base", horizon_year=2024),
-        store=DataStore(path=inputs),
+        store=DataStore(inputs),
     )
     context = PLEXOSParser.from_context(context).run()
     assert context.system is not None

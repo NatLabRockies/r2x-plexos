@@ -5,10 +5,13 @@ import re
 from datetime import datetime, timedelta
 from functools import lru_cache, singledispatch
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import polars as pl
 from infrasys import SingleTimeSeries
+
+from r2x_core import ReaderConfig, TabularSource
+from r2x_core.polars_adapter import PolarsTabularFileReader
 
 if TYPE_CHECKING:
     from r2x_plexos.models.timeslice import PLEXOSTimeslice
@@ -60,7 +63,12 @@ class ValueFile(FileType):
 @lru_cache(maxsize=64)
 def load_csv_cached(path: str) -> pl.LazyFrame:
     """Load a CSV file and return it as a LazyFrame."""
-    return pl.scan_csv(Path(path), infer_schema_length=100000)
+    source = PolarsTabularFileReader().read_file(
+        "csv", file_path=Path(path), reader_config=ReaderConfig(options={"infer_schema_length": 100000})
+    )["data"]
+    if not isinstance(source, TabularSource) or not isinstance(source.data, pl.LazyFrame):
+        raise TypeError("CSV reader did not return a Polars lazy frame")
+    return source.data
 
 
 def is_leap_year(year: int) -> bool:
@@ -250,7 +258,7 @@ def extract_one_time_series(
             return result
         raise ValueError(f"Component '{component}' not found in file: {path}")
 
-    return cast(SingleTimeSeries | float, ts_map[component])  # type: ignore[redundant-cast]
+    return ts_map[component]
 
 
 @singledispatch
@@ -736,8 +744,8 @@ def _(
     if wide_year_cols:
         if "Name" not in collected_df.columns:
             raise pl.exceptions.SchemaFieldNotFoundError("Name")
-        collected_df = collected_df.melt(
-            id_vars=["Name"], value_vars=wide_year_cols, variable_name="year", value_name="Value"
+        collected_df = collected_df.unpivot(
+            index=["Name"], on=wide_year_cols, variable_name="year", value_name="Value"
         )
         collected_df = collected_df.with_columns(pl.col("year").str.replace(r"^YR-", "").cast(pl.Int32))
 

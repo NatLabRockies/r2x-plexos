@@ -117,7 +117,7 @@ Python workflow, a read-only filesystem check can reproduce path resolution:
 >>> from r2x_core import DataStore
 >>> from r2x_plexos import PLEXOSConfig
 >>> config = PLEXOSConfig(fpath="inputs/model.xml")
->>> store = DataStore(path=Path("inputs"))
+>>> store = DataStore(Path("inputs"))
 >>> xml = Path(config.fpath)
 >>> base = Path(store.folder)
 >>> if config.timeseries_dir:

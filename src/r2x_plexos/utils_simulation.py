@@ -803,7 +803,7 @@ def _build_monthly_models(
             "periods_per_day": 24,
         }
         horizon_data.update(horizon_properties)
-        horizon = PLEXOSHorizon(**horizon_data)  # ty: ignore[invalid-argument-type]
+        horizon = PLEXOSHorizon(**horizon_data)
         horizons.append(horizon)
 
         model_name = f"Model_{horizon_year}_M{month:02d}"
@@ -812,7 +812,7 @@ def _build_monthly_models(
             "category": f"model_{horizon_year}",
         }
         model_data.update(model_properties)
-        model = PLEXOSModel(**model_data)  # ty: ignore[invalid-argument-type]
+        model = PLEXOSModel(**model_data)
         models.append(model)
 
         # Track membership with type
@@ -890,7 +890,7 @@ def _build_weekly_models(
             "periods_per_day": 24,
         }
         horizon_data.update(horizon_properties)
-        horizon = PLEXOSHorizon(**horizon_data)  # ty: ignore[invalid-argument-type]
+        horizon = PLEXOSHorizon(**horizon_data)
         horizons.append(horizon)
 
         model_name = f"Model_{horizon_year}_W{week:02d}"
@@ -899,7 +899,7 @@ def _build_weekly_models(
             "category": f"model_{horizon_year}",
         }
         model_data.update(model_properties)
-        model = PLEXOSModel(**model_data)  # ty: ignore[invalid-argument-type]
+        model = PLEXOSModel(**model_data)
         models.append(model)
 
         memberships.append((model_name, horizon_name, "Horizon"))
@@ -980,7 +980,7 @@ def _build_quarterly_models(
             "periods_per_day": 24,
         }
         horizon_data.update(horizon_properties)
-        horizon = PLEXOSHorizon(**horizon_data)  # ty: ignore[invalid-argument-type]
+        horizon = PLEXOSHorizon(**horizon_data)
         horizons.append(horizon)
 
         model_name = f"Model_{horizon_year}_{quarter_name}"
@@ -989,7 +989,7 @@ def _build_quarterly_models(
             "category": f"model_{horizon_year}",
         }
         model_data.update(model_properties)
-        model = PLEXOSModel(**model_data)  # ty: ignore[invalid-argument-type]
+        model = PLEXOSModel(**model_data)
         models.append(model)
 
         memberships.append((model_name, horizon_name, "Horizon"))

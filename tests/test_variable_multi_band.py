@@ -17,7 +17,7 @@ def test_multi_band_datafile(tmp_path, db_with_multiband_variable):
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2020)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)

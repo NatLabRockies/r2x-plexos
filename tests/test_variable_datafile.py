@@ -17,7 +17,7 @@ def test_variable_timeseries(db_with_variable_monthly, tmp_path):
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -50,7 +50,7 @@ def test_variable_timeseries(db_with_variable_monthly, tmp_path):
 #     """Test generator max_capacity computed as base_value * variable_value."""
 #     config = PLEXOSConfig(model_name="Base", reference_year=2024)
 #     data_file = DataFile(name="xml_file", fpath=xml_with_variables)
-#     store = DataStore(path=tmp_path)
+#     store = DataStore(tmp_path)
 #     store.add_data(data_file)
 
 #     parser = PLEXOSParser(config, store)

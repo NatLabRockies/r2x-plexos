@@ -1,7 +1,7 @@
 [
   {
-    "description": "PLEXOS XML file",
+    "name": "xml_file",
     "glob": "*.xml",
-    "name": "xml_file"
+    "info": {"description": "PLEXOS XML file"}
   }
 ]

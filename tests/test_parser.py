@@ -22,7 +22,7 @@ def config_store_example(data_folder) -> tuple[PLEXOSConfig, DataStore]:
     xml_path = xml_files[0]
     data_file = DataFile(name="xml_file", fpath=xml_path)
 
-    store = DataStore(path=data_folder)
+    store = DataStore(data_folder)
     store.add_data([data_file], overwrite=True)
 
     return config, store
@@ -90,7 +90,7 @@ def test_collection_properties_basic(db_with_reserve_collection_property, tmp_pa
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -130,7 +130,7 @@ def test_collection_properties_with_timeseries(db_with_reserve_collection_proper
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -177,7 +177,7 @@ def test_property_with_bands_kept_as_property_value(db_thermal_gen_multiband, tm
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -208,7 +208,7 @@ def test_simple_numeric_property_extracted_as_value(db_thermal_gen_multiband, tm
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -230,7 +230,7 @@ def test_region_load_with_variable_reference(db_with_multiband_variable, tmp_pat
     """Test that region load property with variable reference is handled correctly."""
     db = db_with_multiband_variable
     config = PLEXOSConfig(model_name="Base")
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
 
     ctx = PluginContext(config=config, store=store)
     parser = cast(PLEXOSParser, PLEXOSParser.from_context(ctx))
@@ -252,7 +252,7 @@ def test_datafile_component_not_registered_for_timeseries(db_with_multiband_vari
     """Test that datafile components don't get time series registered."""
     db = db_with_multiband_variable
     config = PLEXOSConfig(model_name="Base")
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
 
     ctx = PluginContext(config=config, store=store)
     parser = cast(PLEXOSParser, PLEXOSParser.from_context(ctx))
@@ -273,7 +273,7 @@ def test_variable_component_not_registered_for_timeseries(db_with_multiband_vari
     """Test that variable components don't get time series registered."""
     db = db_with_multiband_variable
     config = PLEXOSConfig(model_name="Base")
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
 
     ctx = PluginContext(config=config, store=store)
     parser = cast(PLEXOSParser, PLEXOSParser.from_context(ctx))
@@ -303,7 +303,7 @@ def test_failed_references_tracking(db_with_multiband_variable, tmp_path, caplog
     """Test that parser tracks failed time series attachments."""
     db = db_with_multiband_variable
     config = PLEXOSConfig(model_name="Base")
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
 
     ctx = PluginContext(config=config, store=store)
     parser = cast(PLEXOSParser, PLEXOSParser.from_context(ctx))
@@ -324,7 +324,7 @@ def test_parser_with_horizon_year(db_thermal_gen_multiband, tmp_path):
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2025)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file])
 
     ctx = PluginContext(config=config, store=store)
@@ -346,7 +346,7 @@ def test_parser_component_cache_population(db_thermal_gen_multiband, tmp_path):
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file])
 
     ctx = PluginContext(config=config, store=store)
@@ -375,7 +375,7 @@ def test_parser_membership_cache(db_with_topology, tmp_path):
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file])
 
     ctx = PluginContext(config=config, store=store)
@@ -404,7 +404,7 @@ def test_parser_handles_unsupported_component_type(db_base, tmp_path, caplog):
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file])
 
     with caplog.at_level(loguru.logger.level("DEBUG").no):
@@ -426,7 +426,7 @@ def test_parser_scenario_priority_setting(db_with_scenarios, tmp_path):
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file])
 
     ctx = PluginContext(config=config, store=store)
@@ -444,7 +444,7 @@ def test_parser_timeseries_cache_reuse(db_with_multiband_variable, tmp_path):
     """Test that parsed time series files are cached and reused."""
     db = db_with_multiband_variable
     config = PLEXOSConfig(model_name="Base")
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
 
     ctx = PluginContext(config=config, store=store)
     parser = cast(PLEXOSParser, PLEXOSParser.from_context(ctx))
@@ -464,7 +464,7 @@ def test_parser_with_custom_name(db_thermal_gen_multiband, tmp_path):
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file])
 
     ctx = PluginContext(config=config, store=store)
@@ -487,7 +487,7 @@ def test_parser_skip_validation_flag(db_thermal_gen_multiband, tmp_path):
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file])
 
     ctx = PluginContext(config=config, store=store)
@@ -510,7 +510,7 @@ def test_parser_property_without_field_name_skipped(db_thermal_gen_multiband, tm
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file])
 
     with caplog.at_level(loguru.logger.level("WARNING").no):
@@ -527,7 +527,7 @@ def test_parser_property_without_field_name_skipped(db_thermal_gen_multiband, tm
 def test_parser_build_without_db(tmp_path):
     """Test that parser fails gracefully without database."""
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
 
     ctx = PluginContext(config=config, store=store)
     parser = cast(PLEXOSParser, PLEXOSParser.from_context(ctx))
@@ -539,13 +539,18 @@ def test_parser_build_without_db(tmp_path):
 
 
 def test_parser_with_missing_xml_file(tmp_path):
-    """Test parser with non-existent XML file raises error during DataFile creation."""
+    """A missing configured XML is reported when the parser resolves it."""
     fake_path = tmp_path / "nonexistent.xml"
+    store = DataStore(tmp_path)
+    store.add_data([DataFile(name="xml_file", fpath=fake_path)])
+    parser = cast(
+        PLEXOSParser,
+        PLEXOSParser.from_context(PluginContext(config=PLEXOSConfig(model_name="Base"), store=store)),
+    )
 
-    with pytest.raises(FileNotFoundError, match="File not found"):
-        data_file = DataFile(name="xml_file", fpath=fake_path)
-        store = DataStore(path=tmp_path)
-        store.add_data([data_file], overwrite=True)
+    result = parser.on_build()
+    assert result.is_err()
+    assert "Missing required file" in str(result.error)
 
 
 def test_parser_validate_inputs_missing_model(db_base, tmp_path):
@@ -556,7 +561,7 @@ def test_parser_validate_inputs_missing_model(db_base, tmp_path):
 
     config = PLEXOSConfig(model_name="NonExistentModel", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -582,7 +587,7 @@ def test_parser_error_handling_in_component_creation(db_base, tmp_path):
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -617,7 +622,7 @@ def test_parser_collection_property_without_parent(db_with_reserve_collection_pr
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -642,7 +647,7 @@ def test_parser_time_series_with_invalid_datafile_path(db_with_multiband_variabl
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -669,7 +674,7 @@ def test_parser_membership_with_invalid_collection(db_with_topology, tmp_path):
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -705,7 +710,7 @@ def test_parser_property_with_multiple_scenarios(db_with_scenarios, tmp_path):
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -742,7 +747,7 @@ def test_parser_datafile_with_no_filename_property(db_base, tmp_path):
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -770,7 +775,7 @@ def test_parser_variable_with_no_profile(db_base, tmp_path):
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -800,7 +805,7 @@ def test_parser_property_with_text_and_value(db_base, tmp_path):
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -822,7 +827,7 @@ def test_parser_time_series_attachment_failure_tracked(db_with_multiband_variabl
     db = db_with_multiband_variable
 
     config = PLEXOSConfig(model_name="Base")
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
 
     with caplog.at_level(loguru.logger.level("DEBUG").no):
         ctx = PluginContext(config=config, store=store)
@@ -849,7 +854,7 @@ def test_parser_component_with_category(db_base, tmp_path):
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -873,7 +878,7 @@ def test_parser_postprocess_system_success(db_thermal_gen_multiband, tmp_path):
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -891,7 +896,7 @@ def test_parser_build_time_series_error_handling(db_with_multiband_variable, tmp
     db = db_with_multiband_variable
 
     config = PLEXOSConfig(model_name="Base")
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
 
     ctx = PluginContext(config=config, store=store)
     parser = cast(PLEXOSParser, PLEXOSParser.from_context(ctx))
@@ -925,7 +930,7 @@ def test_parser_property_value_extraction_edge_cases(db_base, tmp_path):
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -952,7 +957,7 @@ def test_validate_inputs_no_horizon(db_base, tmp_path):
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -978,7 +983,7 @@ def test_build_components_with_unknown_class(db_base, tmp_path):
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -1005,7 +1010,7 @@ def test_property_without_object_reference(db_base, tmp_path):
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -1042,7 +1047,7 @@ def test_datafile_without_filename_tag(db_base, tmp_path):
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -1073,7 +1078,7 @@ def test_variable_without_profile_tag(db_base, tmp_path):
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -1096,7 +1101,7 @@ def test_time_series_with_missing_resolution(db_with_multiband_variable, tmp_pat
     db.to_xml(xml_path)
 
     config = PLEXOSConfig(model_name="Base")
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
 
     ctx = PluginContext(config=config, store=store)
     parser = cast(PLEXOSParser, PLEXOSParser.from_context(ctx))
@@ -1131,7 +1136,7 @@ def test_property_with_action_type_multiply(db_base, tmp_path):
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -1183,7 +1188,7 @@ def test_collection_property_with_pattern(db_with_reserve_collection_property, t
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -1208,7 +1213,7 @@ def test_membership_without_child_object(db_with_topology, tmp_path):
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -1224,7 +1229,7 @@ def test_postprocess_with_timeseries_metadata_issues(db_with_multiband_variable,
     db = db_with_multiband_variable
 
     config = PLEXOSConfig(model_name="Base")
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
 
     ctx = PluginContext(config=config, store=store)
     parser = cast(PLEXOSParser, PLEXOSParser.from_context(ctx))

@@ -18,7 +18,7 @@ def parser_basic(data_folder) -> PLEXOSParser:
     """Create a basic parser instance for testing (read-only tests)."""
     config = PLEXOSConfig(model_name="Base", timeseries_dir=None, horizon_year=2023)
     data_file = DataFile(name="xml_file", glob="*.xml")
-    store = DataStore(path=data_folder)
+    store = DataStore(data_folder)
     store.add_data([data_file])
 
     ctx = PluginContext(config=config, store=store)
@@ -31,7 +31,7 @@ def parser_basic_mutable(data_folder) -> PLEXOSParser:
     """Create a basic parser instance for tests that modify the parser state."""
     config = PLEXOSConfig(model_name="Base", timeseries_dir=None, horizon_year=2023)
     data_file = DataFile(name="xml_file", glob="*.xml")
-    store = DataStore(path=data_folder)
+    store = DataStore(data_folder)
     store.add_data([data_file])
 
     ctx = PluginContext(config=config, store=store)
@@ -46,7 +46,7 @@ def parser_with_timeseries_dir(data_folder) -> PLEXOSParser:
 
     config = PLEXOSConfig(model_name="Base", timeseries_dir=timeseries_path, horizon_year=2023)
     data_file = DataFile(name="xml_file", glob="*.xml")
-    store = DataStore(path=data_folder)
+    store = DataStore(data_folder)
     store.add_data([data_file])
 
     ctx = PluginContext(config=config, store=store)
@@ -127,7 +127,7 @@ def test_get_or_parse_timeseries_caching(parser_basic: PLEXOSParser, tmp_path: P
     _ = parser_basic._get_or_parse_timeseries(
         file_path=str(csv_path), component_name="Gen1", reference_year=2023
     )
-    assert str(csv_path) in parser_basic._parsed_files_cache
+    assert (str(csv_path), 2023) in parser_basic._parsed_files_cache
 
     result2 = parser_basic._get_or_parse_timeseries(
         file_path=str(csv_path), component_name="Gen2", reference_year=2023
@@ -164,7 +164,7 @@ def test_attach_direct_datafile_timeseries_component_not_found_in_system(
 
     # Initialize system in context
     system = System(name="test_system")
-    parser_basic._ctx.system = system
+    parser_basic.ctx.system = system
 
     parser_basic.config.timeseries_dir = tmp_path
 
@@ -200,7 +200,7 @@ def test_attach_direct_datafile_timeseries_already_attached(
 
     # Initialize system in context
     system = System(name="test_system")
-    parser_basic_mutable._ctx.system = system
+    parser_basic_mutable.ctx.system = system
 
     test_uuid = UUID("12345678-1234-5678-1234-567812345678")
 
@@ -233,7 +233,7 @@ def test_attach_direct_datafile_timeseries_file_not_found(
 
     # Initialize system in context
     system = System(name="test_system")
-    parser_basic_mutable._ctx.system = system
+    parser_basic_mutable.ctx.system = system
 
     mock_component = MagicMock()
     test_uuid = UUID("12345678-1234-5678-1234-567812345678")
@@ -265,7 +265,7 @@ def test_build_time_series_integration(parser_basic_mutable: PLEXOSParser, tmp_p
 
     # Initialize system in context
     system = System(name="test_system")
-    parser_basic_mutable._ctx.system = system
+    parser_basic_mutable.ctx.system = system
 
     parser_basic_mutable.config.timeseries_dir = tmp_path
 
@@ -353,4 +353,19 @@ def test_build_time_series_integration(parser_basic_mutable: PLEXOSParser, tmp_p
         assert failed_ref.component_name == "MissingComponent"
         assert "not found" in error_msg
 
-        assert str(gen_csv) in parser_basic_mutable._parsed_files_cache
+        assert (str(gen_csv), 2023) in parser_basic_mutable._parsed_files_cache
+
+
+def test_expansion_cache_is_year_sensitive(parser_basic_mutable, monkeypatch):
+    calls = []
+
+    def extract(*, path, default_initial_time, year, timeslices):
+        calls.append(year)
+        return {"Gen": float(year)}
+
+    monkeypatch.setattr("r2x_plexos.parser.extract_file_data", extract)
+    parser = parser_basic_mutable
+    assert parser._get_or_parse_timeseries("input.csv", "Gen", 2023) == 2023.0
+    assert parser._get_or_parse_timeseries("input.csv", "Gen", 2024) == 2024.0
+    assert parser._get_or_parse_timeseries("input.csv", "Gen", 2023) == 2023.0
+    assert calls == [2023, 2024]

@@ -69,7 +69,7 @@ def test_battery_capacity_with_constant_variable(xml_with_variables, tmp_path, c
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
     data_file = DataFile(name="xml_file", fpath=xml_path)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([data_file], overwrite=True)
 
     ctx = PluginContext(config=config, store=store)
@@ -122,7 +122,7 @@ def test_collection_properties_match_membership_per_parent(tmp_path, monkeypatch
         return original_getattribute(self, name)
 
     config = PLEXOSConfig(model_name="Base", horizon_year=2024)
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
     store.add_data([DataFile(name="xml_file", fpath=xml_path)], overwrite=True)
     parser = cast(PLEXOSParser, PLEXOSParser.from_context(PluginContext(config=config, store=store)))
     parser.db = db

@@ -12,7 +12,7 @@ from r2x_plexos.plugin_config import PLEXOSConfig
 def test_multi_band_datafile(tmp_path, db_with_multiband_variable, caplog):
     db = db_with_multiband_variable
     config = PLEXOSConfig(model_name="Base")
-    store = DataStore(path=tmp_path)
+    store = DataStore(tmp_path)
 
     ctx = PluginContext(config=config, store=store)
     parser = cast(PLEXOSParser, PLEXOSParser.from_context(ctx))
@@ -47,3 +47,29 @@ def test_multi_band_datafile(tmp_path, db_with_multiband_variable, caplog):
         band_1_ts = sys.get_time_series(region_component, band="1")
         assert len(band_1_ts.data) == 8784
         assert all(val != 0 for val in band_1_ts.data[:24])
+
+
+def test_xml_mapping_glob_and_ambiguity(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    from r2x_core import DataFile, Err
+
+    xml = tmp_path / "model.xml"
+    xml.write_text("<root/>")
+    store = DataStore(tmp_path)
+    store.add_data([DataFile(name="xml_file", glob="*.xml")])
+    parser = cast(
+        PLEXOSParser,
+        PLEXOSParser.from_context(PluginContext(config=PLEXOSConfig(model_name="Base"), store=store)),
+    )
+    from_xml = Mock(return_value=object())
+    monkeypatch.setattr("r2x_plexos.parser.PlexosDB.from_xml", from_xml)
+    monkeypatch.setattr(parser, "validate_inputs", lambda: Err("stop after resolution"))
+    assert parser.on_build().is_err()
+    from_xml.assert_called_once_with(xml)
+
+    (tmp_path / "second.xml").write_text("<root/>")
+    parser.db = None
+    result = parser.on_build()
+    assert result.is_err()
+    assert "Multiple files matched" in result.err()

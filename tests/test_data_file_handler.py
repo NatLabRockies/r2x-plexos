@@ -528,7 +528,7 @@ def monthly_dataframe() -> pl.LazyFrame:
     )
 
 
-@patch("polars.scan_csv")
+@patch("polars.scan_csv", autospec=True)
 def test_load_csv_cached(mock_scan_csv: MagicMock) -> None:
     mock_df = pl.LazyFrame({"test": [1, 2, 3]})
     mock_scan_csv.return_value = mock_df

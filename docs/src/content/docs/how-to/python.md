@@ -17,7 +17,7 @@ Copy the console input below without `>>>`/`...` prompts into `python_roundtrip.
 >>> from r2x_core import DataStore, PluginContext
 >>> from r2x_plexos import PLEXOSConfig, PLEXOSExporter, PLEXOSParser
 >>> xml_path = Path("inputs/model.xml").resolve()
->>> store = DataStore(path=xml_path.parent)
+>>> store = DataStore(xml_path.parent)
 >>> context = PluginContext(
 ...     config=PLEXOSConfig(fpath=str(xml_path), model_name="Base", horizon_year=2024),
 ...     store=store,
