@@ -1295,12 +1295,13 @@ def test_core_rules_allow_null_category_and_partial_config_override(tmp_path, mo
 def test_parser_rules_cover_native_component_classes():
     from pydantic import TypeAdapter
 
-    from r2x_core.models import ComponentInstruction
+    from r2x_core.models import ComponentInstruction, ParserInstruction
     from r2x_plexos.utils_mappings import PLEXOS_TYPE_MAP
 
-    rules = TypeAdapter(list[ComponentInstruction]).validate_json(
+    instructions = TypeAdapter(list[ParserInstruction]).validate_json(
         PLEXOSConfig(model_name="Base").parser_rules_path.read_bytes()
     )
+    rules = [rule for rule in instructions if isinstance(rule, ComponentInstruction)]
     assert {rule.source: rule.component_type for rule in rules} == {
         str(key): value.__name__ for key, value in PLEXOS_TYPE_MAP.items()
     }
@@ -1342,3 +1343,268 @@ def test_unknown_plexos_class_remains_skippable(tmp_path, monkeypatch):
     monkeypatch.setattr(parser, "_add_collection_properties", lambda: None)
     assert parser.build_system_components().is_ok()
     assert not list(parser.system.get_components(PLEXOSGenerator))
+
+
+def test_core_rating_and_native_heat_rate_series_coexist_without_duplicates(
+    db_solar_gen_with_profile, tmp_path, monkeypatch
+):
+    import json
+
+    import r2x_plexos.parser as parser_module
+
+    db = db_solar_gen_with_profile
+    db.add_property(
+        ClassEnum.Generator,
+        "solar-01",
+        "Heat Rate",
+        0.0,
+        band=1,
+        datafile_text=str(tmp_path / "datetime_series.csv"),
+    )
+    captured_sources = []
+    builder = parser_module.build_system_from_sources
+
+    def capture(sources, /, **kwargs):
+        captured_sources.append(set(sources))
+        return builder(sources, **kwargs)
+
+    monkeypatch.setattr(parser_module, "build_system_from_sources", capture)
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024)
+    parser = cast(
+        PLEXOSParser, PLEXOSParser.from_context(PluginContext(config=config, store=DataStore(tmp_path)))
+    )
+    parser.db = db
+    system = parser.run().system
+    assert system is not None
+    assert captured_sources[0] & {"generator_capacity", "generator_capacity_horizon"}
+
+    # The same normalized input without the optional Core rule exercises the
+    # established native attachment path for the direct Rating profile.
+    rules = json.loads(config.parser_rules_path.read_text())
+    rules = [rule for rule in rules if rule["kind"] != "time_series"]
+    override = tmp_path / "native-config"
+    override.mkdir()
+    (override / "parser_rules.json").write_text(json.dumps(rules))
+    native_config = PLEXOSConfig(model_name="Base", horizon_year=2024, config_path_override=override)
+    native_parser = cast(
+        PLEXOSParser,
+        PLEXOSParser.from_context(PluginContext(config=native_config, store=DataStore(tmp_path))),
+    )
+    native_parser.db = db
+    native_system = native_parser.run().system
+    assert native_system is not None
+    assert not captured_sources[1] & {"generator_capacity", "generator_capacity_horizon"}
+
+    generator = system.get_component(PLEXOSGenerator, "solar-01")
+    native_generator = native_system.get_component(PLEXOSGenerator, "solar-01")
+    for name in ("max_active_power", "heat_rate"):
+        actual = system.get_time_series(generator, name=name)
+        expected = native_system.get_time_series(native_generator, name=name)
+        assert actual.initial_timestamp == expected.initial_timestamp
+        assert actual.resolution == expected.resolution
+        assert actual.data.tolist() == expected.data.tolist()
+        assert len(system.list_time_series_metadata(generator, name=name)) == 1
+        assert generator.get_property_value("rating" if name == "max_active_power" else name).get_value() == (
+            native_generator.get_property_value("rating" if name == "max_active_power" else name).get_value()
+        )
+
+    from r2x_core import System
+
+    artifact = tmp_path / "mixed-series.json"
+    system.to_json(artifact)
+    restored = System.from_json(artifact)
+    restored_generator = restored.get_component(PLEXOSGenerator, "solar-01")
+    for name in ("max_active_power", "heat_rate"):
+        assert restored.get_time_series(restored_generator, name=name).data.tolist() == (
+            system.get_time_series(generator, name=name).data.tolist()
+        )
+
+    # A custom Core instruction can select another direct property without
+    # changing the native reader or adding a property-specific code path.
+    extended = tmp_path / "extended-config"
+    extended.mkdir()
+    extended_rules = json.loads(config.parser_rules_path.read_text())
+    for has_horizon in (False, True):
+        rule = {
+            "kind": "time_series",
+            "source": "custom_heat_horizon" if has_horizon else "custom_heat",
+            "name": "heat_rate",
+            "values": "value",
+            "time_axis": {"kind": "column", "column": "timestamp"},
+            "owners": [{"component_type": "PLEXOSGenerator", "name_field": "owner"}],
+        }
+        if has_horizon:
+            rule["metadata_columns"] = {"horizon": "horizon"}
+        extended_rules.append(rule)
+    (extended / "parser_rules.json").write_text(json.dumps(extended_rules))
+    extended_config = PLEXOSConfig(model_name="Base", horizon_year=2024, config_path_override=extended)
+    extended_parser = cast(
+        PLEXOSParser,
+        PLEXOSParser.from_context(PluginContext(config=extended_config, store=DataStore(tmp_path))),
+    )
+    extended_parser.db = db
+    extended_system = extended_parser.run().system
+    assert extended_system is not None
+    assert captured_sources[2] & {"custom_heat", "custom_heat_horizon"}
+    extended_generator = extended_system.get_component(PLEXOSGenerator, "solar-01")
+    assert extended_system.get_time_series(extended_generator, name="heat_rate").data.tolist() == (
+        native_system.get_time_series(native_generator, name="heat_rate").data.tolist()
+    )
+
+
+def test_core_direct_profile_rules_cover_supported_component_types(db_with_topology, tmp_path, monkeypatch):
+    import json
+    from datetime import date
+
+    import r2x_plexos.parser as parser_module
+    from r2x_plexos.models import PLEXOSFuel, PLEXOSPurchaser, PLEXOSReserve, PLEXOSStorage
+    from r2x_plexos.models.context import set_horizon
+
+    db = db_with_topology
+    for cls, name in (
+        (ClassEnum.Fuel, "fuel"),
+        (ClassEnum.Reserve, "reserve"),
+        (ClassEnum.Storage, "storage"),
+        (ClassEnum.Purchaser, "purchaser"),
+    ):
+        db.add_object(cls, name)
+    csv_path = tmp_path / "profiles.csv"
+    csv_path.write_text(
+        "Datetime,solar-01,region-01,fuel,reserve,storage,purchaser\n"
+        f"{date(2024, 1, 1)}T00:00:00,1,1,1,1,1,1\n"
+        f"{date(2024, 1, 1)}T01:00:00,2,2,2,2,2,2\n"
+    )
+    cases = [
+        (
+            ClassEnum.Generator,
+            "solar-01",
+            "Rating",
+            PLEXOSGenerator,
+            "max_active_power",
+            "generator_capacity",
+        ),
+        (
+            ClassEnum.Generator,
+            "solar-01",
+            "Fuel Price",
+            PLEXOSGenerator,
+            "fuel_price",
+            "generator_fuel_price",
+        ),
+        (ClassEnum.Region, "region-01", "Load", PLEXOSRegion, "max_active_power", "region_load"),
+        (ClassEnum.Fuel, "fuel", "Price", PLEXOSFuel, "price", "fuel_price"),
+        (ClassEnum.Reserve, "reserve", "Min Provision", PLEXOSReserve, "requirement", "reserve_requirement"),
+        (ClassEnum.Storage, "storage", "Natural Inflow", PLEXOSStorage, "natural_inflow", "storage_inflow"),
+        (
+            ClassEnum.Purchaser,
+            "purchaser",
+            "Fixed Load",
+            PLEXOSPurchaser,
+            "max_active_power",
+            "purchaser_load",
+        ),
+    ]
+    for cls, name, prop, *_ in cases:
+        db.add_property(cls, name, prop, 0.0, band=1, datafile_text=str(csv_path))
+    seen = []
+    builder = parser_module.build_system_from_sources
+
+    def capture(sources, /, **kwargs):
+        seen.append(set(sources))
+        return builder(sources, **kwargs)
+
+    monkeypatch.setattr(parser_module, "build_system_from_sources", capture)
+    set_horizon(None)
+    parser = cast(
+        PLEXOSParser,
+        PLEXOSParser.from_context(
+            PluginContext(
+                config=PLEXOSConfig(model_name="Base", horizon_year=2024), store=DataStore(tmp_path)
+            )
+        ),
+    )
+    parser.db = db
+    system = parser.run().system
+    assert system is not None
+    rules = json.loads(PLEXOSConfig(model_name="Base").parser_rules_path.read_text())
+    override = tmp_path / "native-rules"
+    override.mkdir()
+    (override / "parser_rules.json").write_text(
+        json.dumps([rule for rule in rules if rule["kind"] != "time_series"])
+    )
+    set_horizon(None)
+    native = cast(
+        PLEXOSParser,
+        PLEXOSParser.from_context(
+            PluginContext(
+                config=PLEXOSConfig(model_name="Base", horizon_year=2024, config_path_override=override),
+                store=DataStore(tmp_path),
+            )
+        ),
+    )
+    native.db = db
+    native_system = native.run().system
+    assert native_system is not None
+    for _, name, _, component_type, ts_name, source in cases:
+        assert source in seen[0]
+        component = system.get_component(component_type, name)
+        series = system.get_time_series(component, name=ts_name)
+        expected = native_system.get_time_series(
+            native_system.get_component(component_type, name), name=ts_name
+        )
+        assert series.data[:2].tolist() == [1.0, 2.0]
+        assert series.data.tolist() == expected.data.tolist()
+        assert series.initial_timestamp == expected.initial_timestamp
+        assert series.resolution == expected.resolution
+        assert len(system.list_time_series_metadata(component, name=ts_name)) == 1
+
+
+def test_core_direct_profile_preserves_horizon_feature(db_solar_gen_with_profile, tmp_path, monkeypatch):
+    import r2x_plexos.parser as parser_module
+    from r2x_plexos.models.context import set_horizon
+
+    captured = []
+    builder = parser_module.build_system_from_sources
+
+    def capture(sources, /, **kwargs):
+        captured.append(set(sources))
+        return builder(sources, **kwargs)
+
+    monkeypatch.setattr(parser_module, "build_system_from_sources", capture)
+    set_horizon(("2024-01-01T00:00:00", "2024-12-31T23:00:00"))
+    try:
+        parser = cast(
+            PLEXOSParser,
+            PLEXOSParser.from_context(
+                PluginContext(
+                    config=PLEXOSConfig(model_name="Base", horizon_year=2024), store=DataStore(tmp_path)
+                )
+            ),
+        )
+        parser.db = db_solar_gen_with_profile
+        system = parser.run().system
+        assert system is not None
+        assert "generator_capacity_horizon" in captured[0]
+        owner = system.get_component(PLEXOSGenerator, "solar-01")
+        metadata = system.list_time_series_metadata(owner, name="max_active_power")
+        assert len(metadata) == 1
+        assert metadata[0].features == {"horizon": 2024}
+    finally:
+        set_horizon(None)
+
+
+def test_invalid_direct_profile_is_deferred_to_native_failure_handling(db_solar_gen_with_profile, tmp_path):
+    path = tmp_path / "datetime_series.csv"
+    path.write_text("unsupported,header\nfoo,bar\n")
+    parser = cast(
+        PLEXOSParser,
+        PLEXOSParser.from_context(
+            PluginContext(
+                config=PLEXOSConfig(model_name="Base", horizon_year=2024), store=DataStore(tmp_path)
+            )
+        ),
+    )
+    parser.db = db_solar_gen_with_profile
+    result = parser.run()
+    assert result.system is not None
+    assert any(ref.field_name == "rating" for ref, _ in parser._failed_references)

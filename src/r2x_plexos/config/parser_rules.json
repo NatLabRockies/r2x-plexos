@@ -178,5 +178,250 @@
       "object_id": "object_id",
       "category": "category"
     }
+  },
+  {
+    "kind": "time_series",
+    "source": "generator_capacity",
+    "name": "max_active_power",
+    "values": "value",
+    "time_axis": {
+      "kind": "column",
+      "column": "timestamp"
+    },
+    "owners": [
+      {
+        "component_type": "PLEXOSGenerator",
+        "name_field": "owner"
+      }
+    ]
+  },
+  {
+    "kind": "time_series",
+    "source": "generator_capacity_horizon",
+    "name": "max_active_power",
+    "values": "value",
+    "time_axis": {
+      "kind": "column",
+      "column": "timestamp"
+    },
+    "owners": [
+      {
+        "component_type": "PLEXOSGenerator",
+        "name_field": "owner"
+      }
+    ],
+    "metadata_columns": {
+      "horizon": "horizon"
+    }
+  },
+  {
+    "kind": "time_series",
+    "source": "generator_fuel_price",
+    "name": "fuel_price",
+    "values": "value",
+    "time_axis": {
+      "kind": "column",
+      "column": "timestamp"
+    },
+    "owners": [
+      {
+        "component_type": "PLEXOSGenerator",
+        "name_field": "owner"
+      }
+    ]
+  },
+  {
+    "kind": "time_series",
+    "source": "generator_fuel_price_horizon",
+    "name": "fuel_price",
+    "values": "value",
+    "time_axis": {
+      "kind": "column",
+      "column": "timestamp"
+    },
+    "owners": [
+      {
+        "component_type": "PLEXOSGenerator",
+        "name_field": "owner"
+      }
+    ],
+    "metadata_columns": {
+      "horizon": "horizon"
+    }
+  },
+  {
+    "kind": "time_series",
+    "source": "region_load",
+    "name": "max_active_power",
+    "values": "value",
+    "time_axis": {
+      "kind": "column",
+      "column": "timestamp"
+    },
+    "owners": [
+      {
+        "component_type": "PLEXOSRegion",
+        "name_field": "owner"
+      }
+    ]
+  },
+  {
+    "kind": "time_series",
+    "source": "region_load_horizon",
+    "name": "max_active_power",
+    "values": "value",
+    "time_axis": {
+      "kind": "column",
+      "column": "timestamp"
+    },
+    "owners": [
+      {
+        "component_type": "PLEXOSRegion",
+        "name_field": "owner"
+      }
+    ],
+    "metadata_columns": {
+      "horizon": "horizon"
+    }
+  },
+  {
+    "kind": "time_series",
+    "source": "reserve_requirement",
+    "name": "requirement",
+    "values": "value",
+    "time_axis": {
+      "kind": "column",
+      "column": "timestamp"
+    },
+    "owners": [
+      {
+        "component_type": "PLEXOSReserve",
+        "name_field": "owner"
+      }
+    ]
+  },
+  {
+    "kind": "time_series",
+    "source": "reserve_requirement_horizon",
+    "name": "requirement",
+    "values": "value",
+    "time_axis": {
+      "kind": "column",
+      "column": "timestamp"
+    },
+    "owners": [
+      {
+        "component_type": "PLEXOSReserve",
+        "name_field": "owner"
+      }
+    ],
+    "metadata_columns": {
+      "horizon": "horizon"
+    }
+  },
+  {
+    "kind": "time_series",
+    "source": "purchaser_load",
+    "name": "max_active_power",
+    "values": "value",
+    "time_axis": {
+      "kind": "column",
+      "column": "timestamp"
+    },
+    "owners": [
+      {
+        "component_type": "PLEXOSPurchaser",
+        "name_field": "owner"
+      }
+    ]
+  },
+  {
+    "kind": "time_series",
+    "source": "purchaser_load_horizon",
+    "name": "max_active_power",
+    "values": "value",
+    "time_axis": {
+      "kind": "column",
+      "column": "timestamp"
+    },
+    "owners": [
+      {
+        "component_type": "PLEXOSPurchaser",
+        "name_field": "owner"
+      }
+    ],
+    "metadata_columns": {
+      "horizon": "horizon"
+    }
+  },
+  {
+    "kind": "time_series",
+    "source": "fuel_price",
+    "name": "price",
+    "values": "value",
+    "time_axis": {
+      "kind": "column",
+      "column": "timestamp"
+    },
+    "owners": [
+      {
+        "component_type": "PLEXOSFuel",
+        "name_field": "owner"
+      }
+    ]
+  },
+  {
+    "kind": "time_series",
+    "source": "fuel_price_horizon",
+    "name": "price",
+    "values": "value",
+    "time_axis": {
+      "kind": "column",
+      "column": "timestamp"
+    },
+    "owners": [
+      {
+        "component_type": "PLEXOSFuel",
+        "name_field": "owner"
+      }
+    ],
+    "metadata_columns": {
+      "horizon": "horizon"
+    }
+  },
+  {
+    "kind": "time_series",
+    "source": "storage_inflow",
+    "name": "natural_inflow",
+    "values": "value",
+    "time_axis": {
+      "kind": "column",
+      "column": "timestamp"
+    },
+    "owners": [
+      {
+        "component_type": "PLEXOSStorage",
+        "name_field": "owner"
+      }
+    ]
+  },
+  {
+    "kind": "time_series",
+    "source": "storage_inflow_horizon",
+    "name": "natural_inflow",
+    "values": "value",
+    "time_axis": {
+      "kind": "column",
+      "column": "timestamp"
+    },
+    "owners": [
+      {
+        "component_type": "PLEXOSStorage",
+        "name_field": "owner"
+      }
+    ],
+    "metadata_columns": {
+      "horizon": "horizon"
+    }
   }
 ]

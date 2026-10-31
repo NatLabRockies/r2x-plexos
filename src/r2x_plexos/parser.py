@@ -1,14 +1,14 @@
 """PLEXOS parser implementation for r2x-core framework."""
 
 import itertools
+import math
 import typing
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from importlib.metadata import version
 from importlib.resources import files
-from operator import itemgetter
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -17,11 +17,12 @@ from infrasys import Component
 from infrasys.time_series_models import SingleTimeSeries
 from loguru import logger
 from plexosdb import ClassEnum, PlexosDB
+from polars.exceptions import PolarsError
 from pydantic import TypeAdapter
 
 from r2x_core import DocumentSource, Err, Ok, Plugin, Result, System, build_system_from_sources
 from r2x_core.exceptions import PluginError
-from r2x_core.models import ComponentInstruction
+from r2x_core.models import ColumnTimeAxis, ComponentInstruction, ParserInstruction, TimeSeriesInstruction
 from r2x_core.types import JSONValue
 from r2x_core.utils.files import get_fpath
 
@@ -40,6 +41,7 @@ from .models.timeslice import PLEXOSTimeslice
 from .models.utils import get_field_name_by_alias
 from .models.variable import PLEXOSVariable
 from .plugin_config import PLEXOSConfig
+from .utils_mappings import PLEXOS_TYPE_MAP
 from .utils_parser import (
     apply_action,
     apply_action_to_timeseries,
@@ -324,12 +326,16 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
             if not rules_path.exists() and self.config.config_path_override is not None:
                 # Existing partial configuration overrides predate parser rules.
                 rules_path = self.config.package_config_path() / "parser_rules.json"
-            instructions = TypeAdapter(list[ComponentInstruction]).validate_json(rules_path.read_bytes())
-            configured_sources = {rule.source for rule in instructions}
-            packaged_rules = TypeAdapter(list[ComponentInstruction]).validate_json(
+            instructions = TypeAdapter(list[ParserInstruction]).validate_json(rules_path.read_bytes())
+            configured_sources = {
+                rule.source for rule in instructions if isinstance(rule, ComponentInstruction)
+            }
+            packaged_rules = TypeAdapter(list[ParserInstruction]).validate_json(
                 (self.config.package_config_path() / "parser_rules.json").read_bytes()
             )
-            supported_sources = {rule.source for rule in packaged_rules}
+            supported_sources = {
+                rule.source for rule in packaged_rules if isinstance(rule, ComponentInstruction)
+            }
             object_rows: dict[str, list[JSONValue]] = defaultdict(list)
             for rows_list in main_properties_by_object.values():
                 first_row = rows_list[0]
@@ -352,10 +358,22 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
                     }
                 )
 
+            prepared_properties: dict[int, list[tuple[str, PLEXOSPropertyValue]]] = {}
+            for object_id, rows_list in main_properties_by_object.items():
+                if rows_list[0]["child_class"] not in configured_sources:
+                    continue
+                prepared_properties[object_id] = [
+                    (name, PLEXOSPropertyValue.from_records(list(rows)))
+                    for name, rows in itertools.groupby(rows_list, key=lambda row: row.get("property"))
+                    if name is not None
+                ]
             sources = {
                 name: DocumentSource[JSONValue](data=rows, processor=None)
                 for name, rows in object_rows.items()
             }
+            staged = self._stage_direct_profiles(
+                main_properties_by_object, prepared_properties, instructions, sources
+            )
             active_instructions = [rule for rule in instructions if rule.source in sources]
             self.ctx.system = build_system_from_sources(
                 sources, config=self.config, instructions=active_instructions, name="PLEXOS"
@@ -365,10 +383,16 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
                 for component in self.system.get_components(PLEXOSObject)
                 if component.object_id is not None
             }
-            for object_id, rows_list in main_properties_by_object.items():
+            for object_id, properties in prepared_properties.items():
                 component = self._component_cache.get(object_id)
                 if component is not None:
-                    self._process_component_properties(component, rows_list)
+                    self._process_component_properties(component, properties)
+                    for field_name, maximum in staged.get(object_id, {}).items():
+                        prop_value = component.get_property_value(field_name)
+                        if isinstance(prop_value, PLEXOSPropertyValue):
+                            for key, entry in list(prop_value.entries.items()):
+                                prop_value.entries[key] = create_plexos_row(maximum, entry)
+                        self._attached_timeseries[(component.uuid, field_name)] = True
 
             self._add_memberships()
             self._add_collection_properties()
@@ -693,7 +717,137 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
                 )
             )
 
-    def _process_component_properties(self, component: PLEXOSObject, db_rows: list[dict[str, Any]]) -> None:
+    def _stage_direct_profiles(
+        self,
+        rows_by_object: dict[int, list[dict[str, Any]]],
+        properties: dict[int, list[tuple[str, PLEXOSPropertyValue]]],
+        instructions: list[ParserInstruction],
+        sources: dict[str, DocumentSource[JSONValue]],
+    ) -> dict[int, dict[str, float]]:
+        """Stage simple direct profiles for matching Core rules; defer all complex references."""
+        assert self.db is not None
+        if self.db.list_objects_by_class(ClassEnum.Timeslice):
+            return {}
+        horizon = get_horizon()
+        horizon_datetime = (
+            (self._horizon_start, self._horizon_end)
+            if self._horizon_start is not None and self._horizon_end is not None
+            else None
+        )
+        # Rules select fixed owner class and output name; horizon is the only
+        # feature on simple direct profiles. Unsupported shapes stay native.
+        eligible: dict[tuple[str, str], list[TimeSeriesInstruction]] = defaultdict(list)
+        source_counts = Counter(rule.source for rule in instructions)
+        for rule in instructions:
+            if (
+                not isinstance(rule, TimeSeriesInstruction)
+                or len(rule.owners) != 1
+                or source_counts[rule.source] != 1
+                or rule.source in sources
+            ):
+                continue
+            owner = rule.owners[0]
+            if (
+                owner.name_field != "owner"
+                or rule.values != "value"
+                or rule.units is not None
+                or rule.metadata
+                or rule.metadata_columns != ({"horizon": "horizon"} if horizon else {})
+                or not isinstance(rule.time_axis, ColumnTimeAxis)
+                or rule.time_axis.column != "timestamp"
+                or rule.time_axis.resolution_seconds is not None
+            ):
+                continue
+            eligible[(owner.component_type, rule.name)].append(rule)
+        component_rules = {
+            rule.source: rule.component_type
+            for rule in instructions
+            if isinstance(rule, ComponentInstruction)
+        }
+        source_rows: dict[str, list[JSONValue]] = defaultdict(list)
+        staged: dict[int, dict[str, float]] = {}
+        for object_id, groups in properties.items():
+            first = rows_by_object[object_id][0]
+            raw_class = first["child_class"]
+            try:
+                class_key = ClassEnum(raw_class)
+            except ValueError:
+                class_key = raw_class
+            component_type = PLEXOS_TYPE_MAP.get(class_key)
+            if component_type is None or component_rules.get(raw_class) != component_type.__name__:
+                continue
+            if component_type in (PLEXOSDatafile, PLEXOSVariable, PLEXOSTimeslice):
+                continue
+            field_names = {
+                alias: field_name
+                for field_name, field in component_type.model_fields.items()
+                if (alias := field.alias) is not None
+            }
+            targets = [
+                HYDRO_TS_NAME_MAP.get(field, field)
+                for alias, value in groups
+                if (field := field_names.get(alias)) is not None
+                and (value.has_datafile() or value.has_variable())
+            ]
+            for alias, prop in groups:
+                field_name = field_names.get(alias)
+                if field_name is None:
+                    continue
+                target_name = HYDRO_TS_NAME_MAP.get(field_name, field_name)
+                rules = eligible.get((component_type.__name__, target_name), [])
+                if len(rules) != 1 or targets.count(target_name) != 1:
+                    continue
+                if (
+                    len(prop.entries) != 1
+                    or prop.has_variable()
+                    or prop.has_scenarios()
+                    or prop.has_bands()
+                    or prop.has_timeslices()
+                    or prop.has_date_from()
+                    or prop.has_date_to()
+                ):
+                    continue
+                entry = next(iter(prop.entries.values()))
+                path = entry.datafile_name or (entry.text if isinstance(entry.text, str) else None)
+                if not isinstance(path, str) or not path.lower().endswith(".csv"):
+                    continue
+                try:
+                    resolved = self._resolve_datafile_path(path)
+                    ts = self._get_or_parse_timeseries(
+                        str(resolved),
+                        first["name"],
+                        self.config.horizon_year or 2024,
+                        timeslices=[],
+                        horizon_datetime=horizon_datetime,
+                    )
+                    if (
+                        not isinstance(ts, SingleTimeSeries)
+                        or len(set(ts.data)) <= 1
+                        or not all(math.isfinite(float(value)) for value in ts.data)
+                    ):
+                        continue
+                    rows: list[JSONValue] = []
+                    for index, value in enumerate(ts.data):
+                        row: dict[str, JSONValue] = {
+                            "owner": first["name"],
+                            "timestamp": (ts.initial_timestamp + index * ts.resolution).isoformat(),
+                            "value": float(value),
+                        }
+                        if horizon:
+                            row["horizon"] = datetime.fromisoformat(horizon[0]).year
+                        rows.append(row)
+                    source_rows[rules[0].source].extend(rows)
+                    staged.setdefault(object_id, {})[field_name] = float(max(ts.data))
+                except (OSError, ValueError, TypeError, KeyError, OverflowError, PolarsError) as error:
+                    # Existing deferred handling logs the original input failure.
+                    logger.debug("Deferring {}.{}: {}", first["name"], field_name, error)
+        for source_name, rows in source_rows.items():
+            sources[source_name] = DocumentSource[JSONValue](data=rows, processor=None)
+        return staged
+
+    def _process_component_properties(
+        self, component: PLEXOSObject, properties: list[tuple[str, PLEXOSPropertyValue]]
+    ) -> None:
         """Process and attach properties to a component.
 
         This function converts property database records to PLEXOSPropertyValue and sets on component field. Detects datafile/variable
@@ -710,10 +864,7 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         -----
         Skips time series registration for DataFile, Variable, and Timeslice component types.
         """
-        for prop_name, rows in itertools.groupby(db_rows, key=itemgetter("property")):
-            if prop_name is None:
-                continue
-
+        for prop_name, property_value in properties:
             field_name = get_field_name_by_alias(component, prop_name)
             if field_name is None:
                 logger.warning(
@@ -722,9 +873,6 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
                     type(component).__name__,
                 )
                 continue
-
-            prop_records = list(rows)
-            property_value = PLEXOSPropertyValue.from_records(prop_records)
 
             # Always keep PLEXOSPropertyValue if it has datafile or variable references
             # This is required for time series attachment logic to work correctly

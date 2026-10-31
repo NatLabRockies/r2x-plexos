@@ -35,6 +35,15 @@ It must retain a rule for each supported PLEXOS class present in the input; miss
 with the class and configuration path instead of silently dropping those objects. Unsupported
 classes continue to be skipped with a warning.
 
+Plain, nonconstant component-owned profiles from direct CSV files can use Core time-series rules.
+The packaged rules cover generator capacity and fuel price, region and purchaser load, reserve
+requirement, fuel price, and storage inflow. Other direct properties can be selected by adding a Core rule with the target component class,
+series name, `owner`, `timestamp`, and `value` fields, and a separate rule when a horizon feature
+is present. Variable actions, scenario or date dimensions, timeslices, multiple bands, constants,
+conflicting mapped aliases, datafile-object references, and collection-property owners keep the
+native PLEXOS resolution path. Core's rules require a fixed owner class and series name and do not
+select supplemental-attribute owners; these distinctions preserve PLEXOS property behavior.
+
 ## Documentation
 
 - [Getting started](https://natlabrockies.github.io/r2x-plexos/getting-started/installation/): installation, environment setup, and first-use checks.
