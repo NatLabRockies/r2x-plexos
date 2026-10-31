@@ -30,6 +30,11 @@ r2x list r2x-plexos
 
 Confirm `plexos-parser` and `plexos-exporter` are discovered, then follow the [round-trip tutorial](https://natlabrockies.github.io/r2x-plexos/tutorials/round-trip/).
 
+A `parser_rules.json` in a configuration override may replace the packaged component rules.
+It must retain a rule for each supported PLEXOS class present in the input; missing rules fail
+with the class and configuration path instead of silently dropping those objects. Unsupported
+classes continue to be skipped with a warning.
+
 ## Documentation
 
 - [Getting started](https://natlabrockies.github.io/r2x-plexos/getting-started/installation/): installation, environment setup, and first-use checks.

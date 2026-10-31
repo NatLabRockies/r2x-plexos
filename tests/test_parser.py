@@ -1305,3 +1305,40 @@ def test_parser_rules_cover_native_component_classes():
         str(key): value.__name__ for key, value in PLEXOS_TYPE_MAP.items()
     }
     assert any(rule.source == "Data File" for rule in rules)
+
+
+def test_parser_rule_typo_does_not_silently_drop_supported_objects(db_thermal_gen, tmp_path):
+    import json
+
+    config = PLEXOSConfig(model_name="Base", config_path_override=tmp_path)
+    rules = json.loads(PLEXOSConfig(model_name="Base").parser_rules_path.read_text())
+    next(rule for rule in rules if rule["source"] == "Generator")["source"] = "Generatr"
+    (tmp_path / "parser_rules.json").write_text(json.dumps(rules))
+    parser = cast(PLEXOSParser, PLEXOSParser.from_context(PluginContext(config=config)))
+    parser.db = db_thermal_gen
+    result = parser.build_system_components()
+    assert result.is_err()
+    assert "Generator" in str(result.error)
+    assert "parser_rules.json" in str(result.error)
+
+
+def test_unknown_plexos_class_remains_skippable(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    parser = cast(
+        PLEXOSParser, PLEXOSParser.from_context(PluginContext(config=PLEXOSConfig(model_name="Base")))
+    )
+    parser.db = Mock()
+    parser.db.iterate_properties.return_value = [
+        {
+            "name": "unknown",
+            "object_id": 1,
+            "category": None,
+            "child_class": "Unmapped Class",
+            "property": None,
+        }
+    ]
+    monkeypatch.setattr(parser, "_add_memberships", lambda: None)
+    monkeypatch.setattr(parser, "_add_collection_properties", lambda: None)
+    assert parser.build_system_components().is_ok()
+    assert not list(parser.system.get_components(PLEXOSGenerator))

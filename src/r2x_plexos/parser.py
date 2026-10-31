@@ -326,11 +326,20 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
                 rules_path = self.config.package_config_path() / "parser_rules.json"
             instructions = TypeAdapter(list[ComponentInstruction]).validate_json(rules_path.read_bytes())
             configured_sources = {rule.source for rule in instructions}
+            packaged_rules = TypeAdapter(list[ComponentInstruction]).validate_json(
+                (self.config.package_config_path() / "parser_rules.json").read_bytes()
+            )
+            supported_sources = {rule.source for rule in packaged_rules}
             object_rows: dict[str, list[JSONValue]] = defaultdict(list)
             for rows_list in main_properties_by_object.values():
                 first_row = rows_list[0]
                 obj_type = first_row["child_class"]
                 if obj_type not in configured_sources:
+                    if obj_type in supported_sources:
+                        return Err(
+                            f"Supported PLEXOS class {obj_type!r} has input objects but no matching "
+                            f"component rule in {rules_path}. Restore or correct the parser_rules.json entry."
+                        )
                     logger.warning(
                         "Cannot parse object={} with type={}. Skipping it.", first_row["name"], obj_type
                     )
