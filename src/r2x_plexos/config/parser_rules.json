@@ -1,0 +1,182 @@
+[
+  {
+    "kind": "component",
+    "source": "Generator",
+    "component_type": "PLEXOSGenerator",
+    "fields": {
+      "name": "name",
+      "object_id": "object_id",
+      "category": "category"
+    }
+  },
+  {
+    "kind": "component",
+    "source": "Fuel",
+    "component_type": "PLEXOSFuel",
+    "fields": {
+      "name": "name",
+      "object_id": "object_id",
+      "category": "category"
+    }
+  },
+  {
+    "kind": "component",
+    "source": "Node",
+    "component_type": "PLEXOSNode",
+    "fields": {
+      "name": "name",
+      "object_id": "object_id",
+      "category": "category"
+    }
+  },
+  {
+    "kind": "component",
+    "source": "Storage",
+    "component_type": "PLEXOSStorage",
+    "fields": {
+      "name": "name",
+      "object_id": "object_id",
+      "category": "category"
+    }
+  },
+  {
+    "kind": "component",
+    "source": "Line",
+    "component_type": "PLEXOSLine",
+    "fields": {
+      "name": "name",
+      "object_id": "object_id",
+      "category": "category"
+    }
+  },
+  {
+    "kind": "component",
+    "source": "Data File",
+    "component_type": "PLEXOSDatafile",
+    "fields": {
+      "name": "name",
+      "object_id": "object_id",
+      "category": "category"
+    }
+  },
+  {
+    "kind": "component",
+    "source": "Variable",
+    "component_type": "PLEXOSVariable",
+    "fields": {
+      "name": "name",
+      "object_id": "object_id",
+      "category": "category"
+    }
+  },
+  {
+    "kind": "component",
+    "source": "Scenario",
+    "component_type": "PLEXOSScenario",
+    "fields": {
+      "name": "name",
+      "object_id": "object_id",
+      "category": "category"
+    }
+  },
+  {
+    "kind": "component",
+    "source": "Battery",
+    "component_type": "PLEXOSBattery",
+    "fields": {
+      "name": "name",
+      "object_id": "object_id",
+      "category": "category"
+    }
+  },
+  {
+    "kind": "component",
+    "source": "Reserve",
+    "component_type": "PLEXOSReserve",
+    "fields": {
+      "name": "name",
+      "object_id": "object_id",
+      "category": "category"
+    }
+  },
+  {
+    "kind": "component",
+    "source": "Region",
+    "component_type": "PLEXOSRegion",
+    "fields": {
+      "name": "name",
+      "object_id": "object_id",
+      "category": "category"
+    }
+  },
+  {
+    "kind": "component",
+    "source": "Zone",
+    "component_type": "PLEXOSZone",
+    "fields": {
+      "name": "name",
+      "object_id": "object_id",
+      "category": "category"
+    }
+  },
+  {
+    "kind": "component",
+    "source": "Interface",
+    "component_type": "PLEXOSInterface",
+    "fields": {
+      "name": "name",
+      "object_id": "object_id",
+      "category": "category"
+    }
+  },
+  {
+    "kind": "component",
+    "source": "Timeslice",
+    "component_type": "PLEXOSTimeslice",
+    "fields": {
+      "name": "name",
+      "object_id": "object_id",
+      "category": "category"
+    }
+  },
+  {
+    "kind": "component",
+    "source": "Transformer",
+    "component_type": "PLEXOSTransformer",
+    "fields": {
+      "name": "name",
+      "object_id": "object_id",
+      "category": "category"
+    }
+  },
+  {
+    "kind": "component",
+    "source": "Model",
+    "component_type": "PLEXOSModel",
+    "fields": {
+      "name": "name",
+      "object_id": "object_id",
+      "category": "category"
+    }
+  },
+  {
+    "kind": "component",
+    "source": "Horizon",
+    "component_type": "PLEXOSHorizon",
+    "fields": {
+      "name": "name",
+      "object_id": "object_id",
+      "category": "category"
+    }
+  },
+  {
+    "kind": "component",
+    "source": "Purchaser",
+    "component_type": "PLEXOSPurchaser",
+    "fields": {
+      "name": "name",
+      "object_id": "object_id",
+      "category": "category"
+    }
+  }
+]

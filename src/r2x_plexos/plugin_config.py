@@ -70,6 +70,8 @@ class PLEXOSConfig(PluginConfig):
     load_defaults : Class method to load default constants from JSON
     """
 
+    models: tuple[str, ...] = ("r2x_plexos.models",)
+
     fpath: Annotated[
         str | None, Field(description="Path to the PLEXOS run directory or XML file", default=None)
     ] = None

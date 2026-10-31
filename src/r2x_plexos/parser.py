@@ -17,9 +17,12 @@ from infrasys import Component
 from infrasys.time_series_models import SingleTimeSeries
 from loguru import logger
 from plexosdb import ClassEnum, PlexosDB
+from pydantic import TypeAdapter
 
-from r2x_core import Err, Ok, Plugin, Result, System
+from r2x_core import DocumentSource, Err, Ok, Plugin, Result, System, build_system_from_sources
 from r2x_core.exceptions import PluginError
+from r2x_core.models import ComponentInstruction
+from r2x_core.types import JSONValue
 from r2x_core.utils.files import get_fpath
 
 from .datafile_handler import ParsedFileData, extract_file_data, extract_one_time_series
@@ -37,7 +40,6 @@ from .models.timeslice import PLEXOSTimeslice
 from .models.utils import get_field_name_by_alias
 from .models.variable import PLEXOSVariable
 from .plugin_config import PLEXOSConfig
-from .utils_mappings import PLEXOS_TYPE_MAP
 from .utils_parser import (
     apply_action,
     apply_action_to_timeseries,
@@ -228,9 +230,6 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
 
         self.model_name = self.config.model_name
 
-        system = System(name="PLEXOS")
-        self.ctx.system = system
-
         validation_result = self.validate_inputs()
         if validation_result.is_err():
             return Err(validation_result.err())
@@ -247,7 +246,7 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         if postprocess_result.is_err():
             return Err(postprocess_result.err())
 
-        return Ok(system)
+        return Ok(self.system)
 
     def validate_inputs(self) -> Result[None, str]:
         """Validate input data before parsing."""
@@ -321,16 +320,46 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
 
             self._collection_properties_cache = collection_properties_by_object
 
-            for object_id, rows_list in main_properties_by_object.items():
-                if not rows_list:
-                    continue
-
+            rules_path = self.config.parser_rules_path
+            if not rules_path.exists() and self.config.config_path_override is not None:
+                # Existing partial configuration overrides predate parser rules.
+                rules_path = self.config.package_config_path() / "parser_rules.json"
+            instructions = TypeAdapter(list[ComponentInstruction]).validate_json(rules_path.read_bytes())
+            configured_sources = {rule.source for rule in instructions}
+            object_rows: dict[str, list[JSONValue]] = defaultdict(list)
+            for rows_list in main_properties_by_object.values():
                 first_row = rows_list[0]
                 obj_type = first_row["child_class"]
-                component = self._create_component(obj_type, rows_list)
-                if component:
-                    self.system.add_component(component)
-                    self._component_cache[object_id] = component
+                if obj_type not in configured_sources:
+                    logger.warning(
+                        "Cannot parse object={} with type={}. Skipping it.", first_row["name"], obj_type
+                    )
+                    continue
+                object_rows[obj_type].append(
+                    {
+                        "name": first_row["name"],
+                        "object_id": first_row["object_id"],
+                        "category": first_row["category"],
+                    }
+                )
+
+            sources = {
+                name: DocumentSource[JSONValue](data=rows, processor=None)
+                for name, rows in object_rows.items()
+            }
+            active_instructions = [rule for rule in instructions if rule.source in sources]
+            self.ctx.system = build_system_from_sources(
+                sources, config=self.config, instructions=active_instructions, name="PLEXOS"
+            )
+            self._component_cache = {
+                component.object_id: component
+                for component in self.system.get_components(PLEXOSObject)
+                if component.object_id is not None
+            }
+            for object_id, rows_list in main_properties_by_object.items():
+                component = self._component_cache.get(object_id)
+                if component is not None:
+                    self._process_component_properties(component, rows_list)
 
             self._add_memberships()
             self._add_collection_properties()
@@ -654,63 +683,6 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
                     membership_id=membership_id,
                 )
             )
-
-    def _create_component(self, obj_type: str, db_rows: list[dict[str, Any]]) -> PLEXOSObject | None:
-        """Create a PLEXOS component from database rows.
-
-        Parameters
-        ----------
-        obj_type : str
-            PLEXOS class name
-        db_rows : list of dict
-            Property records for this object, all with same object_id
-
-        Returns
-        -------
-        PLEXOSObject or None
-            Component instance or None if class is unsupported/invalid
-
-        Notes
-        -----
-        Uses model_construct() for fast instantiation. Assumes data is prevalidated.
-        Skips DataFile, Variable, and Timeslice components for time series
-        registration as they define data rather than consume it.
-        """
-        if not db_rows:
-            return None
-
-        first_row = db_rows[0]
-        name = first_row["name"]
-        object_id = first_row["object_id"]
-        object_category = first_row["category"]
-        plexos_class = first_row["child_class"]
-
-        try:
-            component_enum = ClassEnum(plexos_class)
-            component_class = PLEXOS_TYPE_MAP.get(component_enum)
-        except ValueError:
-            # Compat: some class names (e.g. Purchaser) are not registered in
-            # ClassEnum but are inserted into PLEXOS_TYPE_MAP under their raw
-            # string key via enums_compat.
-            component_class = PLEXOS_TYPE_MAP.get(plexos_class)
-
-        if not component_class:
-            logger.warning(
-                "Cannot parse object={} with type={}. Skipping it.",
-                name,
-                plexos_class,
-            )
-            return None
-
-        logger.trace("Creating model for object={} with type={}", name, component_class)
-        component: PLEXOSObject = component_class.model_construct(
-            name=name,
-            object_id=object_id,
-            category=object_category,
-        )
-
-        self._process_component_properties(component, db_rows)
-        return component
 
     def _process_component_properties(self, component: PLEXOSObject, db_rows: list[dict[str, Any]]) -> None:
         """Process and attach properties to a component.

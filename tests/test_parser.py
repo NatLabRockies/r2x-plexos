@@ -1240,3 +1240,68 @@ def test_postprocess_with_timeseries_metadata_issues(db_with_multiband_variable,
 
     assert system is not None
     assert system.data_format_version is not None
+
+
+@pytest.mark.parametrize(
+    ("rows", "message"),
+    [
+        ([{"name": 42, "object_id": 1, "category": None, "child_class": "Generator"}], "name"),
+        (
+            [
+                {"name": "duplicate", "object_id": 1, "category": None, "child_class": "Generator"},
+                {"name": "duplicate", "object_id": 2, "category": None, "child_class": "Generator"},
+            ],
+            "Duplicate component",
+        ),
+    ],
+)
+def test_core_rules_reject_invalid_component_identity(rows, message):
+    from unittest.mock import Mock
+
+    parser = cast(
+        PLEXOSParser, PLEXOSParser.from_context(PluginContext(config=PLEXOSConfig(model_name="Base")))
+    )
+    parser.db = Mock()
+    parser.db.iterate_properties.return_value = rows
+
+    result = parser.build_system_components()
+    assert result.is_err()
+    assert message in str(result.error)
+
+
+def test_core_rules_allow_null_category_and_partial_config_override(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    parser = cast(
+        PLEXOSParser,
+        PLEXOSParser.from_context(
+            PluginContext(config=PLEXOSConfig(model_name="Base", config_path_override=tmp_path))
+        ),
+    )
+    parser.db = Mock()
+    parser.db.iterate_properties.return_value = [
+        {"name": "generator", "object_id": 1, "category": None, "child_class": "Generator", "property": None}
+    ]
+    monkeypatch.setattr(parser, "_add_memberships", lambda: None)
+    monkeypatch.setattr(parser, "_add_collection_properties", lambda: None)
+
+    assert parser.build_system_components().is_ok()
+    generator = parser.system.get_component(PLEXOSGenerator, "generator")
+    assert generator is not None
+    assert generator.object_id == 1
+    assert generator.category is None
+
+
+def test_parser_rules_cover_native_component_classes():
+    from pydantic import TypeAdapter
+
+    from r2x_core.models import ComponentInstruction
+    from r2x_plexos.utils_mappings import PLEXOS_TYPE_MAP
+
+    rules = TypeAdapter(list[ComponentInstruction]).validate_json(
+        PLEXOSConfig(model_name="Base").parser_rules_path.read_bytes()
+    )
+    assert {rule.source: rule.component_type for rule in rules} == {
+        str(key): value.__name__ for key, value in PLEXOS_TYPE_MAP.items()
+    }
+    assert any(rule.source == "Data File" for rule in rules)
