@@ -2,6 +2,7 @@
 
 import re
 from datetime import datetime
+from typing import cast
 
 from infrasys.time_series_models import SingleTimeSeries
 
@@ -82,16 +83,17 @@ def apply_action_to_timeseries(ts: SingleTimeSeries, action: str, value: float) 
     if normalized_action == "=" or normalized_action is None:
         return ts
 
+    data = cast(list[float], ts.data)
     if normalized_action == "*":
-        new_data = [x * value for x in ts.data]
+        new_data = [x * value for x in data]
     elif normalized_action == "+":
-        new_data = [x + value for x in ts.data]
+        new_data = [x + value for x in data]
     elif normalized_action == "-":
-        new_data = [x - value for x in ts.data]
+        new_data = [x - value for x in data]
     elif normalized_action == "/":
         if value == 0:
             raise ValueError("Cannot divide by zero")
-        new_data = [x / value for x in ts.data]
+        new_data = [x / value for x in data]
     else:
         return ts
 
