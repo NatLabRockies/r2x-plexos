@@ -1152,7 +1152,13 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                         ts_metadata["horizon_year"] = self.config.horizon_year
                     if self.weather_year is not None:
                         ts_metadata["weather_year"] = self.weather_year
-                    expected_filename = generate_csv_filename(ts_key.name, component_class, ts_metadata)
+                    category_suffix = self._get_time_series_filename_suffix(component)
+                    expected_filename = generate_csv_filename(
+                        ts_key.name,
+                        component_class,
+                        ts_metadata,
+                        suffix=category_suffix,
+                    )
 
                     matched_file: str | None = None
                     if expected_filename in dir_files:
@@ -1163,7 +1169,17 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                             rf"{re.escape(component_class)}_{re.escape(safe_ts_name)}_.*\.csv"
                         )
                         for filename in dir_files:
-                            if fallback_pattern.match(filename):
+                            if not fallback_pattern.match(filename):
+                                continue
+                            candidate_suffix = next(
+                                (
+                                    suffix
+                                    for suffix in ("imports", "exports")
+                                    if filename.endswith(f"_{suffix}.csv")
+                                ),
+                                None,
+                            )
+                            if candidate_suffix == category_suffix:
                                 matched_file = filename
                                 break
 
@@ -1475,6 +1491,14 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
             return None
         return ts
 
+    @staticmethod
+    def _get_time_series_filename_suffix(component: Any) -> str | None:
+        """Return a filename suffix for special generator categories."""
+        category = (getattr(component, "ext", None) or {}).get("r2x_category")
+        if isinstance(category, str) and category.casefold() in {"imports", "exports"}:
+            return category.casefold()
+        return None
+
     def export_time_series(self) -> Result[None, str]:
         """Export all time series data from the system to CSV files and update property references."""
         all_components_with_ts = []
@@ -1510,6 +1534,7 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 str(initial_ts),
                 str(resolution),
                 tuple(sorted(ts_key.features.items())),
+                self._get_time_series_filename_suffix(component) or "",
             )
 
         ts_metadata_sorted = sorted(ts_metadata, key=_grouping_key)
@@ -1518,7 +1543,14 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         output_dir = get_output_directory(self.config, self.system, output_path=self.output_path)
 
         for group_key, group_items in groupby(ts_metadata_sorted, key=_grouping_key):
-            component_class, field_name, _initial_ts_str, _resolution_str, features_tuple = group_key
+            (
+                component_class,
+                field_name,
+                _initial_ts_str,
+                _resolution_str,
+                features_tuple,
+                category_suffix,
+            ) = group_key
             metadata_dict = dict(features_tuple)
             if self.config.model_name is not None:
                 metadata_dict["model_name"] = self.config.model_name
@@ -1530,7 +1562,12 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 metadata_dict["weather_year"] = self.weather_year
             group_list = list(group_items)
 
-            filename = generate_csv_filename(field_name, component_class, metadata_dict)
+            filename = generate_csv_filename(
+                field_name,
+                component_class,
+                metadata_dict,
+                suffix=category_suffix or None,
+            )
             filepath = output_dir / filename
             csv_filepaths.append(filepath)
 
