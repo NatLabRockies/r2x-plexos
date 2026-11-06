@@ -1191,9 +1191,9 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
                         logger.debug(f"Variable {entry.variable_name} profile value: {variable_value}")
 
                         if entry.action:
-                            ts_max_before = max(ts.data)
+                            ts_max_before: float = max(typing.cast(list[float], ts.data))
                             ts = apply_action_to_timeseries(ts, entry.action, variable_value)
-                            ts_max_after = max(ts.data)
+                            ts_max_after: float = max(typing.cast(list[float], ts.data))
 
                             logger.debug(
                                 f"Applied action {entry.action}: time series max "
@@ -1777,9 +1777,9 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
                         logger.debug(f"Variable {entry.variable_name} profile value: {variable_value}")
 
                         if entry.action:
-                            ts_max_before = max(ts.data)
+                            ts_max_before: float = max(typing.cast(list[float], ts.data))
                             ts = apply_action_to_timeseries(ts, entry.action, variable_value)
-                            ts_max_after = max(ts.data)
+                            ts_max_after: float = max(typing.cast(list[float], ts.data))
 
                             logger.debug(
                                 f"Applied action {entry.action}: time series max "
