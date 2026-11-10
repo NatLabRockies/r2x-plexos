@@ -52,13 +52,19 @@ def build_metadata_suffix(
     return "_".join(parts) if parts else "default"
 
 
-def generate_csv_filename(field_name: str, component_class: str, metadata: dict[str, Any]) -> str:
+def generate_csv_filename(
+    field_name: str,
+    component_class: str,
+    metadata: dict[str, Any],
+    suffix: str | None = None,
+) -> str:
     """Generate a CSV filename for time series export."""
     safe_field = field_name.replace(" ", "_").replace("/", "_")
 
     metadata_suffix = build_metadata_suffix(metadata)
+    category_suffix = f"_{suffix}" if suffix else ""
 
-    return f"{component_class}_{safe_field}_{metadata_suffix}.csv"
+    return f"{component_class}_{safe_field}_{metadata_suffix}{category_suffix}.csv"
 
 
 def format_datetime(dt: datetime) -> str:
