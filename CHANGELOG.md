@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.4.0](https://github.com/NatLabRockies/r2x-plexos/compare/v0.3.3...v0.4.0) (2026-11-11)
+
+
+### 🚀 Features
+
+* export fuels and non-sequential time series ([#99](https://github.com/NatLabRockies/r2x-plexos/issues/99)) ([96b3957](https://github.com/NatLabRockies/r2x-plexos/commit/96b3957b1a95b674215ae3f0a88d6ef4f907010a))
+* export membership properties ([#100](https://github.com/NatLabRockies/r2x-plexos/issues/100)) ([12d9954](https://github.com/NatLabRockies/r2x-plexos/commit/12d9954c86a567b41fa4dc17c3b88b0d766f4229))
+* update simulation configuration models from source documentation for validation step ([#107](https://github.com/NatLabRockies/r2x-plexos/issues/107)) ([c3e85b7](https://github.com/NatLabRockies/r2x-plexos/commit/c3e85b7397b5f5b5c4d0f0edccd94af2aee0ed2a))
+
+
+### 🐛 Bug Fixes
+
+* default horizon Chrono Step Type to days ([#104](https://github.com/NatLabRockies/r2x-plexos/issues/104)) ([8b28b11](https://github.com/NatLabRockies/r2x-plexos/commit/8b28b111e8cf9e060cc04c74e7114d3f04e900c6))
+* look up collection-property memberships by parent id ([#105](https://github.com/NatLabRockies/r2x-plexos/issues/105)) ([4633ca6](https://github.com/NatLabRockies/r2x-plexos/commit/4633ca6c3d84c0c719ec08e9f515fabe0ae669bf))
+* resolve time-serie overwritten problem on same name structure ([#112](https://github.com/NatLabRockies/r2x-plexos/issues/112)) ([98884b1](https://github.com/NatLabRockies/r2x-plexos/commit/98884b132f4471c6d8949ca7adeb7864819c8978))
+* separate irregular timeseries exports by timestamp grid ([dc48159](https://github.com/NatLabRockies/r2x-plexos/commit/dc48159a284eaff52b57be01dea6c60b06501c4d))
+* Separate irregular timeseries exports by timestamp grid ([#113](https://github.com/NatLabRockies/r2x-plexos/issues/113)) ([dc48159](https://github.com/NatLabRockies/r2x-plexos/commit/dc48159a284eaff52b57be01dea6c60b06501c4d))
+
+
+### 📚 Documentation
+
+* align PLEXOS guides with R2X documentation ([#103](https://github.com/NatLabRockies/r2x-plexos/issues/103)) ([b17d3eb](https://github.com/NatLabRockies/r2x-plexos/commit/b17d3eb804cb6a39a6372831d8d399ebc89bab0b))
+
 ## [0.3.3](https://github.com/NatLabRockies/r2x-plexos/compare/v0.3.2...v0.3.3) (2026-09-16)
 
 
