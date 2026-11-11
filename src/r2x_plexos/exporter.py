@@ -1139,6 +1139,9 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 for ts_key in ts_keys:
                     component_class = type(component).__name__
                     safe_ts_name = ts_key.name.replace(" ", "_").replace("/", "_")
+                    resolved_ts = self._resolve_matching_time_series(component, ts_key)
+                    if ts_key.time_series_type is NonSequentialTimeSeries and resolved_ts is None:
+                        continue
 
                     # Build the exact filename this run would have written, mirroring the
                     # logic in export_time_series so we never pick a file from a different
@@ -1158,18 +1161,21 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                         component_class,
                         ts_metadata,
                         suffix=category_suffix,
+                        time_series=resolved_ts,
                     )
 
                     matched_file: str | None = None
                     if expected_filename in dir_files:
                         matched_file = expected_filename
-                    else:
+                    elif not isinstance(resolved_ts, NonSequentialTimeSeries):
                         # Fallback: match by class + ts name prefix when the exact file is absent
                         fallback_pattern = re.compile(
                             rf"{re.escape(component_class)}_{re.escape(safe_ts_name)}_.*\.csv"
                         )
                         for filename in dir_files:
                             if not fallback_pattern.match(filename):
+                                continue
+                            if re.search(r"_grid_[0-9a-f]{64}(?:_imports|_exports)?\.csv$", filename):
                                 continue
                             candidate_suffix = next(
                                 (
@@ -1196,7 +1202,6 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                         continue
 
                     key = ts_key.name.strip().lower().replace(" ", "_")
-                    resolved_ts = self._resolve_matching_time_series(component, ts_key)
 
                     target_component = component
                     target_class_enum = class_enum
@@ -1560,35 +1565,34 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
                 metadata_dict["horizon_year"] = self.config.horizon_year
             if self.weather_year is not None:
                 metadata_dict["weather_year"] = self.weather_year
-            group_list = list(group_items)
-
-            filename = generate_csv_filename(
-                field_name,
-                component_class,
-                metadata_dict,
-                suffix=category_suffix or None,
-            )
-            filepath = output_dir / filename
-            csv_filepaths.append(filepath)
-
-            time_series_data: list[tuple[str, Any]] = []
-            for component, ts_key in group_list:
+            time_series_groups: dict[str, list[tuple[str, Any]]] = {}
+            for component, ts_key in group_items:
                 ts = self._resolve_matching_time_series(component, ts_key)
                 if ts is None:
                     continue
-                time_series_data.append((component.name, ts))
+                filename = generate_csv_filename(
+                    field_name,
+                    component_class,
+                    metadata_dict,
+                    suffix=category_suffix or None,
+                    time_series=ts,
+                )
+                time_series_groups.setdefault(filename, []).append((component.name, ts))
 
-            if not time_series_data:
+            if not time_series_groups:
                 logger.debug("No time series data collected for group {}, skipping CSV.", field_name)
                 continue
 
             target_year = self.solve_year or getattr(self.config, "horizon_year", None)
-            result = export_time_series_csv(filepath, time_series_data, target_year=target_year)
+            for filename, time_series_data in time_series_groups.items():
+                filepath = output_dir / filename
+                result = export_time_series_csv(filepath, time_series_data, target_year=target_year)
 
-            if result.is_err():
-                assert isinstance(result, Err)
-                logger.error(f"Failed to export time series: {result.error}")
-                return Err(f"Time series export failed: {result.error}")
+                if result.is_err():
+                    assert isinstance(result, Err)
+                    logger.error(f"Failed to export time series: {result.error}")
+                    return Err(f"Time series export failed: {result.error}")
+                csv_filepaths.append(filepath)
 
         logger.info(f"Exported {len(csv_filepaths)} time series files to {output_dir}")
         return Ok(None)

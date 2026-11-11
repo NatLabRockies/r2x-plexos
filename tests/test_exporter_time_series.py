@@ -795,3 +795,46 @@ def test_monthly_fuel_price_series_is_exported_and_linked_to_price(template_db, 
     assert len(prices) == 1
     assert prices[0]["datafile_name"] or prices[0]["text"]
     assert csvs[0].name in str(prices[0]["datafile_name"] or prices[0]["text"])
+
+
+def test_fuel_price_series_keep_distinct_timestamp_grids(template_db, tmp_path):
+    """Fuel prices share a CSV only when their timestamp grids match."""
+    from infrasys.time_series_models import NonSequentialTimeSeries
+    from plexosdb import ClassEnum
+
+    from r2x_plexos.models import PLEXOSFuel
+
+    config = PLEXOSConfig(model_name="Base", horizon_year=2035)
+    sys = System(name="test")
+    monthly = [datetime(2035, month, 1) for month in (1, 2, 3)]
+    expected = {
+        "NG_Zone1": (monthly, [1.0, 2.0, 3.0]),
+        "NG_Zone2": (monthly, [4.0, 5.0, 6.0]),
+        "NG_Zone3": ([monthly[0], datetime(2035, 2, 2), monthly[2]], [7.0, 8.0, 9.0]),
+    }
+    for name, (timestamps, values) in expected.items():
+        fuel = PLEXOSFuel(name=name, category="NG")
+        sys.add_component(fuel)
+        sys.add_time_series(
+            NonSequentialTimeSeries.from_array(values, timestamps=timestamps, name="fuel_price"), fuel
+        )
+
+    ctx = PluginContext(config=config, system=sys)
+    exporter = cast(PLEXOSExporter, PLEXOSExporter.from_context(ctx))
+    exporter.db = template_db
+    exporter.output_path = str(tmp_path)
+
+    assert exporter.prepare_export().is_ok()
+    assert exporter.postprocess_export().is_ok()
+
+    csvs = list((tmp_path / "Data").glob("PLEXOSFuel_fuel_price_*.csv"))
+    assert len(csvs) == 2
+    for name, (timestamps, values) in expected.items():
+        prices = template_db.get_object_properties(ClassEnum.Fuel, name, property_names="Price")
+        assert len(prices) == 1
+        reference = prices[0]["datafile_name"] or prices[0]["text"]
+        assert reference
+        rows = [line.split(",") for line in (tmp_path / str(reference)).read_text().splitlines()]
+        column = rows[0].index(name)
+        assert [row[0] for row in rows[1:]] == [timestamp.isoformat() for timestamp in timestamps]
+        assert [float(row[column]) for row in rows[1:]] == values

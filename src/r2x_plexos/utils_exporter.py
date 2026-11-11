@@ -1,6 +1,7 @@
 """Utility functions for PLEXOS exporter."""
 
 import csv
+import hashlib
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -57,14 +58,20 @@ def generate_csv_filename(
     component_class: str,
     metadata: dict[str, Any],
     suffix: str | None = None,
+    *,
+    time_series: SingleTimeSeries | NonSequentialTimeSeries | None = None,
 ) -> str:
-    """Generate a CSV filename for time series export."""
+    """Generate a CSV filename with distinct names for non-sequential timestamp grids."""
     safe_field = field_name.replace(" ", "_").replace("/", "_")
 
     metadata_suffix = build_metadata_suffix(metadata)
     category_suffix = f"_{suffix}" if suffix else ""
+    grid_suffix = ""
+    if isinstance(time_series, NonSequentialTimeSeries):
+        timestamps = "\n".join(format_datetime(timestamp) for timestamp in time_series.timestamps)
+        grid_suffix = f"_grid_{hashlib.sha256(timestamps.encode()).hexdigest()}"
 
-    return f"{component_class}_{safe_field}_{metadata_suffix}{category_suffix}.csv"
+    return f"{component_class}_{safe_field}_{metadata_suffix}{grid_suffix}{category_suffix}.csv"
 
 
 def format_datetime(dt: datetime) -> str:

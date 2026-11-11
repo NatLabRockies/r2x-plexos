@@ -146,10 +146,12 @@ def test_get_output_directory_defaults_to_cwd(sample_config, sample_system):
     assert result == expected
 
 
-def test_generate_csv_filename_basic():
+def test_generate_csv_filename_basic(sample_time_series):
     """Test basic CSV filename generation."""
     metadata = {"model_name": "Base", "weather_year": 2024, "horizon_year": 2024}
-    result = generate_csv_filename("max_capacity", "PLEXOSGenerator", metadata)
+    result = generate_csv_filename(
+        "max_capacity", "PLEXOSGenerator", metadata, time_series=sample_time_series
+    )
 
     assert result == "PLEXOSGenerator_max_capacity_Base_2024.csv"
 
