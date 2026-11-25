@@ -1,7 +1,9 @@
+from string import Template
 from typing import cast
 
 import pytest
 from plexosdb import ClassEnum
+from plexosdb.db import PROPERTY_QUERY
 
 from r2x_core import DataFile, DataStore, PluginContext
 from r2x_plexos import PLEXOSParser, PLEXOSPropertyValue
@@ -46,6 +48,18 @@ def parser_system(parser_instance):
 @pytest.mark.slow
 def test_plexos_parser_instance(parser_instance):
     assert isinstance(parser_instance, PLEXOSParser)
+
+
+def test_parser_indexes_property_query_join_key(db_with_reserve_collection_property):
+    parser = PLEXOSParser()
+    parser.db = db_with_reserve_collection_property
+
+    result = parser._ensure_property_query_indexes()
+
+    assert result.is_ok()
+    query = Template(PROPERTY_QUERY).safe_substitute(where_clause="")
+    plan = parser.db._db.query(f"EXPLAIN QUERY PLAN {query}")
+    assert any("SEARCH data USING INDEX idx_t_data_membership_id" in row[-1] for row in plan)
 
 
 @pytest.mark.slow
