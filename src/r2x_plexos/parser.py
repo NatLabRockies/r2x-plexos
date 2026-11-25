@@ -1,6 +1,7 @@
 """PLEXOS parser implementation for r2x-core framework."""
 
 import itertools
+import sqlite3
 import typing
 from collections import defaultdict
 from dataclasses import dataclass
@@ -10,6 +11,7 @@ from importlib.metadata import version
 from importlib.resources import files
 from operator import itemgetter
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 from uuid import UUID
 
@@ -222,10 +224,14 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
             except Exception as e:
                 return Err(f"Failed to initialize database: {e}")
 
+        index_result = self._ensure_property_query_indexes()
+        if index_result.is_err():
+            return Err(index_result.err())
+
         self.model_name = self.config.model_name
 
         system = System(name="PLEXOS")
-        self._ctx.system = system
+        self.ctx.system = system
 
         validation_result = self.validate_inputs()
         if validation_result.is_err():
@@ -244,6 +250,24 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
             return Err(postprocess_result.err())
 
         return Ok(system)
+
+    def _ensure_property_query_indexes(self) -> Result[None, str]:
+        """Index the join key used by the full PLEXOS property query."""
+        if self.db is None:
+            return Err("Database not initialized")
+
+        try:
+            indexed = self.db._db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_t_data_membership_id ON t_data(membership_id)"
+            )
+        except sqlite3.Error as exc:
+            return Err(f"Failed to create PLEXOS property query index: {exc}")
+
+        if not indexed:
+            return Err("Failed to create PLEXOS property query index on t_data.membership_id")
+
+        logger.info("Ensured PLEXOS property-query index on t_data.membership_id")
+        return Ok(None)
 
     def validate_inputs(self) -> Result[None, str]:
         """Validate input data before parsing."""
@@ -301,7 +325,10 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
             main_properties_by_object: dict[int, list[dict[str, Any]]] = defaultdict(list)
             collection_properties_by_object: dict[int, list[dict[str, Any]]] = defaultdict(list)
 
+            property_query_started = perf_counter()
+            property_count = 0
             for prop in self.db.iterate_properties():
+                property_count += 1
                 parent_class = prop.get("parent_class")
                 object_id = prop.get("object_id")
 
@@ -314,6 +341,12 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
                     collection_properties_by_object[object_id].append(prop_dict)
                 else:
                     main_properties_by_object[object_id].append(prop_dict)
+
+            logger.info(
+                "Loaded {} PLEXOS property rows in {:.2f}s",
+                property_count,
+                perf_counter() - property_query_started,
+            )
 
             self._collection_properties_cache = collection_properties_by_object
 
