@@ -49,9 +49,8 @@ def test_get_value_no_matching_scenarios():
         ]
     )
     with scenario_priority({"Test": 1, "Production": 2}):
-        result = prop.get_value()
-        # When no scenarios match priority, returns first scenario value
-        assert result in [100, 120]  # Could be either based on dict iteration order
+        # PLEXOS reads no data from scenarios the selection does not include.
+        assert prop.get_value() is None
 
 
 def test_get_value_single_scenario():
