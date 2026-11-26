@@ -27,7 +27,7 @@ def set_scenario_priority(priority: dict[str, int] | None) -> None:
     Parameters
     ----------
     priority : dict[str, int] or None
-        Scenario priority mapping to set (lower number = higher priority),
+        Scenario priority mapping to set (higher number = higher priority),
         or None to clear priority.
     """
     global _current_scenario_priority
@@ -65,7 +65,7 @@ def scenario_priority(priority: dict[str, int] | None) -> Iterator[None]:
     ----------
     priority : dict[str, int] or None
         Temporary scenario priority to use within the context
-        (lower number = higher priority)
+        (higher number = higher priority)
 
     Yields
     ------

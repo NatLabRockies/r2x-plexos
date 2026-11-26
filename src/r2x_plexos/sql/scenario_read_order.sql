@@ -4,7 +4,6 @@
 -- Scenarios with Read Order 0 (or NULL) have lowest priority
 --
 -- This query returns scenarios with their raw Read Order values.
--- The parser will invert these values since infrasys uses lower value = higher priority.
 --
 -- Parameters: model_id (integer)
 SELECT
@@ -17,9 +16,9 @@ JOIN
 JOIN
     t_class c ON c.class_id = o.class_id
 LEFT JOIN
-    t_attribute_data ad ON ad.object_id = o.object_id
+    t_attribute a ON a.class_id = o.class_id AND a.name = 'Read Order'
 LEFT JOIN
-    t_attribute a ON a.attribute_id = ad.attribute_id AND a.name = 'Read Order'
+    t_attribute_data ad ON ad.object_id = o.object_id AND ad.attribute_id = a.attribute_id
 WHERE
     m.parent_object_id = ?
     AND c.name = 'Scenario'

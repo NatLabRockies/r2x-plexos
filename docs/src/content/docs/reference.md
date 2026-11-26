@@ -84,7 +84,7 @@ scenario_and_horizon(
 ```
 
 The final three are context managers: use them with `with`, and the previous
-selection is restored on exit. Lower scenario-priority values have higher priority.
+selection is restored on exit. Higher scenario-priority values have higher priority.
 Date strings describe the selected range. Selection is module-level state, so do
 not assume these APIs create independent concurrent per-system contexts.
 [Source and examples](https://github.com/NatLabRockies/r2x-plexos/blob/main/src/r2x_plexos/models/context.py).

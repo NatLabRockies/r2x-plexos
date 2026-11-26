@@ -170,7 +170,7 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         self.db: PlexosDB | None = None
         self.time_series_references: list[TimeSeriesReference] = []
         self._component_cache: dict[int, PLEXOSObject] = {}
-        self._valid_scenarios: list[str] = []
+        self._scenario_priority: dict[str, int] = {}
         self._datafile_cache: dict[str, dict[str, Any]] = {}
         self._property_cache: dict[str, float] = {}
         self._parsed_files_cache: dict[str, ParsedFileData] = {}
@@ -281,6 +281,7 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
             priority_map: dict[str, int] = {
                 scenario: read_order or 0 for scenario, read_order in scenario_results
             }
+            self._scenario_priority = priority_map
             set_scenario_priority(priority_map)
             logger.debug("Found {} scenarios for model = {}", len(priority_map), self.model_name)
 
@@ -631,58 +632,7 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         membership_id : int
             Parent-child relationship identifier
         """
-        if self._is_duplicate_ts_reference(component, field_name):
-            logger.debug(f"Skipping {field_name} for {component.name} - duplicate target already registered")
-            return
-        if property.has_datafile():
-            for row in property.entries.values():
-                name = row.datafile_name or (
-                    row.text if isinstance(row.text, str) and row.text.lower().endswith(".csv") else None
-                )
-                if not name:
-                    continue
-
-                if name.lower().endswith(".csv"):
-                    self.time_series_references.append(
-                        TimeSeriesReference(
-                            component_uuid=component.uuid,
-                            component_name=component.name,
-                            field_name=field_name,
-                            source_type=TimeSeriesSourceType.DIRECT_DATAFILE,
-                            datafile_path=name,
-                            units=property.units,
-                            is_collection_property=True,
-                            membership_id=membership_id,
-                        )
-                    )
-                else:
-                    self.time_series_references.append(
-                        TimeSeriesReference(
-                            component_uuid=component.uuid,
-                            component_name=component.name,
-                            field_name=field_name,
-                            source_type=TimeSeriesSourceType.DATAFILE_COMPONENT,
-                            datafile_component_name=name,
-                            units=property.units,
-                            is_collection_property=True,
-                            membership_id=membership_id,
-                        )
-                    )
-                break
-
-        elif property.has_variable():
-            self.time_series_references.append(
-                TimeSeriesReference(
-                    component_uuid=component.uuid,
-                    component_name=component.name,
-                    field_name=field_name,
-                    source_type=TimeSeriesSourceType.VARIABLE,
-                    variable_name=property.get_variables()[0],
-                    units=property.units,
-                    is_collection_property=True,
-                    membership_id=membership_id,
-                )
-            )
+        self._register_time_series_reference(component, field_name, property, membership_id=membership_id)
 
     def _create_component(self, obj_type: str, db_rows: list[dict[str, Any]]) -> PLEXOSObject | None:
         """Create a PLEXOS component from database rows.
@@ -821,14 +771,17 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         )
 
     def _register_time_series_reference(
-        self, component: PLEXOSObject, field_name: str, property: PLEXOSPropertyValue
+        self,
+        component: PLEXOSObject,
+        field_name: str,
+        property: PLEXOSPropertyValue,
+        *,
+        membership_id: int | None = None,
     ) -> None:
         """Register time series reference for later attachment to a property.
 
-        Examines property entries for datafile or variable references. For
-        datafiles, distinguishes direct CSV paths from datafile component names.
-        For variables, extracts first variable name (multi-variable properties
-        use first entry).
+        Selects a datafile or variable reference from the model's scenarios
+        by read order, or from an entry without a scenario.
 
         Parameters
         ----------
@@ -838,59 +791,59 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
             Property field name (snake_case)
         property : PLEXOSPropertyValue
             Property value with potential time series reference
-
-        Notes
-        -----
-        Uses first matching entry only. Properties with multiple bands or
-        scenarios have multiple entries, but attachment logic handles this
-        during build_time_series phase.
+        membership_id : int, optional
+            Parent-child relationship identifier for a collection property
         """
         if self._is_duplicate_ts_reference(component, field_name):
             logger.debug(f"Skipping {field_name} for {component.name} - duplicate target already registered")
             return
-        if property.has_datafile():
-            for row in property.entries.values():
-                name = row.datafile_name or (
-                    row.text if isinstance(row.text, str) and row.text.lower().endswith(".csv") else None
-                )
-                if not name:
-                    continue
-
-                if name.lower().endswith(".csv"):
-                    self.time_series_references.append(
-                        TimeSeriesReference(
-                            component_uuid=component.uuid,
-                            component_name=component.name,
-                            field_name=field_name,
-                            source_type=TimeSeriesSourceType.DIRECT_DATAFILE,
-                            datafile_path=name,
-                            units=property.units,
-                        )
-                    )
-                else:
-                    self.time_series_references.append(
-                        TimeSeriesReference(
-                            component_uuid=component.uuid,
-                            component_name=component.name,
-                            field_name=field_name,
-                            source_type=TimeSeriesSourceType.DATAFILE_COMPONENT,
-                            datafile_component_name=name,
-                            units=property.units,
-                        )
-                    )
-                break
-
-        elif property.has_variable():
-            self.time_series_references.append(
-                TimeSeriesReference(
-                    component_uuid=component.uuid,
-                    component_name=component.name,
-                    field_name=field_name,
-                    source_type=TimeSeriesSourceType.VARIABLE,
-                    variable_name=property.get_variables()[0],
-                    units=property.units,
-                )
+        candidates = [
+            row
+            for row in property.entries.values()
+            if (row.scenario_name is None or row.scenario_name in self._scenario_priority)
+            and (
+                row.datafile_name
+                or (isinstance(row.text, str) and row.text.lower().endswith(".csv"))
+                or row.variable_name
             )
+        ]
+        if not candidates:
+            return
+
+        row = max(
+            candidates,
+            key=lambda entry: (
+                self._scenario_priority[entry.scenario_name] if entry.scenario_name is not None else 0
+            ),
+        )
+        name = row.datafile_name or (
+            row.text if isinstance(row.text, str) and row.text.lower().endswith(".csv") else None
+        )
+        if name:
+            source_type = (
+                TimeSeriesSourceType.DIRECT_DATAFILE
+                if name.lower().endswith(".csv")
+                else TimeSeriesSourceType.DATAFILE_COMPONENT
+            )
+        else:
+            source_type = TimeSeriesSourceType.VARIABLE
+
+        self.time_series_references.append(
+            TimeSeriesReference(
+                component_uuid=component.uuid,
+                component_name=component.name,
+                field_name=field_name,
+                source_type=source_type,
+                datafile_path=name if source_type == TimeSeriesSourceType.DIRECT_DATAFILE else None,
+                datafile_component_name=name
+                if source_type == TimeSeriesSourceType.DATAFILE_COMPONENT
+                else None,
+                variable_name=row.variable_name if source_type == TimeSeriesSourceType.VARIABLE else None,
+                units=property.units,
+                is_collection_property=membership_id is not None,
+                membership_id=membership_id,
+            )
+        )
 
     def _resolve_datafile_path(self, datafile_path: str | None) -> Path:
         """Resolve datafile paths relative to the data store and timeseries directory.

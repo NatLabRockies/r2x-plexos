@@ -1,14 +1,17 @@
 """Tests for time series parsing functionality."""
 
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import cast
 from unittest.mock import MagicMock
 from uuid import UUID
 
 import pytest
+from plexosdb import ClassEnum, CollectionEnum
 
 from r2x_core import DataFile, DataStore, PluginContext
-from r2x_plexos import PLEXOSParser
+from r2x_plexos import PLEXOSParser, PLEXOSPropertyValue
+from r2x_plexos.models import CollectionProperties, PLEXOSGenerator, PLEXOSRegion, get_scenario_priority
 from r2x_plexos.parser import TimeSeriesReference, TimeSeriesSourceType
 from r2x_plexos.plugin_config import PLEXOSConfig
 
@@ -52,6 +55,171 @@ def parser_with_timeseries_dir(data_folder) -> PLEXOSParser:
     ctx = PluginContext(config=config, store=store)
     parser = cast(PLEXOSParser, PLEXOSParser.from_context(ctx))
     return parser
+
+
+@pytest.mark.parametrize("collection", [False, True])
+@pytest.mark.parametrize(
+    ("entries", "expected"),
+    [
+        ([("Excluded", "excluded.csv")], None),
+        ([(None, "base.csv"), ("Excluded", "excluded.csv")], "base.csv"),
+        ([("Low", "low.csv"), ("High", "high.csv"), ("Excluded", "excluded.csv")], "high.csv"),
+        ([("High", "high.csv"), ("Low", "low.csv")], "high.csv"),
+        ([("Low", "LowFile"), ("High", "HighFile")], "HighFile"),
+    ],
+)
+def test_register_reference_uses_selected_scenario_priority(db_base, tmp_path, collection, entries, expected):
+    for name, order, selected in [("Low", 1, True), ("High", 5, True), ("Excluded", 99, False)]:
+        db_base.add_object(ClassEnum.Scenario, name)
+        db_base.add_attribute(ClassEnum.Scenario, name, attribute_name="Read Order", attribute_value=order)
+        if selected:
+            db_base.add_membership(
+                ClassEnum.Model, ClassEnum.Scenario, "Base", name, CollectionEnum.Scenarios
+            )
+
+    parser = cast(
+        PLEXOSParser,
+        PLEXOSParser.from_context(
+            PluginContext(config=PLEXOSConfig(model_name="Base"), store=DataStore(path=tmp_path))
+        ),
+    )
+    parser.db = db_base
+    parser.model_name = "Base"
+    assert parser.validate_inputs().is_ok()
+    prop = PLEXOSPropertyValue()
+    for scenario, filename in entries:
+        prop.add_entry(value=0.0, scenario=scenario, datafile_name=filename)
+    component = PLEXOSGenerator(name="test")
+    if collection:
+        parser._register_collection_property_time_series_reference(component, "rating", prop, 42)
+    else:
+        parser._register_time_series_reference(component, "rating", prop)
+
+    if expected is None:
+        assert not parser.time_series_references
+    else:
+        assert len(parser.time_series_references) == 1
+        ref = parser.time_series_references[0]
+        assert (ref.datafile_path or ref.datafile_component_name) == expected
+        assert ref.is_collection_property == collection
+        assert ref.membership_id == (42 if collection else None)
+
+
+def test_scenario_read_order_ignores_other_attributes(db_base, tmp_path):
+    db_base.add_object(ClassEnum.Scenario, "Low")
+    db_base.add_attribute(ClassEnum.Scenario, "Low", attribute_name="Read Order", attribute_value=0)
+    db_base.add_attribute(ClassEnum.Scenario, "Low", attribute_name="Locked", attribute_value=1)
+    db_base.add_membership(ClassEnum.Model, ClassEnum.Scenario, "Base", "Low", CollectionEnum.Scenarios)
+    db_base.add_object(ClassEnum.Scenario, "Default")
+    db_base.add_attribute(ClassEnum.Scenario, "Default", attribute_name="Locked", attribute_value=1)
+    db_base.add_membership(ClassEnum.Model, ClassEnum.Scenario, "Base", "Default", CollectionEnum.Scenarios)
+    parser = cast(
+        PLEXOSParser,
+        PLEXOSParser.from_context(
+            PluginContext(config=PLEXOSConfig(model_name="Base"), store=DataStore(path=tmp_path))
+        ),
+    )
+    parser.db = db_base
+    parser.model_name = "Base"
+    assert parser.validate_inputs().is_ok()
+    assert get_scenario_priority() == {"Low": 0, "Default": 0}
+
+
+@pytest.mark.parametrize("collection", [False, True])
+def test_register_active_variable_when_datafile_scenario_is_unselected(collection):
+    parser = PLEXOSParser()
+    parser._scenario_priority = {"Selected": 2}
+    prop = PLEXOSPropertyValue()
+    prop.add_entry(value=0.0, scenario="Excluded", datafile_name="missing.csv")
+    prop.add_entry(value=0.0, scenario="Selected", variable_name="active-variable")
+    component = PLEXOSGenerator(name="test")
+    if collection:
+        parser._register_collection_property_time_series_reference(component, "rating", prop, 42)
+    else:
+        parser._register_time_series_reference(component, "rating", prop)
+
+    ref = parser.time_series_references[0]
+    assert ref.source_type == TimeSeriesSourceType.VARIABLE
+    assert ref.variable_name == "active-variable"
+
+
+@pytest.mark.parametrize("collection", [False, True])
+def test_register_without_model_scenarios_only_uses_unscoped_entry(collection):
+    parser = PLEXOSParser()
+    prop = PLEXOSPropertyValue()
+    prop.add_entry(value=0.0, scenario="Excluded", datafile_name="missing.csv")
+    prop.add_entry(value=0.0, text="base.CSV")
+    component = PLEXOSGenerator(name="test")
+    if collection:
+        parser._register_collection_property_time_series_reference(component, "rating", prop, 42)
+    else:
+        parser._register_time_series_reference(component, "rating", prop)
+
+    assert parser.time_series_references[0].datafile_path == "base.CSV"
+
+
+def test_parser_attaches_only_selected_scenario_profiles(db_with_topology, tmp_path):
+    db = db_with_topology
+    for name, order, selected in [("Low", 1, True), ("High", 5, True), ("Excluded", 99, False)]:
+        db.add_object(ClassEnum.Scenario, name)
+        db.add_attribute(ClassEnum.Scenario, name, attribute_name="Read Order", attribute_value=order)
+        if selected:
+            db.add_membership(ClassEnum.Model, ClassEnum.Scenario, "Base", name, CollectionEnum.Scenarios)
+
+    db.add_object(ClassEnum.Reserve, "Reserve")
+    db.add_membership(ClassEnum.Reserve, ClassEnum.Region, "Reserve", "region-01", CollectionEnum.Regions)
+    for scenario, offset in [("Low", 10), ("High", 100), ("Excluded", 1000)]:
+        path = tmp_path / f"{scenario}.csv"
+        path.write_text(
+            "Datetime,thermal-01,region-01\n"
+            + "".join(
+                f"{(datetime(2024, 1, 1) + timedelta(hours=hour)).isoformat()},"
+                f"{offset + hour % 24},{offset + hour % 24}\n"
+                for hour in range(8784)
+            )
+        )
+        db.add_property(
+            ClassEnum.Generator, "thermal-01", "Rating", 0.0, scenario=scenario, datafile_text=str(path)
+        )
+        db.add_property(
+            ClassEnum.Region,
+            "region-01",
+            "LOLP Target",
+            0.0,
+            scenario=scenario,
+            datafile_text=str(path),
+            collection_enum=CollectionEnum.Regions,
+            parent_class_enum=ClassEnum.Reserve,
+            parent_object_name="Reserve",
+        )
+    db.add_property(
+        ClassEnum.Generator,
+        "thermal-01",
+        "Commit",
+        0.0,
+        scenario="Excluded",
+        datafile_text=str(tmp_path / "missing.csv"),
+    )
+    parser = cast(
+        PLEXOSParser,
+        PLEXOSParser.from_context(
+            PluginContext(
+                config=PLEXOSConfig(model_name="Base", horizon_year=2024), store=DataStore(tmp_path)
+            )
+        ),
+    )
+    parser.db = db
+
+    system = parser.run().system
+    assert system is not None
+    generator = system.get_component(PLEXOSGenerator, "thermal-01")
+    region = system.get_component(PLEXOSRegion, "region-01")
+    collection = system.get_supplemental_attributes_with_component(region, CollectionProperties)[0]
+    assert not parser._failed_references
+    assert {ref.field_name for ref in parser.time_series_references} == {"rating", "lolp_target"}
+    assert list(system.get_time_series(generator, "max_active_power").data[:3]) == [100, 101, 102]
+    assert list(system.get_time_series(collection, "lolp_target").data[:3]) == [100, 101, 102]
+    assert not any(ref.field_name == "commit" for ref in parser.time_series_references)
 
 
 @pytest.mark.slow
