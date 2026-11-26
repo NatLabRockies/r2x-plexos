@@ -5,8 +5,9 @@ description = "Plexos Models, Parser and Exporter"
 readme = "README.md"
 requires-python = ">=3.11, <3.14"
 dependencies = [
-    "plexosdb>=1.6.0",
-    "r2x-core>=0.4.0,<1.0.0",
+    "plexosdb>=1.7.0",
+    "polars>=1.44.1,<2.0.0",
+    "r2x-core>=1.0.0,<2.0.0",
 ]
 keywords=["PLEXOS"]
 classifiers = [

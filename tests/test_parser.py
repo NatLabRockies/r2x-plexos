@@ -553,13 +553,55 @@ def test_parser_build_without_db(tmp_path):
 
 
 def test_parser_with_missing_xml_file(tmp_path):
-    """Test parser with non-existent XML file raises error during DataFile creation."""
+    """Missing configured XML is reported when the parser runs."""
     fake_path = tmp_path / "nonexistent.xml"
+    fallback = tmp_path / "fallback.xml"
+    fallback.touch()
+    store = DataStore(path=tmp_path)
+    store.add_data([DataFile(name="xml_file", fpath=fake_path)])
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024, fpath=str(fallback))
+    parser = PLEXOSParser.from_context(PluginContext(config=config, store=store))
 
-    with pytest.raises(FileNotFoundError, match="File not found"):
-        data_file = DataFile(name="xml_file", fpath=fake_path)
-        store = DataStore(path=tmp_path)
-        store.add_data([data_file], overwrite=True)
+    result = parser.on_build()
+    assert result.is_err()
+    assert "Missing required file" in str(result.error)
+    assert str(fake_path) in str(result.error)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        {"fpath": "model.xml"},
+        {"relative_fpath": "model.xml"},
+        {"glob": "*.xml"},
+    ],
+)
+def test_parser_resolves_store_xml_at_build(tmp_path, db_thermal_gen, source):
+    """Resolve each physical DataFile source relative to the store."""
+    xml_path = tmp_path / "model.xml"
+    db_thermal_gen.to_xml(xml_path)
+    store = DataStore(path=tmp_path)
+    store.add_data([DataFile(name="xml_file", **source)])
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024, fpath=str(tmp_path / "missing.xml"))
+    parser = PLEXOSParser.from_context(PluginContext(config=config, store=store))
+
+    system = parser.run().system
+    assert system is not None
+    assert system.get_component(PLEXOSGenerator, "thermal-01") is not None
+
+
+def test_parser_rejects_ambiguous_store_glob(tmp_path):
+    """An ambiguous store entry is an error, even if a config path exists."""
+    (tmp_path / "one.xml").touch()
+    (tmp_path / "two.xml").touch()
+    store = DataStore(path=tmp_path)
+    store.add_data([DataFile(name="xml_file", glob="*.xml")])
+    config = PLEXOSConfig(model_name="Base", horizon_year=2024, fpath=str(tmp_path / "one.xml"))
+    parser = PLEXOSParser.from_context(PluginContext(config=config, store=store))
+
+    result = parser.on_build()
+    assert result.is_err()
+    assert "Multiple files matched" in str(result.error)
 
 
 def test_parser_validate_inputs_missing_model(db_base, tmp_path):
