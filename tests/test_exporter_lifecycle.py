@@ -715,3 +715,31 @@ def test_setup_configuration_returns_err_when_db_is_none():
     result = exporter.setup_configuration()
     assert result.is_err()
     assert "Database not initialized" in result.unwrap_err()
+
+
+def test_resolve_db_consistency_raises_max_band_using_property_index(template_db):
+    """max_band_id follows the highest band used, resolved through an index on t_data.property_id."""
+    sys = System(name="test")
+    ctx = PluginContext(config=PLEXOSConfig(model_name="Base", horizon_year=2024), system=sys)
+    exporter = cast(PLEXOSExporter, PLEXOSExporter.from_context(ctx))
+    exporter.db = template_db
+    template_db.add_object(ClassEnum.Generator, "GEN1")
+    template_db.add_property(ClassEnum.Generator, "GEN1", "Max Capacity", 100.0, band=3)
+    (property_id,) = template_db._db.fetchone(
+        "SELECT d.property_id FROM t_data d JOIN t_band b ON b.data_id = d.data_id WHERE b.band_id = 3"
+    )
+
+    exporter._resolve_db_consistency()
+
+    assert template_db._db.fetchone(
+        "SELECT max_band_id FROM t_property WHERE property_id = ?", (property_id,)
+    ) == (3,)
+    plan = " ".join(
+        str(row[-1])
+        for row in template_db._db.fetchall(
+            "EXPLAIN QUERY PLAN SELECT MAX(b.band_id) FROM t_band b "
+            "JOIN t_data d ON b.data_id = d.data_id WHERE d.property_id = ?",
+            (property_id,),
+        )
+    )
+    assert "idx_t_data_property_id" in plan

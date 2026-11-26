@@ -1644,6 +1644,10 @@ class PLEXOSExporter(Plugin[PLEXOSConfig]):
         if self.db is None:
             return
 
+        # The correlated subqueries below look up t_data by property_id once per template
+        # property; without this index each lookup scans every data row of the system.
+        self.db._db.execute("CREATE INDEX IF NOT EXISTS idx_t_data_property_id ON t_data(property_id)")
+
         # update max_band_id in t_property to match actual max band value
         self.db._db.execute(
             """
