@@ -164,7 +164,7 @@ def test_attach_direct_datafile_timeseries_component_not_found_in_system(
 
     # Initialize system in context
     system = System(name="test_system")
-    parser_basic._ctx.system = system
+    parser_basic.ctx.system = system
 
     parser_basic.config.timeseries_dir = tmp_path
 
@@ -200,7 +200,7 @@ def test_attach_direct_datafile_timeseries_already_attached(
 
     # Initialize system in context
     system = System(name="test_system")
-    parser_basic_mutable._ctx.system = system
+    parser_basic_mutable.ctx.system = system
 
     test_uuid = UUID("12345678-1234-5678-1234-567812345678")
 
@@ -233,7 +233,7 @@ def test_attach_direct_datafile_timeseries_file_not_found(
 
     # Initialize system in context
     system = System(name="test_system")
-    parser_basic_mutable._ctx.system = system
+    parser_basic_mutable.ctx.system = system
 
     mock_component = MagicMock()
     test_uuid = UUID("12345678-1234-5678-1234-567812345678")
@@ -265,7 +265,7 @@ def test_build_time_series_integration(parser_basic_mutable: PLEXOSParser, tmp_p
 
     # Initialize system in context
     system = System(name="test_system")
-    parser_basic_mutable._ctx.system = system
+    parser_basic_mutable.ctx.system = system
 
     parser_basic_mutable.config.timeseries_dir = tmp_path
 

@@ -70,8 +70,11 @@ entries. This is an alternative to `fpath`, using the `xml_path` and `store` abo
 ```
 
 The parser looks up the name `xml_file`; a differently named entry is not the same
-selection contract. Passing a single DataFile rather than a list does not match the
-locked Core API used in the tested environment.
+selection contract. With r2x-core 1.x, store entries are resolved when the parser
+runs, not when they are added. Relative paths and glob patterns are resolved
+against the store directory; a glob must match exactly one file. An invalid
+`xml_file` entry fails rather than falling back to `fpath`.
+Passing a single DataFile rather than a list does not match the Core API.
 
 ## Inspect components and relationships
 

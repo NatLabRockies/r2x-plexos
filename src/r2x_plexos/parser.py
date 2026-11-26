@@ -21,6 +21,7 @@ from loguru import logger
 from plexosdb import ClassEnum, PlexosDB
 
 from r2x_core import Err, Ok, Plugin, Result, System
+from r2x_core.utils import get_fpath
 
 from .datafile_handler import ParsedFileData, extract_file_data, extract_one_time_series
 from .models import (
@@ -191,13 +192,12 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         if self.db is None:
             try:
                 xml_fpath: Path | None = None
-                try:
-                    store = self.store
-                    if "xml_file" in store:
-                        data_file = store["xml_file"]
-                        xml_fpath = data_file.fpath
-                except Exception:
-                    pass
+                store = self.ctx.store
+                if store is not None and "xml_file" in store:
+                    path_result = get_fpath(store["xml_file"], folder_path=store.folder)
+                    if path_result.is_err():
+                        return Err(f"Failed to resolve PLEXOS XML file: {path_result.error}")
+                    xml_fpath = path_result.unwrap()
 
                 if xml_fpath is None:
                     config_fpath = getattr(self.config, "fpath", None)
