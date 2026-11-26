@@ -8,6 +8,7 @@ from uuid import UUID
 
 import pytest
 from plexosdb import ClassEnum, CollectionEnum
+from plexosdb.checks import check_object_exists
 
 from r2x_core import DataFile, DataStore, PluginContext
 from r2x_plexos import PLEXOSParser, PLEXOSPropertyValue
@@ -105,24 +106,78 @@ def test_register_reference_uses_selected_scenario_priority(db_base, tmp_path, c
         assert ref.membership_id == (42 if collection else None)
 
 
-def test_scenario_read_order_ignores_other_attributes(db_base, tmp_path):
-    db_base.add_object(ClassEnum.Scenario, "Low")
-    db_base.add_attribute(ClassEnum.Scenario, "Low", attribute_name="Read Order", attribute_value=0)
-    db_base.add_attribute(ClassEnum.Scenario, "Low", attribute_name="Locked", attribute_value=1)
-    db_base.add_membership(ClassEnum.Model, ClassEnum.Scenario, "Base", "Low", CollectionEnum.Scenarios)
-    db_base.add_object(ClassEnum.Scenario, "Default")
-    db_base.add_attribute(ClassEnum.Scenario, "Default", attribute_name="Locked", attribute_value=1)
-    db_base.add_membership(ClassEnum.Model, ClassEnum.Scenario, "Base", "Default", CollectionEnum.Scenarios)
+def _validated_parser(db, tmp_path, read_orders: dict[str, int | None]) -> PLEXOSParser:
+    """Select scenarios for model Base; None leaves Read Order unset."""
+    for name, order in read_orders.items():
+        if not check_object_exists(db, ClassEnum.Scenario, name):
+            db.add_object(ClassEnum.Scenario, name)
+        if order is not None:
+            db.add_attribute(ClassEnum.Scenario, name, attribute_name="Read Order", attribute_value=order)
+        db.add_membership(ClassEnum.Model, ClassEnum.Scenario, "Base", name, CollectionEnum.Scenarios)
     parser = cast(
         PLEXOSParser,
         PLEXOSParser.from_context(
             PluginContext(config=PLEXOSConfig(model_name="Base"), store=DataStore(path=tmp_path))
         ),
     )
-    parser.db = db_base
+    parser.db = db
     parser.model_name = "Base"
     assert parser.validate_inputs().is_ok()
-    assert get_scenario_priority() == {"Low": 0, "Default": 0}
+    return parser
+
+
+def test_scenario_priority_ranks_read_order(db_base, tmp_path):
+    """Other Scenario attributes are not read orders; ties keep a stable name order."""
+    db_base.add_object(ClassEnum.Scenario, "B")
+    db_base.add_attribute(ClassEnum.Scenario, "B", attribute_name="Locked", attribute_value=9)
+    _validated_parser(db_base, tmp_path, {"B": 0, "Default": None, "A": 5})
+
+    assert get_scenario_priority() == {"B": 1, "Default": 2, "A": 3}
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize(
+    ("entries", "expected"),
+    [
+        ([(None, "base.csv"), ("S1", "s1.csv")], "s1.csv"),
+        ([("S1", "s1.csv"), ("S2", "s2.csv")], "s2.csv"),
+        ([(None, "base.csv"), ("S1", "s1.csv"), ("S2", "s2.csv")], "s2.csv"),
+    ],
+)
+def test_register_reference_tie_break_ignores_entry_order(db_base, tmp_path, entries, expected, reverse):
+    """Selected scenarios override base data even when every Read Order is equal."""
+    parser = _validated_parser(db_base, tmp_path, {"S1": 0, "S2": None})
+    prop = PLEXOSPropertyValue()
+    for scenario, filename in reversed(entries) if reverse else entries:
+        prop.add_entry(value=0.0, scenario=scenario, datafile_name=filename)
+    parser._register_time_series_reference(PLEXOSGenerator(name="test"), "rating", prop)
+
+    assert [ref.datafile_path for ref in parser.time_series_references] == [expected]
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_register_reference_prefers_datafile_over_variable_at_same_priority(reverse):
+    parser = PLEXOSParser()
+    entries = [{"variable_name": "profile-variable"}, {"datafile_name": "profile.csv"}]
+    prop = PLEXOSPropertyValue()
+    for entry in reversed(entries) if reverse else entries:
+        prop.add_entry(value=0.0, **entry)
+    parser._register_time_series_reference(PLEXOSGenerator(name="test"), "rating", prop)
+
+    ref = parser.time_series_references[0]
+    assert ref.source_type == TimeSeriesSourceType.DIRECT_DATAFILE
+    assert ref.datafile_path == "profile.csv"
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_scalar_value_uses_selected_scenario_at_equal_read_order(db_base, tmp_path, reverse):
+    _validated_parser(db_base, tmp_path, {"S1": 0})
+    entries = [(None, 10.0), ("S1", 20.0)]
+    prop = PLEXOSPropertyValue()
+    for scenario, value in reversed(entries) if reverse else entries:
+        prop.add_entry(value=value, scenario=scenario)
+
+    assert prop.get_value() == 20.0
 
 
 @pytest.mark.parametrize("collection", [False, True])

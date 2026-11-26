@@ -37,9 +37,11 @@ A generator property may differ by scenario, band, timeslice or date window.
 number during ingest. Scenario priority and horizon selection determine the
 values exposed for a particular context. The parser derives priority from the
 selected Model's scenarios and resolves its horizon when available.
-For time-series references, entries from unselected scenarios are ignored;
-among eligible references, the highest PLEXOS Read Order wins. Entries without
-a scenario remain eligible with priority zero.
+Each selected scenario is ranked from 1 by PLEXOS Read Order (a missing Read
+Order counts as 0), and the highest rank wins. Scenarios with the same Read Order
+are ranked by name, with a warning, so results do not depend on database row
+order. Data without a scenario has priority 0, so any selected scenario overrides
+it. Time-series references ignore entries from scenarios the Model does not select.
 
 The scenario/horizon helpers currently use module-level state. Their context
 managers restore the previous selection on exit; they do not create independent

@@ -269,6 +269,28 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         logger.info("Ensured PLEXOS property-query index on t_data.membership_id")
         return Ok(None)
 
+    @staticmethod
+    def _rank_scenarios(read_orders: dict[str, int | None]) -> dict[str, int]:
+        """Rank a model's scenarios from 1 upward, with higher ranks taking precedence.
+
+        PLEXOS reads scenarios in ascending Read Order, so later scenarios win.
+        A missing Read Order counts as 0. Equal Read Orders are applied in name
+        order so the result does not depend on database row order. Ranks start at 1
+        so that every selected scenario overrides data without a scenario.
+        """
+        ordered = sorted(read_orders, key=lambda scenario: (read_orders[scenario] or 0, scenario))
+        ties: dict[int, list[str]] = defaultdict(list)
+        for scenario in ordered:
+            ties[read_orders[scenario] or 0].append(scenario)
+        for read_order, scenarios in ties.items():
+            if len(scenarios) > 1:
+                logger.warning(
+                    "Scenarios {} share Read Order {}; applying them in name order (later names take precedence)",
+                    scenarios,
+                    read_order,
+                )
+        return {scenario: rank for rank, scenario in enumerate(ordered, start=1)}
+
     def validate_inputs(self) -> Result[None, str]:
         """Validate input data before parsing."""
         if self.db is None:
@@ -278,9 +300,7 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
             logger.info("Selecting model={}", self.model_name)
             model_id = self.db.get_object_id(ClassEnum.Model, self.model_name)
             scenario_results = self.db._db.query(SCENARIO_ORDER, (model_id,))
-            priority_map: dict[str, int] = {
-                scenario: read_order or 0 for scenario, read_order in scenario_results
-            }
+            priority_map = self._rank_scenarios(dict(scenario_results))
             self._scenario_priority = priority_map
             set_scenario_priority(priority_map)
             logger.debug("Found {} scenarios for model = {}", len(priority_map), self.model_name)
@@ -813,7 +833,12 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         row = max(
             candidates,
             key=lambda entry: (
-                self._scenario_priority[entry.scenario_name] if entry.scenario_name is not None else 0
+                self._scenario_priority[entry.scenario_name] if entry.scenario_name is not None else 0,
+                # At equal priority, keep the existing preference for data files over variables.
+                bool(
+                    entry.datafile_name
+                    or (isinstance(entry.text, str) and entry.text.lower().endswith(".csv"))
+                ),
             ),
         )
         name = row.datafile_name or (
