@@ -407,14 +407,13 @@ def test_resolve_entry_by_priority_complex_candidates() -> None:
 
 
 def test_resolve_entry_by_priority_no_priority_match() -> None:
-    """Entries from scenarios not in priority map are skipped."""
+    """Entries from scenarios not in priority map are skipped, with no fallback."""
     prop = PLEXOSPropertyValue()
     prop.add_entry(value=1.0, scenario="Excluded")
 
     set_scenario_priority({"Base": 1})
-    result = prop.get_value()
-    # "Excluded" not in priority → falls back to first entry
-    assert result is not None
+    assert prop.get_value() is None
+    assert prop.get_entry() is None
 
 
 def test_resolve_field_by_priority_complex_only() -> None:

@@ -16,6 +16,7 @@ from typing import Any
 from uuid import UUID
 
 from infrasys import Component
+from infrasys.exceptions import ISNotStored
 from infrasys.time_series_models import SingleTimeSeries
 from loguru import logger
 from plexosdb import ClassEnum, PlexosDB
@@ -23,7 +24,7 @@ from plexosdb import ClassEnum, PlexosDB
 from r2x_core import Err, Ok, Plugin, Result, System
 from r2x_core.utils import get_fpath
 
-from .datafile_handler import ParsedFileData, extract_file_data, extract_one_time_series
+from .datafile_handler import ParsedFileData, extract_file_data
 from .models import (
     PLEXOSDatafile,
     PLEXOSMembership,
@@ -33,6 +34,7 @@ from .models import (
     set_horizon,
     set_scenario_priority,
 )
+from .models.base import PLEXOSRow
 from .models.collection_property import CollectionProperties
 from .models.timeslice import PLEXOSTimeslice
 from .models.utils import get_field_name_by_alias
@@ -790,6 +792,27 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
             for ref in self.time_series_references
         )
 
+    def _entry_priority(self, row: PLEXOSRow) -> int:
+        """Return the priority of an entry the model reads; 0 when it has no scenario."""
+        return self._scenario_priority.get(row.scenario_name, 0) if row.scenario_name else 0
+
+    def _selected_property(self, prop: PLEXOSPropertyValue) -> PLEXOSPropertyValue:
+        """Return ``prop`` restricted to entries the model reads.
+
+        Keeps entries without a scenario and entries of the model's scenarios. The
+        original property is not modified, so other scenarios survive a round trip.
+        """
+        entries = {
+            key: row
+            for key, row in prop.entries.items()
+            if not key.scenario or key.scenario in self._scenario_priority
+        }
+        if len(entries) == len(prop.entries):
+            return prop
+        selected = PLEXOSPropertyValue(entries=entries, units=prop.units, action=prop.action)
+        selected._rebuild_indexes()
+        return selected
+
     def _register_time_series_reference(
         self,
         component: PLEXOSObject,
@@ -819,9 +842,8 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
             return
         candidates = [
             row
-            for row in property.entries.values()
-            if (row.scenario_name is None or row.scenario_name in self._scenario_priority)
-            and (
+            for row in self._selected_property(property).entries.values()
+            if (
                 row.datafile_name
                 or (isinstance(row.text, str) and row.text.lower().endswith(".csv"))
                 or row.variable_name
@@ -833,7 +855,7 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         row = max(
             candidates,
             key=lambda entry: (
-                self._scenario_priority[entry.scenario_name] if entry.scenario_name is not None else 0,
+                self._entry_priority(entry),
                 # At equal priority, keep the existing preference for data files over variables.
                 bool(
                     entry.datafile_name
@@ -914,9 +936,8 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
     def _get_variable_profile_value(self, variable_id: int, variable_name: str) -> float:
         """Extract profile value from variable respecting scenario priority.
 
-        Variables may have profile properties in scenarios not directly related
-        to the current model. Iterates all entries to find a numeric value,
-        using scenario priority if multiple values exist.
+        Variables may have profile entries in scenarios the model does not select;
+        those are ignored. Uses scenario priority if multiple values exist.
 
         Parameters
         ----------
@@ -946,6 +967,14 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         profile_prop = variable.get_property_value("profile")
         if profile_prop is None:
             raise ValueError(f"Variable {variable_name} has no profile property")
+        if not isinstance(profile_prop, PLEXOSPropertyValue):
+            raise ValueError(f"Variable {variable_name} profile is not a property value: {profile_prop!r}")
+
+        profile_prop = self._selected_property(profile_prop)
+        if not profile_prop.entries:
+            raise ValueError(
+                f"Variable {variable_name} has no profile value in the model's selected scenarios"
+            )
 
         profile_value = profile_prop.get_value()
         if profile_value is not None:
@@ -1441,10 +1470,15 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
             logger.debug(f"Variable '{variable_name}' has no profile property")
             return
 
-        bands = sorted({entry.band for entry in profile_prop.entries.values() if entry.band})
+        profile_prop = self._selected_property(profile_prop)
+        if not profile_prop.entries:
+            logger.debug(f"Variable '{variable_name}' has no profile data in the model's selected scenarios")
+            return
 
-        first_entry = next(iter(profile_prop.entries.values()))
-        if not first_entry.datafile_name:
+        bands = sorted({entry.band for entry in profile_prop.entries.values() if entry.band})
+        datafile_entries = [entry for entry in profile_prop.entries.values() if entry.datafile_name]
+
+        if not datafile_entries:
             variable_value = profile_prop.get_value()
 
             if variable_value is None:
@@ -1453,80 +1487,6 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
 
             self._handle_constant_variable(ref, component, variable_name, variable_value, cache_key)
             return
-
-        if not bands:
-            variable_constant_value = profile_prop.get_value()
-
-            if variable_constant_value is not None and variable_constant_value != 0:
-                logger.debug(
-                    f"Variable '{variable_name}' has constant value {variable_constant_value}, applying to datafile values"
-                )
-
-                datafile_component_name = first_entry.datafile_name
-                file_path = None
-
-                datafile_component = self.system.get_component(PLEXOSDatafile, datafile_component_name)
-                if datafile_component:
-                    filename_prop = datafile_component.get_property_value("filename")
-                    if filename_prop:
-                        file_path_str = filename_prop.get_text_with_priority()
-                        if file_path_str and isinstance(file_path_str, str):
-                            file_path = self._resolve_datafile_path(file_path_str)
-
-                if file_path is None:
-                    logger.debug(f"Trying as direct path: {datafile_component_name}")
-                    file_path = self._resolve_datafile_path(datafile_component_name)
-
-                if not file_path.exists():
-                    raise FileNotFoundError(f"File not found: {file_path}")
-
-                try:
-                    # Use horizon start year if available, otherwise reference year
-                    extraction_year = horizon_datetime[0].year if horizon_datetime else reference_year
-                    ts_or_float = extract_one_time_series(
-                        path=str(file_path),
-                        component=ref.component_name,
-                        default_initial_time=datetime(extraction_year, 1, 1),
-                        year=extraction_year,
-                    )
-
-                    # For collection properties with variables, we expect time series not constants
-                    if not isinstance(ts_or_float, SingleTimeSeries):
-                        logger.warning(
-                            f"Expected time series but got constant value for {ref.component_name}.{ref.field_name}"
-                        )
-                        return
-
-                    ts = ts_or_float
-
-                    # Apply horizon trimming if needed
-                    if horizon_datetime:
-                        ts = trim_timeseries_to_horizon(ts, horizon_datetime[0], horizon_datetime[1])
-
-                    base_value = ts.data[0] if len(set(ts.data)) == 1 else max(ts.data)
-                    result_value = base_value * variable_constant_value
-
-                    logger.debug(
-                        f"Applying variable '{variable_name}' ({variable_constant_value}) to {ref.component_name}.{ref.field_name}: {base_value} x {variable_constant_value} = {result_value}"
-                    )
-
-                    if hasattr(component, ref.field_name):
-                        prop_value = component.get_property_value(ref.field_name)
-                        if isinstance(prop_value, PLEXOSPropertyValue):
-                            for key, entry in list(prop_value.entries.items()):
-                                prop_value.entries[key] = create_plexos_row(result_value, entry)
-
-                    self._attached_timeseries[cache_key] = True
-                    return
-
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to apply constant variable '{variable_name}' to {ref.component_name}.{ref.field_name}: {e}"
-                    )
-                    return
-            else:
-                logger.debug(f"Variable '{variable_name}' has no bands")
-                return
 
         property_value = component.get_property_value(ref.field_name)
         action = None
@@ -1539,37 +1499,21 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         all_max_values = []
 
         for band_num in bands:
-            band_entry = None
-            for entry in profile_prop.entries.values():
-                if entry.band == band_num:
-                    band_entry = entry
-                    break
-
-            if not band_entry or not band_entry.datafile_name:
+            band_entries = [entry for entry in datafile_entries if entry.band == band_num]
+            if not band_entries:
                 logger.debug(f"Variable '{variable_name}' band {band_num} has no datafile")
                 continue
 
-            # Resolve actual file path from datafile component
-            datafile_component_name = band_entry.datafile_name
-            band_file_path = None
-
-            try:
-                datafile_component = self.system.get_component(PLEXOSDatafile, datafile_component_name)
-                if datafile_component:
-                    filename_prop = datafile_component.get_property_value("filename")
-                    if filename_prop:
-                        file_path_str = filename_prop.get_text_with_priority()
-                        if file_path_str and isinstance(file_path_str, str):
-                            band_file_path = self._resolve_datafile_path(file_path_str)
-            except Exception:
-                # Datafile component not found in system, will try as direct path
-                pass
-
+            band_entry = max(band_entries, key=self._entry_priority)
+            datafile_component_name = typing.cast(str, band_entry.datafile_name)
+            band_file_path = self._variable_datafile_path(datafile_component_name)
             if band_file_path is None:
-                logger.debug(
-                    f"Datafile '{datafile_component_name}' has no filename property, trying as direct path"
+                logger.warning(
+                    f"Datafile '{datafile_component_name}' (band {band_num}) referenced by variable "
+                    f"'{variable_name}' for {ref.component_name}.{ref.field_name} has no filename "
+                    "in the model's selected scenarios"
                 )
-                band_file_path = self._resolve_datafile_path(datafile_component_name)
+                continue
 
             if not band_file_path.exists():
                 logger.warning(
@@ -1631,6 +1575,27 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
 
         self._attached_timeseries[cache_key] = True
 
+    def _variable_datafile_path(self, datafile_name: str) -> Path | None:
+        """Resolve the file a variable profile references.
+
+        A name that is not a Data File object is treated as a path. For a Data File,
+        the filename comes from the model's selected scenarios; ``None`` means it
+        has none there, and the name is not used as a path instead.
+        """
+        try:
+            datafile = self.system.get_component(PLEXOSDatafile, datafile_name)
+        except ISNotStored:
+            datafile = None
+        if datafile is None:
+            return self._resolve_datafile_path(datafile_name)
+
+        filename_prop = datafile.get_property_value("filename")
+        if isinstance(filename_prop, PLEXOSPropertyValue):
+            filename = filename_prop.get_text_with_priority()
+        else:
+            filename = filename_prop if isinstance(filename_prop, str) else None
+        return self._resolve_datafile_path(filename) if filename else None
+
     def _attach_datafile_component_timeseries(
         self,
         ref: TimeSeriesReference,
@@ -1662,7 +1627,9 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
         file_path_str = filename_prop.get_text_with_priority()
 
         if not file_path_str or not isinstance(file_path_str, str):
-            raise ValueError(f"No valid filename in datafile '{ref.datafile_component_name}'")
+            raise ValueError(
+                f"Datafile '{ref.datafile_component_name}' has no filename in the model's selected scenarios"
+            )
 
         if not file_path_str.lower().endswith(".csv"):
             raise ValueError(

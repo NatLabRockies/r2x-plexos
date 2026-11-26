@@ -277,6 +277,166 @@ def test_parser_attaches_only_selected_scenario_profiles(db_with_topology, tmp_p
     assert not any(ref.field_name == "commit" for ref in parser.time_series_references)
 
 
+def _write_hourly_profile(path: Path, column: str, offset: int) -> Path:
+    path.write_text(
+        f"Datetime,{column}\n"
+        + "".join(
+            f"{(datetime(2024, 1, 1) + timedelta(hours=hour)).isoformat()},{offset + hour % 24}\n"
+            for hour in range(8784)
+        )
+    )
+    return path
+
+
+def _run_parser(db, tmp_path) -> PLEXOSParser:
+    parser = cast(
+        PLEXOSParser,
+        PLEXOSParser.from_context(
+            PluginContext(
+                config=PLEXOSConfig(model_name="Base", horizon_year=2024), store=DataStore(tmp_path)
+            )
+        ),
+    )
+    parser.db = db
+    parser.run()
+    return parser
+
+
+def _tag(db, object_id: int, data_id: int, action_id: int) -> None:
+    db._db.execute(
+        "INSERT INTO t_tag(object_id,data_id,action_id) VALUES (?,?,?)", (object_id, data_id, action_id)
+    )
+
+
+def test_datafile_filename_ignores_unselected_scenarios(db_with_topology, tmp_path):
+    """A Data File's filename must come from a scenario the model selects, or from no scenario."""
+    db = db_with_topology
+    db.add_object(ClassEnum.Scenario, "Selected")
+    db.add_object(ClassEnum.Scenario, "Excluded")
+    db.add_membership(ClassEnum.Model, ClassEnum.Scenario, "Base", "Selected", CollectionEnum.Scenarios)
+    excluded = _write_hourly_profile(tmp_path / "excluded.csv", "thermal-01", 1000)
+    selected = _write_hourly_profile(tmp_path / "selected.csv", "thermal-01", 100)
+
+    mixed_id = db.add_object(ClassEnum.DataFile, "Mixed")
+    # The unselected filename is the simpler band-1 entry, which the old lookup preferred.
+    db.add_property(
+        ClassEnum.DataFile, "Mixed", "Filename", 0, datafile_text=str(excluded), scenario="Excluded"
+    )
+    db.add_property(
+        ClassEnum.DataFile, "Mixed", "Filename", 0, datafile_text=str(selected), band=2, scenario="Selected"
+    )
+    _tag(db, mixed_id, db.add_property(ClassEnum.Generator, "thermal-01", "Rating", 0.0), 0)
+
+    excluded_only_id = db.add_object(ClassEnum.DataFile, "ExcludedOnly")
+    db.add_property(
+        ClassEnum.DataFile, "ExcludedOnly", "Filename", 0, datafile_text=str(excluded), scenario="Excluded"
+    )
+    _tag(db, excluded_only_id, db.add_property(ClassEnum.Generator, "wind-01", "Rating", 0.0), 0)
+
+    parser = _run_parser(db, tmp_path)
+    system = parser.system
+    thermal = system.get_component(PLEXOSGenerator, "thermal-01")
+    wind = system.get_component(PLEXOSGenerator, "wind-01")
+
+    assert list(system.get_time_series(thermal, "max_active_power").data[:3]) == [100, 101, 102]
+    assert not system.has_time_series(wind)
+    failures = {ref.component_name: error for ref, error in parser._failed_references}
+    assert set(failures) == {"wind-01"}
+    assert "ExcludedOnly" in failures["wind-01"]
+
+
+def test_constant_variable_profile_ignores_unselected_scenarios(db_with_topology, tmp_path):
+    db = db_with_topology
+    db.add_object(ClassEnum.Scenario, "Selected")
+    db.add_object(ClassEnum.Scenario, "Excluded")
+    db.add_membership(ClassEnum.Model, ClassEnum.Scenario, "Base", "Selected", CollectionEnum.Scenarios)
+    variable_id = db.add_object(ClassEnum.Variable, "Multiplier")
+    db.add_property(ClassEnum.Variable, "Multiplier", "Profile", 5.0, scenario="Excluded")
+    db.add_property(ClassEnum.Variable, "Multiplier", "Profile", 2.0, band=2, scenario="Selected")
+    _tag(db, variable_id, db.add_property(ClassEnum.Region, "region-01", "Load", 0.0), 1)
+
+    system = _run_parser(db, tmp_path).system
+    region = system.get_component(PLEXOSRegion, "region-01")
+
+    assert region.get_property_value("load").get_value() == 2.0
+
+
+def test_variable_profile_without_selected_entries_is_not_applied(db_with_topology, tmp_path):
+    db = db_with_topology
+    db.add_object(ClassEnum.Scenario, "Selected")
+    db.add_object(ClassEnum.Scenario, "Excluded")
+    db.add_membership(ClassEnum.Model, ClassEnum.Scenario, "Base", "Selected", CollectionEnum.Scenarios)
+    variable_id = db.add_object(ClassEnum.Variable, "Multiplier")
+    # Two bands keep the profile as a property value, so it reaches the attachment step.
+    db.add_property(ClassEnum.Variable, "Multiplier", "Profile", 5.0, scenario="Excluded")
+    db.add_property(ClassEnum.Variable, "Multiplier", "Profile", 6.0, band=2, scenario="Excluded")
+    _tag(db, variable_id, db.add_property(ClassEnum.Region, "region-01", "Load", 3.0), 1)
+
+    parser = _run_parser(db, tmp_path)
+    region = parser.system.get_component(PLEXOSRegion, "region-01")
+
+    assert region.get_property_value("load").get_value() == 3.0
+    assert not parser.system.has_time_series(region)
+
+
+def test_scalar_from_unselected_scenario_keeps_default(db_with_topology, tmp_path):
+    db = db_with_topology
+    db.add_object(ClassEnum.Scenario, "Selected")
+    db.add_object(ClassEnum.Scenario, "Excluded")
+    db.add_membership(ClassEnum.Model, ClassEnum.Scenario, "Base", "Selected", CollectionEnum.Scenarios)
+    db.add_property(ClassEnum.Generator, "thermal-01", "Max Capacity", 999.0, scenario="Excluded")
+    db.add_property(ClassEnum.Generator, "solar-01", "Max Capacity", 999.0, scenario="Excluded")
+    db.add_property(ClassEnum.Generator, "solar-01", "Max Capacity", 50.0)
+
+    system = _run_parser(db, tmp_path).system
+
+    default = PLEXOSGenerator.model_fields["max_capacity"].default
+    assert system.get_component(PLEXOSGenerator, "thermal-01").max_capacity == default
+    assert system.get_component(PLEXOSGenerator, "solar-01").max_capacity == 50.0
+
+
+def test_property_resolution_ignores_unselected_scenarios():
+    from r2x_plexos.models import scenario_priority
+
+    prop = PLEXOSPropertyValue()
+    prop.add_entry(value=5.0, scenario="Excluded", text="excluded.csv", variable_name="excluded")
+    prop.add_entry(value=2.0, band=2, scenario="Selected", text="selected.csv", variable_name="selected")
+
+    with scenario_priority({"Selected": 1}):
+        assert prop.get_value() == 2.0
+        assert prop.get_entry().value == 2.0
+        assert prop.get_text_with_priority() == "selected.csv"
+        assert prop.get_variable_with_priority()["name"] == "selected"
+    with scenario_priority({}):
+        assert prop.get_value() is None
+        assert prop.get_entry() is None
+        assert prop.get_text_with_priority() is None
+        assert prop.get_variable_with_priority() is None
+    # Without a scenario selection every entry stays visible, and nothing was dropped.
+    assert prop.get_value() == {"Excluded": 5.0, "Selected": 2.0}
+    assert len(prop.entries) == 2
+
+
+def test_variable_profile_value_for_actions_ignores_unselected_scenarios():
+    from r2x_plexos.models import PLEXOSVariable, set_scenario_priority
+
+    parser = PLEXOSParser()
+    parser._scenario_priority = {"Selected": 1}
+    set_scenario_priority(parser._scenario_priority)
+    profile = PLEXOSPropertyValue()
+    profile.add_entry(value=5.0, scenario="Excluded")
+    profile.add_entry(value=2.0, band=2, scenario="Selected")
+    variable = PLEXOSVariable.model_construct(name="Multiplier", object_id=7)
+    object.__setattr__(variable, "profile", profile)
+    parser._component_cache[7] = variable
+
+    assert parser._get_variable_profile_value(7, "Multiplier") == 2.0
+
+    parser._scenario_priority = {}
+    with pytest.raises(ValueError, match="selected scenarios"):
+        parser._get_variable_profile_value(7, "Multiplier")
+
+
 @pytest.mark.slow
 def test_resolve_datafile_path_basic(parser_basic: PLEXOSParser, data_folder: Path) -> None:
     """Test basic datafile path resolution."""

@@ -1,6 +1,7 @@
 """PLEXOS property value class."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import total_ordering
 from typing import Any, cast
@@ -269,33 +270,57 @@ class PLEXOSPropertyValue:
         """Get property value with automatic scenario priority and horizon resolution.
 
         Resolution order:
-        1. Filter by horizon (date range) if set
-        2. If priority context is set, use priority-based resolution
-        3. Pure default entry (no scenario/timeslice) takes precedence
-        4. Non-scenario timeslices preferred over scenarios
-        5. Non-scenario bands preferred over scenarios
-        6. Return scenario/timeslice/band dicts or simple values as appropriate
+        1. Drop entries from scenarios outside the active priority, if one is set
+        2. Filter by horizon (date range) if set
+        3. If priority context is set, use priority-based resolution
+        4. Pure default entry (no scenario/timeslice) takes precedence
+        5. Non-scenario timeslices preferred over scenarios
+        6. Non-scenario bands preferred over scenarios
+        7. Return scenario/timeslice/band dicts or simple values as appropriate
         """
-        if not self.entries:
+        selected = self.get_selected_entries()
+        if not selected:
             return None
 
-        horizon = get_horizon()
-        if horizon:
+        with self._restricted_to(selected):
+            horizon = get_horizon()
+            if not horizon:
+                return self._resolve_value()
+
             filtered_entries = self._filter_by_horizon(horizon)
             if not filtered_entries:
                 return None
-
-            original_entries = self.entries
-            original_indexes = self._save_indexes()
-            try:
-                self.entries = filtered_entries
-                self._rebuild_indexes()
+            with self._restricted_to(filtered_entries):
                 return self._resolve_value()
-            finally:
-                self.entries = original_entries
-                self._restore_indexes(original_indexes)
-        else:
-            return self._resolve_value()
+
+    def get_selected_entries(self) -> dict[PLEXOSPropertyKey, PLEXOSRow]:
+        """Return the entries visible under the active scenario priority.
+
+        When a priority is set, PLEXOS reads only data without a scenario and data
+        of the scenarios it lists; entries of any other scenario are left out. With
+        no priority set, every entry is returned.
+        """
+        priority = get_scenario_priority()
+        if priority is None or all(scenario in priority for scenario in self._by_scenario):
+            return self.entries
+        return {key: row for key, row in self.entries.items() if not key.scenario or key.scenario in priority}
+
+    @contextmanager
+    def _restricted_to(self, entries: dict[PLEXOSPropertyKey, PLEXOSRow]) -> Generator[None, None, None]:
+        """Temporarily resolve against ``entries`` instead of every stored entry."""
+        if entries is self.entries:
+            yield
+            return
+
+        original_entries = self.entries
+        original_indexes = self._save_indexes()
+        try:
+            self.entries = entries
+            self._rebuild_indexes()
+            yield
+        finally:
+            self.entries = original_entries
+            self._restore_indexes(original_indexes)
 
     def get_value_for(
         self,
@@ -653,15 +678,17 @@ class PLEXOSPropertyValue:
         PLEXOSRow | None
             The highest-priority entry or None if no entries exist
         """
-        if not self.entries:
+        selected = self.get_selected_entries()
+        if not selected:
             return None
 
-        priority = get_scenario_priority()
-        if priority:
-            return self._resolve_entry_by_priority(priority)
+        with self._restricted_to(selected):
+            priority = get_scenario_priority()
+            if priority:
+                return self._resolve_entry_by_priority(priority)
 
-        # Without priority context, return first entry
-        return next(iter(self.entries.values()))
+            # Without priority context, return first entry
+            return next(iter(self.entries.values()))
 
     def _resolve_entry_by_priority(self, priority: dict[str, int]) -> PLEXOSRow | None:
         """Resolve entry using scenario priority (higher number = higher priority).
@@ -783,15 +810,21 @@ class PLEXOSPropertyValue:
         """Get text field using scenario priority resolution.
 
         When multiple entries have the same priority (e.g., all with no scenario),
-        returns the first non-None text value found.
+        returns the first non-None text value found. Entries outside the active
+        scenario priority are ignored.
 
         Returns
         -------
         str | None
             Text from highest priority entry, or None if no text exists
         """
-        from r2x_plexos.models.context import get_scenario_priority
+        selected = self.get_selected_entries()
+        if not selected:
+            return None
+        with self._restricted_to(selected):
+            return self._text_with_priority()
 
+    def _text_with_priority(self) -> str | None:
         priority = get_scenario_priority()
         if priority:
             result = self._resolve_field_by_priority(priority, field="text")
@@ -808,13 +841,20 @@ class PLEXOSPropertyValue:
     def get_variable_with_priority(self) -> dict[str, Any] | None:
         """Get variable reference using scenario priority resolution.
 
+        Entries outside the active scenario priority are ignored.
+
         Returns
         -------
         dict | None
             Dictionary with 'name', 'id', 'action' from highest priority entry
         """
-        from r2x_plexos.models.context import get_scenario_priority
+        selected = self.get_selected_entries()
+        if not selected:
+            return None
+        with self._restricted_to(selected):
+            return self._variable_with_priority()
 
+    def _variable_with_priority(self) -> dict[str, Any] | None:
         priority = get_scenario_priority()
         if priority:
             var_name = self._resolve_field_by_priority(priority, field="variable_name")

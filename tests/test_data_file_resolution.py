@@ -42,8 +42,9 @@ def test_multi_band_datafile(tmp_path, db_with_multiband_variable, caplog):
         assert prop_value.has_variable()
 
         assert sys.has_time_series(region_component)
-        assert len(sys.list_time_series(region_component)) == 3
+        # The model selects only scenario_2, so only its band-2 profile is read.
+        assert len(sys.list_time_series(region_component)) == 1
 
-        band_1_ts = sys.get_time_series(region_component, band="1")
-        assert len(band_1_ts.data) == 8784
-        assert all(val != 0 for val in band_1_ts.data[:24])
+        band_2_ts = sys.get_time_series(region_component, band="2")
+        assert len(band_2_ts.data) == 8784
+        assert all(val != 0 for val in band_2_ts.data[:24])

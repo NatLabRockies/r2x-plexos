@@ -23,7 +23,7 @@ def prepare_workspace(folder: Path) -> object:
     inputs.mkdir()
     outputs = folder / "outputs"
     outputs.mkdir()
-    from r2x_plexos import PLEXOSConfig, PLEXOSParser
+    from r2x_plexos import PLEXOSConfig, PLEXOSParser, set_horizon, set_scenario_priority
 
     shutil.copy2(ROOT / "tests/data/5_bus_system_variables.xml", inputs / "model.xml")
     context = PluginContext(
@@ -33,6 +33,9 @@ def prepare_workspace(folder: Path) -> object:
     context = PLEXOSParser.from_context(context).run()
     assert context.system is not None
     context.system.save(outputs / "system", zip=True)
+    # Readers load the archive in a fresh process, where no model's scenario selection is active.
+    set_scenario_priority(None)
+    set_horizon(None)
     return context.system
 
 
