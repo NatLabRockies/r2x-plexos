@@ -3,7 +3,7 @@ from typing import cast
 
 import pytest
 from plexosdb import ClassEnum
-from plexosdb.db import PROPERTY_QUERY
+from plexosdb.db_constants import PROPERTY_QUERY
 
 from r2x_core import DataFile, DataStore, PluginContext
 from r2x_plexos import PLEXOSParser, PLEXOSPropertyValue
