@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/NatLabRockies/r2x-plexos/compare/v0.4.0...v0.4.1) (2026-11-28)
+
+
+### 🐛 Bug Fixes
+
+* address parser issues on performance and cache components ([#120](https://github.com/NatLabRockies/r2x-plexos/issues/120)) ([48d97ff](https://github.com/NatLabRockies/r2x-plexos/commit/48d97ff6ee0888b2fa536de332abe8512ea2f0ce))
+
 ## [0.4.0](https://github.com/NatLabRockies/r2x-plexos/compare/v0.3.3...v0.4.0) (2026-11-26)
 
 
