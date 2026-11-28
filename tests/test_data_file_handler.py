@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from fractions import Fraction
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
@@ -910,6 +910,42 @@ def test_hourly_daily_missing_hour_data() -> None:
 
     with pytest.raises(ValueError, match="Missing hourly data"):
         parse_file(file_type, df, datetime(2024, 1, 1), 2024)
+
+
+def test_hourly_daily_accepts_zero_padded_hour_columns() -> None:
+    data: dict[str, list[int | float]] = {"Year": [2024, 2024], "Month": [1, 1], "Day": [1, 2]}
+    for hour in range(1, 25):
+        data[f"{hour:02d}"] = [float(hour), float(hour + 24)]
+
+    result = parse_file(HourlyDailyFile(), pl.LazyFrame(data), datetime(2024, 1, 1), 2024)
+
+    assert list(result["hourly_data"].data) == [float(value) for value in range(1, 49)]
+
+
+def test_hourly_daily_financial_year_trace_starts_at_first_available_date() -> None:
+    days = [datetime(2026, 7, 1) + timedelta(days=offset) for offset in range(366)]
+    data: dict[str, list[int | float]] = {
+        "Year": [day.year for day in days],
+        "Month": [day.month for day in days],
+        "Day": [day.day for day in days],
+    }
+    for hour in range(1, 25):
+        data[f"{hour:02d}"] = [float(offset) for offset in range(len(days))]
+
+    series = parse_file(HourlyDailyFile(), pl.LazyFrame(data), datetime(2026, 1, 1), 2026)["hourly_data"]
+
+    assert series.initial_timestamp == datetime(2026, 7, 1)
+    assert len(series.data) == 365 * 24
+    assert series.data[-1] == 364.0
+
+
+def test_hourly_daily_rejects_missing_days() -> None:
+    data: dict[str, list[int | float]] = {"Year": [2024, 2024], "Month": [1, 1], "Day": [1, 3]}
+    for hour in range(1, 25):
+        data[f"{hour:02d}"] = [1.0, 1.0]
+
+    with pytest.raises(ValueError, match="Missing daily rows before 2024-01-03"):
+        parse_file(HourlyDailyFile(), pl.LazyFrame(data), datetime(2024, 1, 1), 2024)
 
 
 def test_safe_float_conversion_handles_fraction() -> None:

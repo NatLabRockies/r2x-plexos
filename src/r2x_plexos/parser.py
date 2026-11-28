@@ -7,6 +7,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from functools import cache
 from importlib.metadata import version
 from importlib.resources import files
 from operator import itemgetter
@@ -64,6 +65,12 @@ HYDRO_TS_NAME_MAP: dict[str, str] = {
     "rating": "max_active_power",
     "load": "max_active_power",
 }
+
+
+@cache
+def _type_hints(component_class: type) -> dict[str, Any]:
+    # Resolving every annotation of a large PLEXOS model is expensive and the result is fixed per class.
+    return typing.get_type_hints(component_class)
 
 
 class TimeSeriesSourceType(StrEnum):
@@ -220,7 +227,12 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
                         "or ensure the DataStore contains an 'xml_file' entry."
                     )
 
+                xml_import_started = perf_counter()
                 self.db = PlexosDB.from_xml(xml_fpath)
+                logger.info(
+                    "Imported PLEXOS XML into database in {:.2f}s",
+                    perf_counter() - xml_import_started,
+                )
                 if not self.db:
                     return Err("Failed to create database from XML file. Check XML file format.")
             except Exception as e:
@@ -306,6 +318,19 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
             self._scenario_priority = priority_map
             set_scenario_priority(priority_map)
             logger.debug("Found {} scenarios for model = {}", len(priority_map), self.model_name)
+            if not priority_map:
+                scenario_count = self.db._db.query(
+                    "SELECT COUNT(*) FROM t_object AS o JOIN t_class AS c ON o.class_id = c.class_id "
+                    "WHERE c.name = 'Scenario'"
+                )[0][0]
+                if scenario_count:
+                    logger.warning(
+                        "Model '{}' has no scenarios, but the database defines {} scenario(s); "
+                        "data tagged with a scenario will be ignored. Check that 'model_name' "
+                        "selects the model that references those scenarios.",
+                        self.model_name,
+                        scenario_count,
+                    )
 
             # Resolve horizon from the model
             horizon_range = resolve_horizon_for_model(self.db, self.model_name)
@@ -760,7 +785,7 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
                     self._register_time_series_reference(component, field_name, property_value)
             else:
                 # Only extract numeric value for properties without external data references
-                expected_type = typing.get_type_hints(type(component)).get(field_name)
+                expected_type = _type_hints(type(component)).get(field_name)
                 resolved_value = property_value.get_value()
                 if resolved_value is None:
                     continue
@@ -929,6 +954,9 @@ class PLEXOSParser(Plugin[PLEXOSConfig]):
                     "Provide 'fpath' pointing to the PLEXOS run directory."
                 ) from None
             base_path = Path(config_fpath)
+            # 'fpath' may name the XML file itself; datafile paths are relative to its directory.
+            if base_path.is_file():
+                base_path = base_path.parent
         if self.config.timeseries_dir:
             base_path = base_path / self.config.timeseries_dir
         return base_path / normalized_path

@@ -298,6 +298,17 @@ def test_get_hydro_budget_property_name_week():
     assert get_hydro_budget_property_name(timedelta(days=7)) == "Max Energy Week"
 
 
+def test_get_hydro_budget_property_name_uses_weekly_series_resolution():
+    ts = SingleTimeSeries.from_array(
+        [float(index % 2) for index in range(53)],
+        "hydro_budget",
+        datetime(2024, 1, 1),
+        resolution=timedelta(days=7),
+    )
+
+    assert get_hydro_budget_property_name(ts) == "Max Energy Week"
+
+
 def test_get_hydro_budget_property_name_month():
     assert get_hydro_budget_property_name(timedelta(days=14)) == "Max Energy Month"
     assert get_hydro_budget_property_name(timedelta(days=31)) == "Max Energy Month"
