@@ -162,13 +162,12 @@ def export_time_series_csv(
 
 
 def get_hydro_budget_property_name(ts: Any) -> str:
-    """Return the PLEXOS Max Energy property name inferred from time series length.
+    """Return the PLEXOS Max Energy property name inferred from resolution or time series length.
 
     Because all time series in r2x-plexos are stored with a fixed 1-hour
     resolution by the CSV parser regardless of the original data frequency,
-    the resolution field cannot be used to distinguish between hourly, daily,
-    weekly, monthly, or annual constraints.  Instead, the number of data
-    points is used as a proxy for the original sampling period.
+    imported series use their number of data points as a proxy for the original
+    sampling period. Newly translated series retain their cadence in resolution.
 
     **Constant series (all values identical)** are treated as ``Max Energy Day``
     regardless of length.  A constant 8760-row series is a scalar ``Max Energy Day``
@@ -199,8 +198,9 @@ def get_hydro_budget_property_name(ts: Any) -> str:
         One of "Max Energy Hour", "Max Energy Day", "Max Energy Week",
         "Max Energy Month", or "Max Energy Year".
     """
-    if isinstance(ts, timedelta):
-        total_hours = ts.total_seconds() / 3600
+    resolution = ts if isinstance(ts, timedelta) else getattr(ts, "resolution", None)
+    if isinstance(resolution, timedelta) and (isinstance(ts, timedelta) or resolution > timedelta(hours=1)):
+        total_hours = resolution.total_seconds() / 3600
         if total_hours <= 1:
             return "Max Energy Hour"
         elif total_hours <= 24:

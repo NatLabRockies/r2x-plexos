@@ -769,7 +769,7 @@ def _(
     if year is None:
         raise ValueError("Year must be provided for HourlyDailyFile.")
 
-    initial_time = default_initial_time or datetime(year, 1, 1)
+    window_start = (default_initial_time or datetime(year, 1, 1)).date()
     collected_df = df.collect()
 
     if collected_df.height == 0:
@@ -787,17 +787,42 @@ def _(
     assert month_col is not None
     assert day_col is not None
 
-    year_df = collected_df.filter(pl.col(year_col) == year).sort([month_col, day_col])
-
-    if year_df.height == 0:
+    # Traces may follow financial years (e.g. July-June), so take one year of rows
+    # from the first available date and keep that date as the series start.
+    dated_df = (
+        collected_df.with_columns(
+            pl.date(pl.col(year_col), pl.col(month_col), pl.col(day_col)).alias("_date")
+        )
+        .filter(pl.col("_date") >= window_start)
+        .sort("_date")
+    )
+    if dated_df.height == 0:
         return {}
+
+    first_date = dated_df["_date"][0]
+    next_year = first_date.year + 1
+    window_end = first_date.replace(
+        year=next_year, day=min(first_date.day, calendar.monthrange(next_year, first_date.month)[1])
+    )
+    year_df = dated_df.filter(pl.col("_date") < window_end)
+    gaps = year_df.filter(pl.col("_date").diff() != timedelta(days=1))
+    if gaps.height > 0:
+        raise ValueError(f"Missing daily rows before {gaps['_date'][0]}")
+    initial_time = datetime.combine(first_date, datetime.min.time())
+
+    # Hour headers may be zero-padded ("01".."24"), so match them by numeric value.
+    hour_columns: dict[int, str] = {}
+    for col in year_df.columns:
+        label = col.strip()
+        if label.isdigit() and 1 <= int(label) <= 24:
+            hour_columns.setdefault(int(label), col)
 
     hourly_values = []
     for row in year_df.iter_rows(named=True):
         day_values = [
-            safe_float_conversion(row[str(hour)])
+            safe_float_conversion(row[hour_columns[hour]])
             for hour in range(1, 25)
-            if str(hour) in row and row[str(hour)] is not None
+            if hour in hour_columns and row[hour_columns[hour]] is not None
         ]
         if len(day_values) != 24:
             raise ValueError(f"Missing hourly data for {row[year_col]}-{row[month_col]}-{row[day_col]}")

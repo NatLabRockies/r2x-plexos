@@ -471,6 +471,16 @@ def test_resolve_datafile_path_subdirectory(parser_basic: PLEXOSParser, data_fol
     assert result == expected
 
 
+def test_resolve_datafile_path_relative_to_config_xml_file(tmp_path: Path) -> None:
+    """Datafile paths resolve next to the XML file when 'fpath' names that file."""
+    xml_path = tmp_path / "model.xml"
+    xml_path.touch()
+    config = PLEXOSConfig(model_name="Base", horizon_year=2023, fpath=str(xml_path))
+    parser = cast(PLEXOSParser, PLEXOSParser.from_context(PluginContext(config=config)))
+
+    assert parser._resolve_datafile_path("Data/load.csv") == tmp_path / "Data" / "load.csv"
+
+
 @pytest.mark.slow
 def test_resolve_datafile_path_none(parser_basic: PLEXOSParser) -> None:
     """Test that None path raises ValueError."""
